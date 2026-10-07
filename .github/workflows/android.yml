@@ -16,20 +16,30 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "21"
 
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v5
 
       - name: Build APK
         working-directory: android
         run: |
           chmod +x gradlew
-          ./gradlew :app:assembleRelease --stacktrace
+          set -o pipefail
+          ./gradlew :app:assembleRelease --console=plain 2>&1 | tee build.log
+
+      - name: Report build errors
+        if: failure()
+        working-directory: android
+        run: |
+          # 把编译错误写成注解，方便在网页和接口里直接看到
+          { grep -E "^e: |What went wrong|^> |error:|Could not" build.log || tail -n 40 build.log; } | head -n 45 | while IFS= read -r line; do
+            echo "::error::${line}"
+          done
 
       - name: Rename APK
         run: |
