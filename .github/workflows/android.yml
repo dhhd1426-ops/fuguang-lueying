@@ -37,7 +37,7 @@ jobs:
         working-directory: android
         run: |
           # 把编译错误写成注解，方便在网页和接口里直接看到
-          { grep -E "^e: |What went wrong|^> [^T]|error:|Could not|Unresolved" build.log || tail -n 40 build.log; } | head -n 45 | while IFS= read -r line; do
+          { grep -E "^e: " build.log | head -n 30; grep -A 30 "What went wrong" build.log | grep -v "^\s*$" | head -n 30; } | head -n 48 | while IFS= read -r line; do
             echo "::error::${line}"
           done
 
