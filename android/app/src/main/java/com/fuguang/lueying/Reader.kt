@@ -98,7 +98,7 @@ class ReaderState(private val prefs: Prefs, val data: Luoying) {
         selectSerial++
     }
 
-    fun setView(v: String) {
+    fun chooseView(v: String) {
         view = v
         if (v == "original") {
             current?.let { prefs.setProgress(it, scroll.value) }
@@ -363,7 +363,7 @@ private fun Sidebar(state: ReaderState, narrow: Boolean, modifier: Modifier) {
             listOf("all" to "全部", "写作方法" to "写作方法", "场景练习" to "场景练习", "连续故事" to "连续故事", "favorites" to "收藏", "original" to "原始对话")
                 .forEach { (key, label) ->
                     val sel = state.view == key
-                    Pressable({ state.setView(key) }, label = label) { pressed ->
+                    Pressable({ state.chooseView(key) }, label = label) { pressed ->
                         Txt(
                             label,
                             if (sel) p.tabSelInk else if (pressed) p.readerInk else p.tabInk,
