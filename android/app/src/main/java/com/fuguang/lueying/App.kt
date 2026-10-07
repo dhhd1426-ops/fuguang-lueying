@@ -110,7 +110,8 @@ fun FuguangApp(prefs: Prefs, fullscreen: Boolean, setFullscreen: (Boolean) -> Un
     val palette = if (light) LightPalette else DarkPalette
 
     BoxWithConstraints(Modifier.fillMaxSize().background(Page.ground)) {
-        val compact = maxWidth < 750.dp
+        val screenW = maxWidth
+        val compact = screenW < 750.dp
         val tiny = maxWidth < 370.dp
         val playing = !paused && foreground && !lettersOpen
 
@@ -142,7 +143,7 @@ fun FuguangApp(prefs: Prefs, fullscreen: Boolean, setFullscreen: (Boolean) -> Un
                 HomePage(
                     compact = compact,
                     tiny = tiny,
-                    width = maxWidth,
+                    width = screenW,
                     now = now,
                     paused = paused,
                     fullscreen = fullscreen,
