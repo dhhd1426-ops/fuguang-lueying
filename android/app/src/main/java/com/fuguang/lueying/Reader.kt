@@ -62,7 +62,8 @@ import kotlinx.coroutines.flow.debounce
 
 /** 阅读状态放在弹层外面，关掉再打开时停在原处（网站的 dialog 不销毁内容）。 */
 @Stable
-class ReaderState(private val prefs: Prefs, val data: Luoying) {
+class ReaderState(private val prefs: Prefs, initial: Luoying) {
+    var data by mutableStateOf(initial)
     var view by mutableStateOf("all")
     var query by mutableStateOf("")
     var current by mutableStateOf<String?>(null)

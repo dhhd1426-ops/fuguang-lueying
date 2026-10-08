@@ -45,6 +45,7 @@ import androidx.compose.ui.unit.sp
 
 @Composable
 fun Letters(
+    letters: List<Letter>,
     w: Dp,
     h: Dp,
     scroll: ScrollState,
@@ -98,11 +99,11 @@ fun Letters(
         ) {
             Row(Modifier.fillMaxWidth().padding(horizontal = if (narrow) 4.dp else 0.dp), verticalAlignment = Alignment.CenterVertically) {
                 Txt("留给你的话", p.lettersIntro, 10.sp, Modifier.weight(1f), spacing = ls(2f, 10f))
-                Txt("%02d / LETTERS".format(Content.letters.size), p.lettersIntro, 8.sp, spacing = ls(3f, 8f))
+                Txt("%02d / LETTERS".format(letters.size), p.lettersIntro, 8.sp, spacing = ls(3f, 8f))
             }
             Spacer(Modifier.height(if (narrow) 20.dp else 22.dp))
             Column(verticalArrangement = Arrangement.spacedBy(if (narrow) 12.dp else 14.dp)) {
-                Content.letters.forEachIndexed { i, letter ->
+                letters.forEachIndexed { i, letter ->
                     LetterCard(i, letter, narrow) { onOpen(i) }
                 }
             }
@@ -146,10 +147,10 @@ private fun LetterCard(index: Int, letter: Letter, narrow: Boolean, onClick: () 
 }
 
 @Composable
-fun LetterDetail(index: Int, w: Dp, h: Dp, onIndex: (Int) -> Unit, onClose: () -> Unit) {
+fun LetterDetail(letters: List<Letter>, index: Int, w: Dp, h: Dp, onIndex: (Int) -> Unit, onClose: () -> Unit) {
     val p = LocalPalette.current
     val narrow = w < 600.dp
-    val count = Content.letters.size
+    val count = letters.size
     val shape = RoundedCornerShape(24.dp)
     val threshold = with(LocalDensity.current) { 80.dp.toPx() }
     var drag by remember { mutableFloatStateOf(0f) }
@@ -183,7 +184,7 @@ fun LetterDetail(index: Int, w: Dp, h: Dp, onIndex: (Int) -> Unit, onClose: () -
             CloseButton(p.detailInk, "关闭悬浮卡片", onClose)
         }
         Crossfade(index, Modifier.weight(1f, fill = false), animationSpec = tween(220), label = "letter") { i ->
-            val letter = Content.letters[i]
+            val letter = letters[i]
             Column(
                 Modifier
                     .verticalScroll(rememberScrollState())

@@ -38,4 +38,7 @@ class Prefs(context: Context) {
 
     fun progress(id: String): Int = sp.getInt("luoying-progress-$id", 0)
     fun setProgress(id: String, scroll: Int) = sp.edit().putInt("luoying-progress-$id", scroll).apply()
+
+    fun string(key: String): String? = sp.getString(key, null)
+    fun putString(key: String, v: String?) = sp.edit().putString(key, v).apply()
 }

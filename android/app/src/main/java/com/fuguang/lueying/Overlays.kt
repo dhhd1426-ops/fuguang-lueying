@@ -212,6 +212,7 @@ fun Overlays(
     lettersOpen: Boolean,
     letterIndex: Int?,
     content: Luoying,
+    letters: List<Letter>,
     prefs: Prefs,
     compact: Boolean,
     dim: Int,
@@ -234,18 +235,20 @@ fun Overlays(
             ModalSheet(lastModal, min(440.dp, w - 36.dp), prefs, dim, blur, onDim, onBlur, onCloseModal)
         }
         val readerState = remember { ReaderState(prefs, content) }
+        // 网上有新内容时，换成新的那份；读到一半的章节若还在，位置不变
+        androidx.compose.runtime.LaunchedEffect(content) { readerState.data = content }
         val closeReader = { readerState.saveProgress(); onCloseReader() }
         OverlayFrame(readerOpen, p.readerBackdrop, closeReader) {
             Reader(readerState, w, h, closeReader)
         }
         val lettersScroll = remember { androidx.compose.foundation.ScrollState(0) }
         OverlayFrame(lettersOpen, p.lettersBackdrop, onCloseLetters) {
-            Letters(w, h, lettersScroll, onClose = onCloseLetters, onOpen = { onLetter(it) }, onToggleTheme = onToggleTheme)
+            Letters(letters, w, h, lettersScroll, onClose = onCloseLetters, onOpen = { onLetter(it) }, onToggleTheme = onToggleTheme)
         }
         var lastLetter by remember { mutableStateOf(0) }
         if (letterIndex != null) lastLetter = letterIndex
         OverlayFrame(letterIndex != null, p.detailBackdrop, { onLetter(null) }) {
-            LetterDetail(lastLetter, w, h, onIndex = { onLetter(it) }, onClose = { onLetter(null) })
+            LetterDetail(letters, lastLetter.coerceAtMost(letters.size - 1), w, h, onIndex = { onLetter(it) }, onClose = { onLetter(null) })
         }
     }
 }

@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
@@ -71,7 +72,7 @@ enum class ModalKind(val title: String) {
 @Composable
 fun FuguangApp(prefs: Prefs, fullscreen: Boolean, setFullscreen: (Boolean) -> Unit) {
     val context = LocalContext.current
-    val content = remember { Content.load(context) }
+    val store = remember { ContentStore(context, prefs) }
 
     var paused by remember { mutableStateOf(false) }
     var foreground by remember { mutableStateOf(true) }
@@ -95,6 +96,9 @@ fun FuguangApp(prefs: Prefs, fullscreen: Boolean, setFullscreen: (Boolean) -> Un
         lifecycle.addObserver(obs)
         onDispose { lifecycle.removeObserver(obs) }
     }
+
+    // 每次回到前台检查一次网上的新内容
+    LaunchedEffect(foreground) { if (foreground) runCatching { store.refresh() } }
 
     var now by remember { mutableStateOf(Date()) }
     LaunchedEffect(Unit) { while (true) { now = Date(); delay(30_000) } }
@@ -150,8 +154,10 @@ fun FuguangApp(prefs: Prefs, fullscreen: Boolean, setFullscreen: (Boolean) -> Un
                     blur = blur.dp,
                     modifier = Modifier.alpha(pageAlpha),
                     onOpen = { modal = it },
-                    onReader = { readerOpen = true },
-                    onLetters = { lettersOpen = true },
+                    newLuoying = store.newLuoying,
+                    newLetters = store.newLetters,
+                    onReader = { readerOpen = true; store.markLuoyingSeen() },
+                    onLetters = { lettersOpen = true; store.markLettersSeen() },
                     onHome = { modal = null; readerOpen = false; lettersOpen = false; letterIndex = null },
                     onTogglePlay = { paused = !paused },
                     onZen = { zen = true },
@@ -177,7 +183,8 @@ fun FuguangApp(prefs: Prefs, fullscreen: Boolean, setFullscreen: (Boolean) -> Un
                     readerOpen = readerOpen,
                     lettersOpen = lettersOpen,
                     letterIndex = letterIndex,
-                    content = content,
+                    content = store.luoying,
+                    letters = store.letters,
                     prefs = prefs,
                     compact = compact,
                     dim = dim,
@@ -211,6 +218,8 @@ private fun HomePage(
     blur: Dp,
     modifier: Modifier,
     onOpen: (ModalKind) -> Unit,
+    newLuoying: Boolean,
+    newLetters: Boolean,
     onReader: () -> Unit,
     onLetters: () -> Unit,
     onHome: () -> Unit,
@@ -226,7 +235,7 @@ private fun HomePage(
             .windowInsetsPadding(WindowInsets.safeDrawing)
             .padding(start = side, end = side, top = if (compact) 26.dp else 38.dp, bottom = if (compact) 22.dp else 30.dp),
     ) {
-        Header(compact, tiny, now, onOpen, onReader, onLetters, onHome)
+        Header(compact, tiny, now, newLuoying, newLetters, onOpen, onReader, onLetters, onHome)
         Box(Modifier.weight(1f).fillMaxWidth()) {
             Hero(compact, tiny, width, onZen, Modifier.align(Alignment.CenterStart))
             if (!compact) {
@@ -259,6 +268,8 @@ private fun Header(
     compact: Boolean,
     tiny: Boolean,
     now: Date,
+    newLuoying: Boolean,
+    newLetters: Boolean,
     onOpen: (ModalKind) -> Unit,
     onReader: () -> Unit,
     onLetters: () -> Unit,
@@ -281,8 +292,8 @@ private fun Header(
         val gap = if (tiny) 14.dp else if (compact) 22.dp else 38.dp
         Row(horizontalArrangement = Arrangement.spacedBy(gap), verticalAlignment = Alignment.CenterVertically) {
             NavItem("浮光", true, compact) { onOpen(ModalKind.Scene) }
-            NavItem("掠影", false, compact, onReader)
-            NavItem("留言", false, compact, onLetters)
+            NavItem("掠影", false, compact, dot = newLuoying, onClick = onReader)
+            NavItem("留言", false, compact, dot = newLetters, onClick = onLetters)
             NavItem("关于", false, compact) { onOpen(ModalKind.About) }
         }
         if (!compact) {
@@ -306,11 +317,23 @@ private fun Header(
 }
 
 @Composable
-private fun NavItem(label: String, active: Boolean, compact: Boolean, onClick: () -> Unit) {
-    Pressable(onClick, label = label) { pressed ->
+private fun NavItem(label: String, active: Boolean, compact: Boolean, dot: Boolean = false, onClick: () -> Unit) {
+    Pressable(onClick, label = if (dot) "$label，有新内容" else label) { pressed ->
         Column(Modifier.padding(vertical = 12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             val fs = if (compact) 11f else 12f
-            Txt(label, if (active || pressed) Page.ink else Page.muted, fs.sp, spacing = ls(if (compact) 1f else 2f, fs))
+            Box {
+                Txt(label, if (active || pressed || dot) Page.ink else Page.muted, fs.sp, spacing = ls(if (compact) 1f else 2f, fs))
+                if (dot) {
+                    // 有新章节或新留言：右上角一个暖色小点
+                    Box(
+                        Modifier
+                            .align(Alignment.TopEnd)
+                            .offset(x = 5.dp, y = (-2).dp)
+                            .size(5.dp)
+                            .background(Page.dot, CircleShape),
+                    )
+                }
+            }
             if (active) {
                 Spacer(Modifier.height(8.dp))
                 Box(Modifier.width(12.dp).height(2.dp).background(Page.accent))
