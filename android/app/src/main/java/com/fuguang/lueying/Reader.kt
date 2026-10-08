@@ -257,7 +257,7 @@ private fun Article(state: ReaderState, narrow: Boolean) {
     if (original) {
         meta = "CLAUDE SHARE / ${state.data.messages.size} 条"
         title = "原始对话"
-        notice = "按分享页原始顺序保留提问与回复，未导入账户信息。"
+        notice = "按原始顺序保留与剧情、散文相关的提问与回复，已略去无关对话。"
     } else if (chapter != null) {
         meta = "${chapter.group} / ${"%,d".format(chapter.characters)} 字"
         title = chapter.title
@@ -378,7 +378,7 @@ private fun Sidebar(state: ReaderState, narrow: Boolean, modifier: Modifier) {
         }
         Spacer(Modifier.height(14.dp))
         if (state.view == "original") {
-            Txt("按原始顺序保留 ${state.data.messages.size} 条对话，可在右侧阅读。", p.tabInk, 12.sp, Modifier.padding(horizontal = 10.dp, vertical = 25.dp), lineHeight = 20.sp)
+            Txt("按原始顺序保留 ${state.data.messages.size} 条与故事、散文相关的对话，可在右侧阅读。", p.tabInk, 12.sp, Modifier.padding(horizontal = 10.dp, vertical = 25.dp), lineHeight = 20.sp)
             return@Column
         }
         val items = state.filtered()
