@@ -217,7 +217,33 @@ object AssistantApi {
 }
 
 /** 一条聊天消息。role = "user" / "assistant"。 */
-data class ChatMsg(val role: String, val text: String)
+data class ChatMsg(val role: String, val text: String, val think: String = "")
+
+/** 把思考原文切成段：按空行分；只有一段时按句号分成几小段。 */
+fun thinkSegments(raw: String): List<String> {
+    val t = raw.trim()
+    if (t.isEmpty()) return emptyList()
+    val paras = t.split(Regex("\\n\\s*\\n")).map { it.trim() }.filter { it.isNotEmpty() }
+    if (paras.size > 1) return paras
+    val sents = Regex("[^。！？!?\\n]+[。！？!?]?").findAll(t).map { it.value.trim() }.filter { it.isNotEmpty() }.toList()
+    return sents.chunked(3).map { it.joinToString("") }
+}
+
+/** 一段话的第一句，最多 n 个字。 */
+fun firstSentence(s: String, n: Int = 28): String {
+    val one = Regex("[^。！？!?\\n]+").find(s.trim())?.value?.trim().orEmpty()
+    return if (one.length > n) one.take(n) + "…" else one
+}
+
+/** 思考里最新的一句（正在写的那句）。 */
+fun latestSentence(raw: String, n: Int = 28): String {
+    val parts = Regex("[^。！？!?\\n]+").findAll(raw).map { it.value.trim() }.filter { it.length > 1 }.toList()
+    val last = parts.lastOrNull().orEmpty()
+    return if (last.length > n) "…" + last.takeLast(n) else last
+}
+
+/** 思考结束后的一句总结：取最后一段的第一句。 */
+fun thinkSummary(raw: String): String = thinkSegments(raw).lastOrNull()?.let { firstSentence(it, 32) }.orEmpty()
 
 /**
  * 流式对话：OpenAI 兼容接口（stream=true 的 SSE）或 Anthropic messages 接口。
@@ -236,7 +262,7 @@ object ChatApi {
         system: String,
         history: List<ChatMsg>,
         think: Boolean,
-        onThink: suspend () -> Unit,
+        onThink: suspend (String) -> Unit,
         onText: suspend (String) -> Unit,
     ) {
         try {
@@ -254,7 +280,7 @@ object ChatApi {
         system: String,
         history: List<ChatMsg>,
         think: Boolean,
-        onThink: suspend () -> Unit,
+        onThink: suspend (String) -> Unit,
         onText: suspend (String) -> Unit,
     ) = withContext(Dispatchers.IO) {
         if (c.key.isBlank()) throw IllegalStateException("还没填 ${c.name} 的 API Key")
@@ -315,11 +341,11 @@ object ChatApi {
                         val d = o.optJSONObject("delta") ?: continue
                         when (d.optString("type")) {
                             "text_delta" -> d.optString("text").takeIf { it.isNotEmpty() }?.let { withContext(Dispatchers.Main) { onText(it) } }
-                            "thinking_delta" -> withContext(Dispatchers.Main) { onThink() }
+                            "thinking_delta" -> d.optString("thinking").takeIf { it.isNotEmpty() }?.let { withContext(Dispatchers.Main) { onThink(it) } }
                         }
                     } else {
                         val d = o.optJSONArray("choices")?.optJSONObject(0)?.optJSONObject("delta") ?: continue
-                        if (!d.isNull("reasoning_content") && d.optString("reasoning_content").isNotEmpty()) withContext(Dispatchers.Main) { onThink() }
+                        if (!d.isNull("reasoning_content")) d.optString("reasoning_content").takeIf { it.isNotEmpty() }?.let { withContext(Dispatchers.Main) { onThink(it) } }
                         if (!d.isNull("content")) d.optString("content").takeIf { it.isNotEmpty() }?.let { withContext(Dispatchers.Main) { onText(it) } }
                     }
                 }

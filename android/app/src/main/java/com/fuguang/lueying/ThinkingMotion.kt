@@ -122,6 +122,7 @@ fun ThinkingMotion(
                 drawCircle(dot, radius = 2.7f * u, center = c + Offset(p.x * u, p.y * u))
             }
         }
+        if (text.isEmpty()) return@Row
         Spacer(Modifier.width(with(density) { (fontPx * .6f).toDp() }))
         BasicText(
             buildAnnotatedString {
@@ -132,6 +133,8 @@ fun ThinkingMotion(
                 }
             },
             style = TextStyle(fontSize = size),
+            maxLines = 1,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
         )
     }
 }

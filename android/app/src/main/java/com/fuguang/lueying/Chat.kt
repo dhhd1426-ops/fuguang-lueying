@@ -47,6 +47,8 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -101,6 +103,8 @@ class ChatState {
     var shown by mutableFloatStateOf(0f)
     var busy by mutableStateOf(false)
     var thinking by mutableStateOf(false)
+    /** 正在进行的这轮思考原文。 */
+    var thinkText by mutableStateOf("")
     var error by mutableStateOf<String?>(null)
     var needsSetup by mutableStateOf(false)
     var draft by mutableStateOf("")
@@ -111,7 +115,7 @@ class ChatState {
 
     fun reset() {
         job?.cancel(); job = null
-        messages.clear(); partial = ""; shown = 0f; busy = false; thinking = false; error = null; needsSetup = false
+        messages.clear(); partial = ""; shown = 0f; busy = false; thinking = false; thinkText = ""; error = null; needsSetup = false
     }
 
     fun send(scope: CoroutineScope, store: AssistantStore) {
@@ -139,25 +143,25 @@ class ChatState {
             error = "还没设置好 ${c.name} 的密钥或模型"
             return
         }
-        busy = true; thinking = false; partial = ""; shown = 0f; streamDone = false
+        busy = true; thinking = false; thinkText = ""; partial = ""; shown = 0f; streamDone = false
         val history = messages.toList()
         val system = "你是${store.name}，一个温和、真诚、说话简洁的中文助理。用自然的口吻回答，不堆砌格式。"
         job = scope.launch {
             try {
-                ChatApi.stream(p, c, store.activeModel, system, history, store.deepThink, onThink = { thinking = true }) { partial += it; thinking = false }
+                ChatApi.stream(p, c, store.activeModel, system, history, store.deepThink, onThink = { thinkText += it; thinking = true }) { partial += it; thinking = false }
                 streamDone = true
                 // 等书写追上再收尾
                 snapshotFlow { shown >= partial.length }.first { it }
-                if (partial.isNotBlank()) messages.add(ChatMsg("assistant", partial.trim()))
+                if (partial.isNotBlank()) messages.add(ChatMsg("assistant", partial.trim(), thinkText))
                 else error = "没有收到回复，换个模型再试"
             } catch (e: kotlinx.coroutines.CancellationException) {
-                if (partial.isNotBlank()) messages.add(ChatMsg("assistant", partial.take(ceil(shown).toInt()).trim()))
+                if (partial.isNotBlank()) messages.add(ChatMsg("assistant", partial.take(ceil(shown).toInt()).trim(), thinkText))
                 throw e
             } catch (e: Exception) {
-                if (partial.isNotBlank()) messages.add(ChatMsg("assistant", partial.trim()))
+                if (partial.isNotBlank()) messages.add(ChatMsg("assistant", partial.trim(), thinkText))
                 error = e.message ?: "出错了"
             } finally {
-                partial = ""; shown = 0f; busy = false; thinking = false
+                partial = ""; shown = 0f; busy = false; thinking = false; thinkText = ""
             }
         }
     }
@@ -214,6 +218,10 @@ fun ChatPage(
     }
 
     var picker by remember { mutableStateOf(false) }
+    /** 正在看哪条消息的思考：-1 = 正在进行的这一轮。 */
+    var thinkOf by remember { mutableIntStateOf(-1) }
+    var thinkOpen by remember { mutableStateOf(false) }
+    androidx.activity.compose.BackHandler(enabled = thinkOpen) { thinkOpen = false }
     androidx.activity.compose.BackHandler(enabled = picker) { picker = false }
     Box(Modifier.fillMaxSize().background(rgba(14, 17, 23, .38f))) {
         Column(
@@ -226,7 +234,7 @@ fun ChatPage(
             ChatHeader(compact, title, subtitle) { chat.reset() }
             Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                 if (chat.messages.isEmpty() && !chat.busy) Hello(compact, hour)
-                else Conversation(chat, store, compact, onSetup = onSetup, onRetry = { chat.retry(scope, store) })
+                else Conversation(chat, store, compact, onSetup = onSetup, onRetry = { chat.retry(scope, store) }, onThink = { thinkOf = it; thinkOpen = true })
             }
             Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                 ChatInput(
@@ -240,6 +248,13 @@ fun ChatPage(
             BottomNav(compact, active = "聊天", onHome = onHome, onChat = {}, onMine = onMine, onOpen = onOpen)
         }
         ModelDrawer(picker, store, compact, onClose = { picker = false }, onMore = { picker = false; onMoreModels() })
+        val liveThink = thinkOf < 0 || thinkOf >= chat.messages.size
+        ThinkDrawer(
+            open = thinkOpen,
+            raw = if (liveThink) chat.thinkText else chat.messages[thinkOf].think,
+            live = liveThink && chat.busy && chat.partial.isEmpty(),
+            onClose = { thinkOpen = false },
+        )
     }
 }
 
@@ -272,7 +287,7 @@ private fun Hello(compact: Boolean, hour: Int) {
 /* ---------------- 对话区 ---------------- */
 
 @Composable
-private fun Conversation(chat: ChatState, store: AssistantStore, compact: Boolean, onSetup: () -> Unit, onRetry: () -> Unit) {
+private fun Conversation(chat: ChatState, store: AssistantStore, compact: Boolean, onSetup: () -> Unit, onRetry: () -> Unit, onThink: (Int) -> Unit) {
     val scroll = rememberScrollState()
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
@@ -305,12 +320,26 @@ private fun Conversation(chat: ChatState, store: AssistantStore, compact: Boolea
                             contentAlignment = Alignment.CenterEnd,
                         ) { UserBubble(m.text, compact) }
                     } else {
+                        if (m.think.isNotBlank()) ThinkSummaryLine(thinkSummary(m.think)) { onThink(i) }
                         Reply(m.text, compact, fadeTail = false)
                     }
                 }
                 if (chat.busy) {
-                    if (chat.partial.isEmpty()) ThinkingMotion(if (chat.thinking || store.deepThink) "正在思考…" else "${store.name} 正在想…", Modifier.padding(start = 2.dp, top = 2.dp))
-                    else Reply(chat.partial.take(ceil(chat.shown).toInt()), compact, fadeTail = chat.shown < chat.partial.length + 1)
+                    if (chat.partial.isEmpty()) {
+                        if (chat.thinkText.isNotBlank()) {
+                            // 深度思考中：三点动效 + 最新一句，点开看过程
+                            Pressable({ onThink(-1) }, label = "查看思考过程") { _ ->
+                                Row(Modifier.padding(start = 2.dp, top = 2.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    ThinkingMotion(latestSentence(chat.thinkText), Modifier.weight(1f, fill = false))
+                                    Spacer(Modifier.width(6.dp))
+                                    SvgIcon(Ic("M9.5 6l6 6-6 6"), Page.muted, 14.dp)
+                                }
+                            }
+                        } else ThinkingMotion("", Modifier.padding(start = 2.dp, top = 6.dp))   // 没开深度思考：只有三点
+                    } else {
+                        if (chat.thinkText.isNotBlank()) ThinkSummaryLine(thinkSummary(chat.thinkText)) { onThink(-1) }
+                    }
+                    if (chat.partial.isNotEmpty()) Reply(chat.partial.take(ceil(chat.shown).toInt()), compact, fadeTail = chat.shown < chat.partial.length + 1)
                 }
                 chat.error?.let { err ->
                     Column(Modifier.padding(top = 6.dp, start = 2.dp)) {
@@ -598,6 +627,93 @@ private fun DrawerRow(text: String, selected: Boolean, dim: Boolean = false, onC
         ) {
             Txt(text, if (selected) Page.ink else if (dim) Page.muted else Page.ink.copy(alpha = .78f), 15.sp, Modifier.weight(1f), maxLines = 1)
             if (selected) SvgIcon(Ic("M5 12.5l4.5 4.5L19 7.5"), rgba(233, 180, 142, 1f), 18.dp, stroke = 1.8f)
+        }
+    }
+}
+
+
+/* ---------------- 深度思考可见 ---------------- */
+
+/** 开始写回复后：只有一句总结 + ›，不带动效。 */
+@Composable
+private fun ThinkSummaryLine(summary: String, onClick: () -> Unit) {
+    if (summary.isBlank()) return
+    Pressable(onClick, Modifier.padding(bottom = 10.dp), label = "查看思考过程") { pressed ->
+        Row(Modifier.padding(start = 2.dp, top = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+            Txt(summary, if (pressed) Page.ink else Page.muted, 14.sp, Modifier.weight(1f, fill = false), maxLines = 1)
+            Spacer(Modifier.width(6.dp))
+            SvgIcon(Ic("M9.5 6l6 6-6 6"), Page.muted, 14.dp)
+        }
+    }
+}
+
+/** 思考过程抽屉（方案 1）：时间线，一段一个节点；正在写的那段是橙点 + 动效；点节点看全文。 */
+@Composable
+private fun ThinkDrawer(open: Boolean, raw: String, live: Boolean, onClose: () -> Unit) {
+    val shown by androidx.compose.animation.core.animateFloatAsState(
+        if (open) 1f else 0f, tween(if (open) 320 else 220, easing = androidx.compose.animation.core.CubicBezierEasing(.2f, .8f, .2f, 1f)), label = "think",
+    )
+    var detail by remember(open) { mutableIntStateOf(-1) }
+    if (shown <= 0f) return
+    val segs = thinkSegments(raw)
+    val orange = Color(0xFFD97757)
+    Box(Modifier.fillMaxSize()) {
+        Box(Modifier.fillMaxSize().alpha(shown).background(rgba(6, 9, 14, .5f)).pointerInput(Unit) { detectTapGestures { onClose() } })
+        BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
+            val h = maxHeight
+            Column(
+                Modifier
+                    .widthIn(max = 640.dp).fillMaxWidth()
+                    .height(h * .82f)
+                    .graphicsLayer { translationY = (1f - shown) * h.toPx() * .6f; alpha = shown }
+                    .background(rgba(20, 24, 31, .97f), RoundedCornerShape(topStart = 26.dp, topEnd = 26.dp))
+                    .pointerInput(Unit) { detectTapGestures { } }
+                    .padding(start = 22.dp, end = 22.dp, top = 10.dp),
+            ) {
+                Box(Modifier.align(Alignment.CenterHorizontally).width(40.dp).height(4.dp).background(rgba(255, 255, 255, .25f), RoundedCornerShape(2.dp)))
+                Spacer(Modifier.height(14.dp))
+                Box(Modifier.fillMaxWidth()) {
+                    if (detail >= 0) Pressable({ detail = -1 }, Modifier.align(Alignment.CenterStart), label = "返回") { _ ->
+                        SvgIcon(Ic("M14.5 6l-6 6 6 6"), Page.ink, 20.dp, modifier = Modifier.padding(6.dp))
+                    } else Pressable(onClose, Modifier.align(Alignment.CenterStart), label = "关闭") { _ ->
+                        SvgIcon(Icons.close, Page.ink, 20.dp, modifier = Modifier.padding(6.dp))
+                    }
+                    Txt(
+                        if (detail >= 0 && detail < segs.size) firstSentence(segs[detail], 16) else "思考过程",
+                        Page.ink, 16.sp, Modifier.align(Alignment.Center).padding(horizontal = 44.dp), weight = FontWeight.SemiBold, maxLines = 1,
+                    )
+                }
+                Spacer(Modifier.height(16.dp))
+                Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(bottom = 24.dp)) {
+                    if (detail >= 0 && detail < segs.size) {
+                        Txt(segs[detail], Page.ink.copy(alpha = .86f), 14.5.sp, lineHeight = 25.sp)
+                    } else if (segs.isEmpty()) {
+                        ThinkingMotion("", Modifier.padding(4.dp))
+                    } else segs.forEachIndexed { k, seg ->
+                        val isLive = live && k == segs.lastIndex
+                        val last = k == segs.lastIndex
+                        Pressable({ if (!isLive) detail = k }, Modifier.fillMaxWidth(), label = firstSentence(seg)) { pressed ->
+                            Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min).background(if (pressed) rgba(255, 255, 255, .05f) else Color.Transparent, RoundedCornerShape(12.dp))) {
+                                Box(Modifier.width(22.dp).fillMaxHeight()) {
+                                    if (!last) Box(Modifier.padding(top = 18.dp).align(Alignment.TopCenter).width(1.dp).fillMaxHeight().background(rgba(255, 255, 255, .12f)))
+                                    Box(Modifier.padding(top = 9.dp).align(Alignment.TopCenter).size(7.dp).background(if (isLive) orange else rgba(255, 255, 255, .32f), CircleShape))
+                                }
+                                Column(Modifier.weight(1f).padding(start = 8.dp, bottom = 18.dp, end = 6.dp)) {
+                                    if (isLive) ThinkingMotion(latestSentence(seg, 24), size = 14.5.sp)
+                                    else {
+                                        Txt(firstSentence(seg, 24), Page.ink.copy(alpha = .9f), 14.5.sp, maxLines = 1)
+                                        val rest = seg.removePrefix(Regex("[^。！？!?\\n]+[。！？!?]?").find(seg)?.value.orEmpty()).trim()
+                                        if (rest.isNotEmpty()) {
+                                            Spacer(Modifier.height(3.dp))
+                                            Txt(rest.replace('\n', ' '), Page.muted, 12.5.sp, maxLines = 1)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }
