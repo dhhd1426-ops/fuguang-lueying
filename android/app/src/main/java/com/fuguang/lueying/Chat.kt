@@ -51,7 +51,10 @@ fun ChatPage(
     width: Dp,
     blur: Dp,
     hour: Int,
+    title: String,
+    subtitle: String,
     onHome: () -> Unit,
+    onMine: () -> Unit,
     onOpen: (ModalKind) -> Unit,
 ) {
     val side = if (compact) (if (tiny) 18.dp else 24.dp) else (width * .052f)
@@ -62,26 +65,26 @@ fun ChatPage(
                 .windowInsetsPadding(WindowInsets.safeDrawing)
                 .padding(start = side, end = side, top = if (compact) 26.dp else 38.dp, bottom = if (compact) 22.dp else 30.dp),
         ) {
-            ChatHeader(compact)
+            ChatHeader(compact, title, subtitle)
             Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                 Hello(compact, hour)
             }
             Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                 ChatInput(compact, blur, Modifier.widthIn(max = 720.dp).fillMaxWidth())
             }
-            BottomNav(compact, active = "聊天", onHome = onHome, onChat = {}, onOpen = onOpen)
+            BottomNav(compact, active = "聊天", onHome = onHome, onChat = {}, onMine = onMine, onOpen = onOpen)
         }
     }
 }
 
 @Composable
-private fun ChatHeader(compact: Boolean) {
+private fun ChatHeader(compact: Boolean, title: String, subtitle: String) {
     Box(Modifier.fillMaxWidth()) {
         Column(Modifier.align(Alignment.Center), horizontalAlignment = Alignment.CenterHorizontally) {
             val ts = if (compact) 17f else 19f
-            Txt("Amor", Page.ink, ts.sp, spacing = ls(1f, ts), weight = FontWeight.Medium)
+            Txt(title, Page.ink, ts.sp, spacing = ls(1f, ts), weight = FontWeight.Medium)
             Spacer(Modifier.height(5.dp))
-            Txt("Amor · DeepSeek · deepseek-flash", Page.muted, 10.sp, maxLines = 1)
+            Txt(subtitle, Page.muted, 10.sp, maxLines = 1)
         }
         Pressable({}, Modifier.align(Alignment.CenterEnd), label = "新对话") { pressed ->
             SvgIcon(ChatIcons.newChat, if (pressed) Page.ink else Page.ink.copy(alpha = .85f), 22.dp, modifier = Modifier.padding(6.dp))
@@ -115,7 +118,7 @@ private fun ChatInput(compact: Boolean, blur: Dp, modifier: Modifier) {
             .glass(shape, blur, fill = rgba(30, 34, 42, .42f))
             .padding(start = 16.dp, end = 12.dp, top = 15.dp, bottom = 12.dp),
     ) {
-        Txt("回信给 Amor…", Page.muted, if (compact) 14.sp else 15.sp, Modifier.padding(start = 4.dp))
+        Txt("回信给 $title…", Page.muted, if (compact) 14.sp else 15.sp, Modifier.padding(start = 4.dp))
         Spacer(Modifier.height(14.dp))
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Box {
