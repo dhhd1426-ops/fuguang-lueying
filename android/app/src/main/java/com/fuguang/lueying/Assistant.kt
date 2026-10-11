@@ -360,6 +360,37 @@ object ChatApi {
         }
     }
 
+    /** 不流式、不思考的一次问答（整理记忆用），返回正文。 */
+    suspend fun complete(p: Provider, c: ProviderConfig, model: String, system: String, user: String): String = withContext(Dispatchers.IO) {
+        val anthropic = p.kind == "anthropic"
+        val url = if (anthropic) trim(c.base) + "/messages"
+        else trim(c.base) + c.path.trim().let { if (it.startsWith("/")) it else "/$it" }
+        val conn = URL(url).openConnection() as HttpURLConnection
+        try {
+            conn.requestMethod = "POST"
+            conn.connectTimeout = 15_000
+            conn.readTimeout = 60_000
+            conn.doOutput = true
+            conn.setRequestProperty("Content-Type", "application/json")
+            if (anthropic) {
+                conn.setRequestProperty("x-api-key", c.key.trim())
+                conn.setRequestProperty("anthropic-version", "2023-06-01")
+            } else conn.setRequestProperty("Authorization", "Bearer " + c.key.trim())
+            val msgs = JSONArray()
+            if (!anthropic) msgs.put(JSONObject().put("role", "system").put("content", system))
+            msgs.put(JSONObject().put("role", "user").put("content", user))
+            val body = JSONObject().put("model", model).put("messages", msgs).put("stream", false)
+            if (anthropic) body.put("system", system).put("max_tokens", 1024)
+            conn.outputStream.use { it.write(body.toString().toByteArray()) }
+            if (conn.responseCode !in 200..299) throw IllegalStateException("记忆整理失败（${conn.responseCode}）")
+            val o = JSONObject(conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() })
+            if (anthropic) {
+                val arr = o.optJSONArray("content") ?: JSONArray()
+                (0 until arr.length()).mapNotNull { arr.optJSONObject(it) }.filter { it.optString("type") == "text" }.joinToString("") { it.optString("text") }
+            } else o.optJSONArray("choices")?.optJSONObject(0)?.optJSONObject("message")?.optString("content").orEmpty()
+        } finally { runCatching { conn.disconnect() } }
+    }
+
     private fun args(call: Call) = runCatching { JSONObject(call.args.toString().ifBlank { "{}" }) }.getOrDefault(JSONObject())
 
     private suspend fun once(

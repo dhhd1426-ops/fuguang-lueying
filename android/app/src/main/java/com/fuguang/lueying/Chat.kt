@@ -100,6 +100,7 @@ private object ChatIcons {
  * 最后几个字淡淡浮现；写到一半的 ** 符号先不露出来。
  */
 class ChatState(val history: ConvStore) {
+    init { Memory.seed(history) }
     val messages = mutableStateListOf<ChatMsg>()
     /** 当前这段对话在记录里的 id；还没发过消息时为 null。 */
     var convId by mutableStateOf<String?>(null)
@@ -143,6 +144,7 @@ class ChatState(val history: ConvStore) {
         draft = ""
         error = null; needsSetup = false
         messages.add(ChatMsg("user", text))
+        Memory.touch(newChat = messages.size == 1)
         persist()
         sent++
         ask(scope, store)
@@ -174,7 +176,7 @@ class ChatState(val history: ConvStore) {
                 val yu = Yu.connected
                 val question = history.lastOrNull { it.role == "user" }?.text.orEmpty()
                 ChatApi.stream(
-                    p, c, store.activeModel, if (yu) system + "\n" + Yu.system() else system, history, store.deepThink,
+                    p, c, store.activeModel, system + "\n" + Memory.prompt() + (if (yu) "\n" + Yu.system() else ""), history, store.deepThink,
                     onThink = { thinkText += it; thinking = true },
                     tools = if (yu) Tools(Yu.tools, { n, a -> Yu.run(n, a, Yu.vision(p.id)) { refs -> refs.forEach { r -> if (r !in pendingImgs) pendingImgs.add(r) } } }, { toolNote = if (it == "list_todos") "正在查看羽的待办…" else "正在查阅羽的笔记…" }) else null,
                     fallback = if (yu) ({ Yu.context(question) }) else null,
@@ -182,8 +184,14 @@ class ChatState(val history: ConvStore) {
                 streamDone = true
                 // 等书写追上再收尾
                 snapshotFlow { shown >= partial.length }.first { it }
-                if (partial.isNotBlank()) messages.add(ChatMsg("assistant", partial.trim(), thinkText, pendingImgs.toList()))
-                else error = "没有收到回复，换个模型再试"
+                if (partial.isNotBlank()) {
+                    messages.add(ChatMsg("assistant", partial.trim(), thinkText, pendingImgs.toList()))
+                    // 全局记忆：回答完后在后台整理一下值得记住的事
+                    val reply = partial.trim()
+                    val cid = convId.orEmpty()
+                    val title = this@ChatState.history.get(convId)?.title ?: firstSentence(question, 18)
+                    scope.launch { Memory.learn(p, c, store.activeModel, question, reply, cid, title) }
+                } else error = "没有收到回复，换个模型再试"
             } catch (e: kotlinx.coroutines.CancellationException) {
                 if (partial.isNotBlank()) messages.add(ChatMsg("assistant", partial.take(ceil(shown).toInt()).trim(), thinkText, pendingImgs.toList()))
                 throw e
