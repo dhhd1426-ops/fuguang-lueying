@@ -70,7 +70,7 @@ fun ChatPage(
                 Hello(compact, hour)
             }
             Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                ChatInput(compact, blur, Modifier.widthIn(max = 720.dp).fillMaxWidth())
+                ChatInput(compact, blur, title, Modifier.widthIn(max = 720.dp).fillMaxWidth())
             }
             BottomNav(compact, active = "聊天", onHome = onHome, onChat = {}, onMine = onMine, onOpen = onOpen)
         }
@@ -111,7 +111,7 @@ private fun Hello(compact: Boolean, hour: Int) {
 
 /** 玻璃输入框：占位文字、加号、模型、麦克风、暖色语音键。暂不可用。 */
 @Composable
-private fun ChatInput(compact: Boolean, blur: Dp, modifier: Modifier) {
+private fun ChatInput(compact: Boolean, blur: Dp, title: String, modifier: Modifier) {
     val shape = RoundedCornerShape(22.dp)
     Column(
         modifier
