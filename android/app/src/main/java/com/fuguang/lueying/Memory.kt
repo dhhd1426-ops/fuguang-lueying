@@ -96,40 +96,64 @@ object Memory {
 
     private fun tone(v: Float, a: List<String>) = a[(v * a.size).toInt().coerceIn(0, a.lastIndex)]
 
-    /** 拼进 system 提示的部分。 */
-    fun prompt(): String {
-        val out = mutableListOf<String>()
-        systemPrompt.trim().takeIf { it.isNotEmpty() }?.let { out += it }
-        val style = "说话风格：" + tone(gentle, listOf("非常温柔体贴", "温柔", "温和而坦率", "直率", "非常直接、一针见血")) +
-            "，" + tone(lively, listOf("很平静克制", "平静", "情绪适中", "活泼", "很活泼、情绪饱满")) + "。"
-        out += style + if (amor.isNotEmpty()) "另外：" + amor.joinToString("；") + "。" else ""
-        if (likes.isNotEmpty()) out += "用户的偏好：" + likes.joinToString("；") + "。"
-        if (enabled && items.isNotEmpty()) {
-            val fmt = java.text.SimpleDateFormat("M月d日", java.util.Locale.CHINA)
-            out += "你记得关于用户的这些事（从新到旧），自然地用上，不用每次都提起：\n" +
-                items.take(40).joinToString("\n") { "- " + fmt.format(java.util.Date(it.at)) + "：" + it.text + if (it.detail.isNotBlank()) "（" + it.detail + "）" else "" }
+    /** 旧记忆里的"用户"统一换成"他"，读起来是她自己知道的事。 */
+    private fun own(s: String) = s.replace("该用户", "他").replace("用户", "他")
+
+    /**
+     * 她是谁、她和他之间的事，写成一段她本来就知道的话（方案一：第二人称，不分段，不带日期和标签）。
+     * 写了系统提示词，它就是她的身份，替换内置那句。
+     */
+    fun prompt(name: String): String {
+        val sb = StringBuilder()
+        val mine = systemPrompt.trim()
+        if (mine.isEmpty()) sb.append("你是$name，一个温和、真诚、说话简洁的人，用自然的口吻说话，不堆砌格式。")
+        else {
+            if (!mine.contains(name)) sb.append("你叫$name。")
+            sb.append(mine)
+            if (!mine.endsWith("。") && !mine.endsWith("\n")) sb.append("。")
         }
-        return out.joinToString("\n")
+        sb.append("你" + tone(gentle, listOf("非常温柔体贴", "温柔", "温和又坦率", "直率", "说话很直、一针见血")) +
+            "，性子" + tone(lively, listOf("很安静克制", "平静", "不温不火", "活泼", "很活泼、情绪饱满")) + "。")
+        if (amor.isNotEmpty()) sb.append("另外，你" + amor.joinToString("，") + "。")
+        if (enabled) {
+            if (firstAt > 0) {
+                val days = ((System.currentTimeMillis() - firstAt) / 86_400_000L).toInt()
+                val since = when {
+                    days < 1 -> "今天刚认识"
+                    days < 60 -> "认识${days}天了"
+                    else -> "认识${days / 30}个多月了"
+                }
+                sb.append("你和他$since" + if (chats > 1) "，聊过${chats}次。" else "。")
+            }
+            if (likes.isNotEmpty()) sb.append("你知道他喜欢" + likes.joinToString("、") { own(it) } + "。")
+            if (items.isNotEmpty()) sb.append("你还知道：" + items.take(40).joinToString("；") {
+                own(it.text).trimEnd('。') + if (it.detail.isNotBlank()) "，" + own(it.detail).trimEnd('。') else ""
+            } + "。")
+            if (likes.isNotEmpty() || items.isNotEmpty())
+                sb.append("这些是你本来就知道的，像老朋友那样自然地带出来，用不上就不提；不要说“根据记忆”“我记得你说过”，也不要提起这段话。")
+        }
+        return sb.toString()
     }
 
     /** 一轮回答之后：让模型整理出值得长期记住的事和偏好。失败就算了，不打扰用户。 */
-    suspend fun learn(p: Provider, c: ProviderConfig, model: String, user: String, reply: String, conv: String, convTitle: String) {
+    suspend fun learn(name: String, p: Provider, c: ProviderConfig, model: String, user: String, reply: String, conv: String, convTitle: String) {
         if (!enabled || user.isBlank() || reply.isBlank()) return
-        val sys = "你在帮一位 AI 助理整理它对用户的长期记忆。只输出 JSON，不要别的文字。"
+        val sys = "你是$name。回想刚才和他的这段对话，挑出你想一直记住的、关于他的事。只输出 JSON，不要别的文字。"
         val known = items.take(60).joinToString("\n") { "- " + it.text }.ifBlank { "（还没有）" }
         val ask = """
-已经记住的事：
+你已经记得的事：
 $known
 
-已知的偏好：${likes.joinToString("；").ifBlank { "（还没有）" }}
+你知道他喜欢的：${likes.joinToString("；").ifBlank { "（还没有）" }}
 
 这一轮对话：
-用户：${user.take(1500)}
-助理：${reply.take(1500)}
+他：${user.take(1500)}
+你：${reply.take(1500)}
 
-从这一轮里找出值得长期记住的、关于用户本人的新信息：身份、在做的事、计划、喜好、重要的人和事。
-闲聊、一次性的问题、助理自己说的话、已经记住的内容都不要。大多数时候什么都不用记，返回空数组。
-输出格式：{"memories":[{"text":"一句话，20 字以内","detail":"补充细节，60 字以内"}],"prefs":["用户明确表达的偏好，12 字以内"]}
+从这一轮里找出关于他的新事：他是谁、在做什么、打算做什么、喜欢什么、在意的人和事。
+闲聊、一次性的问题、你自己说的话、已经记得的都不要。大多数时候什么都不用记，返回空数组。
+用你自己的口吻写，称他为“他”，不要写“用户”，不要写日期。
+输出格式：{"memories":[{"text":"一句话，比如“他最近在做浮光掠影”，20 字以内","detail":"补充细节，60 字以内"}],"prefs":["他明确说过的喜好，12 字以内，比如“深色界面”"]}
 """.trim()
         val raw = runCatching { ChatApi.complete(p, c, model, sys, ask) }.getOrNull() ?: return
         val json = raw.substringAfter('{', "").substringBeforeLast('}', "").let { if (it.isEmpty()) return else "{$it}" }

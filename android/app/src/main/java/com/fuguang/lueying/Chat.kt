@@ -185,7 +185,7 @@ class ChatState(val history: ConvStore) {
         busy = true; thinking = false; thinkText = ""; partial = ""; shown = 0f; streamDone = false
         pendingImgs.clear()
         val history = messages.toList()
-        val system = "你是${store.name}，一个温和、真诚、说话简洁的中文助理。用自然的口吻回答，不堆砌格式。"
+        val name = store.name
         job = scope.launch {
             try {
                 // 连接了羽：给模型两个查笔记的工具
@@ -193,7 +193,7 @@ class ChatState(val history: ConvStore) {
                 val yu = Yu.connected
                 val question = history.lastOrNull { it.role == "user" }?.text.orEmpty()
                 ChatApi.stream(
-                    p, c, store.activeModel, system + "\n" + Memory.prompt() + (if (yu) "\n" + Yu.system() else ""), history, store.deepThink,
+                    p, c, store.activeModel, Memory.prompt(name) + (if (yu) "\n\n— 以下是你能用的工具 —\n" + Yu.system() else ""), history, store.deepThink,
                     onThink = { thinkText += it; thinking = true },
                     tools = if (yu) Tools(Yu.tools, { n, a -> Yu.run(n, a, Yu.vision(p.id)) { refs -> refs.forEach { r -> if (r !in pendingImgs) pendingImgs.add(r) } } }, { toolNote = if (it == "list_todos") "正在查看羽的待办…" else "正在查阅羽的笔记…" }) else null,
                     fallback = if (yu) ({ Yu.context(question) }) else null,
@@ -207,7 +207,7 @@ class ChatState(val history: ConvStore) {
                     val reply = partial.trim()
                     val cid = convId.orEmpty()
                     val title = this@ChatState.history.get(convId)?.title ?: firstSentence(question, 18)
-                    scope.launch { Memory.learn(p, c, store.activeModel, question, reply, cid, title) }
+                    scope.launch { Memory.learn(name, p, c, store.activeModel, question, reply, cid, title) }
                 } else error = "没有收到回复，换个模型再试"
             } catch (e: kotlinx.coroutines.CancellationException) {
                 if (partial.isNotBlank()) messages.add(ChatMsg("assistant", partial.take(ceil(shown).toInt()).trim(), thinkText, pendingImgs.toList()))

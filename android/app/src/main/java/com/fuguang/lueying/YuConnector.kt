@@ -61,7 +61,7 @@ object Yu {
         if (o == null) return "暂时读不到羽的笔记。"
         return when (o.optString("error")) {
             "" -> null
-            "not_connected" -> { set("off", 0); "羽还没有连接，或者已经断开。请告诉用户到「我的 → 连接器」里重新连接羽。" }
+            "not_connected" -> { set("off", 0); "羽还没有连接，或者已经断开。请告诉他到「我的 → 连接器」里重新连接羽。" }
             "not_found" -> "没有找到这篇笔记。"
             else -> "读取羽的笔记出错：" + o.optString("error")
         }
@@ -101,8 +101,8 @@ object Yu {
         val pics = if (!vision) emptyList() else refs.take(MAX_VISION).mapNotNull { ref ->
             bytes(ref, 1024)?.let { ToolImage("image/jpeg", android.util.Base64.encodeToString(it, android.util.Base64.NO_WRAP)) }
         }
-        val note = if (pics.isNotEmpty()) "\n（笔记里有 ${refs.size} 张图片，附上了前 ${pics.size} 张；图片已经显示给用户看了。）"
-        else "\n（笔记里有 ${refs.size} 张图片，已经显示给用户看了；你这边看不到图片内容。）"
+        val note = if (pics.isNotEmpty()) "\n（笔记里有 ${refs.size} 张图片，附上了前 ${pics.size} 张；图片已经显示给他看了。）"
+        else "\n（笔记里有 ${refs.size} 张图片，已经显示给他看了；你这边看不到图片内容。）"
         ToolOut(o.toString() + note, pics)
     }
 
@@ -149,16 +149,16 @@ object Yu {
 
     /** 告诉模型：羽已经连上、本机就能查，提到笔记就一定先查，不要说自己访问不了。 */
     fun system(): String =
-        "用户已经把自己的笔记 App「羽」连接给你了（就在这台手机上，已授权，可以直接查），里面有 $notes 篇笔记。" +
+        "他把自己的笔记 App「羽」连接给你了（就在这台手机上，已授权，可以直接查），里面有 $notes 篇笔记。" +
             "你有三个工具：search_notes 搜索笔记，read_note 读一篇笔记的全文和图片，list_todos 看待办。" +
-            "只要用户提到笔记、记录、写过的东西、笔记里的图片、要做的事或提醒，就是指羽里的内容：先调用工具去查，再回答。" +
-            "不要说你无法访问用户的笔记，也不要让用户把内容发给你。" +
+            "只要他提到笔记、记录、写过的东西、笔记里的图片、要做的事或提醒，就是指羽里的内容：先调用工具去查，再回答。" +
+            "不要说你无法看他的笔记，也不要让他把内容发给你。" +
             "不知道搜什么关键词时，用空字符串调用 search_notes 看最近的笔记。引用笔记时说出笔记标题。"
 
     val tools = listOf(
         ToolSpec(
             "search_notes",
-            "在用户的笔记 App「羽」里搜索笔记，返回标题、片段和 id。用户问到自己的笔记、记录、笔记里的图片时使用。" +
+            "在他的笔记 App「羽」里搜索笔记，返回标题、片段和 id。他问到自己的笔记、记录、笔记里的图片时使用。" +
                 "关键词可以有多个，用空格分开；#标签 按标签筛选；空字符串返回最近的笔记。",
             JSONObject().put("type", "object")
                 .put("properties", JSONObject().put("query", JSONObject().put("type", "string").put("description", "搜索关键词")))
@@ -173,7 +173,7 @@ object Yu {
         ),
         ToolSpec(
             "list_todos",
-            "列出用户在「羽」里的待办（内容、是否完成、提醒时间、重复规则），未完成的在前。",
+            "列出他在「羽」里的待办（内容、是否完成、提醒时间、重复规则），未完成的在前。",
             JSONObject().put("type", "object")
                 .put("properties", JSONObject().put("include_done", JSONObject().put("type", "boolean").put("description", "是否包含已完成的待办，默认 false"))),
         ),
@@ -194,7 +194,7 @@ object Yu {
         var r = search(question, 5)
         // 整句话搜不到时，退回给最近的笔记
         if (!r.startsWith("{")) r = search("", 8)
-        return "以下是在用户的笔记 App「羽」里按这次问题搜到的笔记（可能不相关，引用时说出笔记标题）：\n$r"
+        return "以下是在他的笔记 App「羽」里按他这次的问题搜到的笔记（可能不相关，引用时说出笔记标题）：\n$r"
     }
 }
 
