@@ -217,7 +217,8 @@ object AssistantApi {
 }
 
 /** 一条聊天消息。role = "user" / "assistant"。 */
-data class ChatMsg(val role: String, val text: String, val think: String = "")
+/** imgs：这条回复里引用到的羽的笔记图片，每项是 "笔记id/图片id"。 */
+data class ChatMsg(val role: String, val text: String, val think: String = "", val imgs: List<String> = emptyList())
 
 /** 把思考原文切成段：按空行分；只有一段时按句号分成几小段。 */
 fun thinkSegments(raw: String): List<String> {
@@ -248,9 +249,13 @@ fun thinkSummary(raw: String): String = thinkSegments(raw).lastOrNull()?.let { f
 /** 这一轮对话可以用的工具：工具说明、怎么执行、执行时告诉界面一声。 */
 class Tools(
     val specs: List<ToolSpec>,
-    val run: suspend (String, JSONObject) -> String,
+    val run: suspend (String, JSONObject) -> ToolOut,
     val onUse: suspend (String) -> Unit,
 )
+
+/** 工具结果：文字，加上要给模型看的图片。 */
+class ToolOut(val text: String, val images: List<ToolImage> = emptyList())
+class ToolImage(val mime: String, val base64: String)
 
 /**
  * 流式对话：OpenAI 兼容接口（stream=true 的 SSE）或 Anthropic messages 接口。
@@ -314,7 +319,13 @@ object ChatApi {
                 r.calls.forEach { call ->
                     tools.onUse(call.name.toString())
                     val out = tools.run(call.name.toString(), args(call))
-                    results.put(JSONObject().put("type", "tool_result").put("tool_use_id", call.id).put("content", out))
+                    val content: Any = if (out.images.isEmpty()) out.text else JSONArray().apply {
+                        put(JSONObject().put("type", "text").put("text", out.text))
+                        out.images.forEach { im ->
+                            put(JSONObject().put("type", "image").put("source", JSONObject().put("type", "base64").put("media_type", im.mime).put("data", im.base64)))
+                        }
+                    }
+                    results.put(JSONObject().put("type", "tool_result").put("tool_use_id", call.id).put("content", content))
                 }
                 msgs.put(JSONObject().put("role", "user").put("content", results))
             } else {
@@ -330,10 +341,20 @@ object ChatApi {
                 // DeepSeek 思考模式下用工具，要把这一轮的思考原样带回去
                 if (p.id == "deepseek" && r.reasoning.isNotEmpty()) am.put("reasoning_content", r.reasoning)
                 msgs.put(am)
+                // 工具消息只能放文字，图片另起一条放在后面给模型看
+                val pics = JSONArray()
                 r.calls.forEach { call ->
                     tools.onUse(call.name.toString())
                     val out = tools.run(call.name.toString(), args(call))
-                    msgs.put(JSONObject().put("role", "tool").put("tool_call_id", call.id).put("content", out))
+                    msgs.put(JSONObject().put("role", "tool").put("tool_call_id", call.id).put("content", out.text))
+                    out.images.forEach { im ->
+                        pics.put(JSONObject().put("type", "image_url").put("image_url", JSONObject().put("url", "data:${im.mime};base64,${im.base64}")))
+                    }
+                }
+                if (pics.length() > 0) {
+                    val content = JSONArray().put(JSONObject().put("type", "text").put("text", "（这是刚才读取的笔记里的图片）"))
+                    for (k in 0 until pics.length()) content.put(pics.get(k))
+                    msgs.put(JSONObject().put("role", "user").put("content", content))
                 }
             }
         }

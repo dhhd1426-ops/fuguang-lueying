@@ -111,6 +111,8 @@ class ChatState(val history: ConvStore) {
     var thinkText by mutableStateOf("")
     /** 正在用工具时的一行提示，如「正在查阅羽的笔记…」。 */
     var toolNote by mutableStateOf("")
+    /** 这轮回答里读到的羽的笔记图片。 */
+    val pendingImgs = mutableStateListOf<String>()
     var error by mutableStateOf<String?>(null)
     var needsSetup by mutableStateOf(false)
     var draft by mutableStateOf("")
@@ -162,6 +164,7 @@ class ChatState(val history: ConvStore) {
             return
         }
         busy = true; thinking = false; thinkText = ""; partial = ""; shown = 0f; streamDone = false
+        pendingImgs.clear()
         val history = messages.toList()
         val system = "你是${store.name}，一个温和、真诚、说话简洁的中文助理。用自然的口吻回答，不堆砌格式。"
         job = scope.launch {
@@ -173,22 +176,22 @@ class ChatState(val history: ConvStore) {
                 ChatApi.stream(
                     p, c, store.activeModel, if (yu) system + "\n" + Yu.SYSTEM else system, history, store.deepThink,
                     onThink = { thinkText += it; thinking = true },
-                    tools = if (yu) Tools(Yu.tools, { n, a -> Yu.run(n, a) }, { toolNote = if (it == "list_todos") "正在查看羽的待办…" else "正在查阅羽的笔记…" }) else null,
+                    tools = if (yu) Tools(Yu.tools, { n, a -> Yu.run(n, a, Yu.vision(p.id)) { refs -> refs.forEach { r -> if (r !in pendingImgs) pendingImgs.add(r) } } }, { toolNote = if (it == "list_todos") "正在查看羽的待办…" else "正在查阅羽的笔记…" }) else null,
                     fallback = if (yu) ({ Yu.context(question) }) else null,
                 ) { partial += it; thinking = false; toolNote = "" }
                 streamDone = true
                 // 等书写追上再收尾
                 snapshotFlow { shown >= partial.length }.first { it }
-                if (partial.isNotBlank()) messages.add(ChatMsg("assistant", partial.trim(), thinkText))
+                if (partial.isNotBlank()) messages.add(ChatMsg("assistant", partial.trim(), thinkText, pendingImgs.toList()))
                 else error = "没有收到回复，换个模型再试"
             } catch (e: kotlinx.coroutines.CancellationException) {
-                if (partial.isNotBlank()) messages.add(ChatMsg("assistant", partial.take(ceil(shown).toInt()).trim(), thinkText))
+                if (partial.isNotBlank()) messages.add(ChatMsg("assistant", partial.take(ceil(shown).toInt()).trim(), thinkText, pendingImgs.toList()))
                 throw e
             } catch (e: Exception) {
-                if (partial.isNotBlank()) messages.add(ChatMsg("assistant", partial.trim(), thinkText))
+                if (partial.isNotBlank()) messages.add(ChatMsg("assistant", partial.trim(), thinkText, pendingImgs.toList()))
                 error = e.message ?: "出错了"
             } finally {
-                partial = ""; shown = 0f; busy = false; thinking = false; thinkText = ""; toolNote = ""
+                partial = ""; shown = 0f; busy = false; thinking = false; thinkText = ""; toolNote = ""; pendingImgs.clear()
                 persist()
             }
         }
@@ -252,6 +255,7 @@ fun ChatPage(
     /** 正在看哪条消息的思考：-1 = 正在进行的这一轮。 */
     var thinkOf by remember { mutableIntStateOf(-1) }
     var thinkOpen by remember { mutableStateOf(false) }
+    var viewing by remember { mutableStateOf<String?>(null) }
     androidx.activity.compose.BackHandler(enabled = thinkOpen) { thinkOpen = false }
     androidx.activity.compose.BackHandler(enabled = picker) { picker = false }
     // 左侧菜单：从左边滑出，盖在聊天页上面（聊天页不动，只压暗）；点右边露出的部分收回
@@ -275,7 +279,7 @@ fun ChatPage(
             ChatHeader(compact, title, subtitle, onMenu = { menu = true }) { chat.reset() }
             Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                 if (chat.messages.isEmpty() && !chat.busy) Hello(compact, hour)
-                else Conversation(chat, store, compact, flight, onSetup = onSetup, onRetry = { chat.retry(scope, store) }, onThink = { thinkOf = it; thinkOpen = true })
+                else Conversation(chat, store, compact, flight, onSetup = onSetup, onRetry = { chat.retry(scope, store) }, onThink = { thinkOf = it; thinkOpen = true }, onImage = { viewing = it })
             }
             Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                 ChatInput(
@@ -325,6 +329,7 @@ fun ChatPage(
             live = liveThink && chat.busy && chat.partial.isEmpty(),
             onClose = { thinkOpen = false },
         )
+        NoteImageViewer(viewing) { viewing = null }
     }
 }
 
@@ -360,7 +365,7 @@ private fun Hello(compact: Boolean, hour: Int) {
 /* ---------------- 对话区 ---------------- */
 
 @Composable
-private fun Conversation(chat: ChatState, store: AssistantStore, compact: Boolean, flight: SendFlight, onSetup: () -> Unit, onRetry: () -> Unit, onThink: (Int) -> Unit) {
+private fun Conversation(chat: ChatState, store: AssistantStore, compact: Boolean, flight: SendFlight, onSetup: () -> Unit, onRetry: () -> Unit, onThink: (Int) -> Unit, onImage: (String) -> Unit) {
     val scroll = rememberScrollState()
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
@@ -395,6 +400,7 @@ private fun Conversation(chat: ChatState, store: AssistantStore, compact: Boolea
                     } else {
                         if (m.think.isNotBlank()) ThinkSummaryLine(thinkSummary(m.think)) { onThink(i) }
                         Reply(m.text, compact, fadeTail = false)
+                        NoteImageRow(m.imgs, onImage)
                     }
                 }
                 if (chat.busy) {
@@ -415,6 +421,7 @@ private fun Conversation(chat: ChatState, store: AssistantStore, compact: Boolea
                         if (chat.thinkText.isNotBlank()) ThinkSummaryLine(thinkSummary(chat.thinkText)) { onThink(-1) }
                     }
                     if (chat.partial.isNotEmpty()) Reply(chat.partial.take(ceil(chat.shown).toInt()), compact, fadeTail = chat.shown < chat.partial.length + 1)
+                    NoteImageRow(chat.pendingImgs.toList(), onImage)
                     if (chat.partial.isNotEmpty() && chat.toolNote.isNotEmpty()) ThinkingMotion(chat.toolNote, Modifier.padding(start = 2.dp, top = 8.dp))
                 }
                 chat.error?.let { err ->

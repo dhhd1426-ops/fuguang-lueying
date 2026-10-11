@@ -25,6 +25,8 @@ object Yu {
     /** "missing" 未安装 / "off" 未连接 / "on" 已连接 */
     var state by mutableStateOf("off")
     var notes by mutableIntStateOf(0)
+    /** 羽的接口版本：2 起支持读笔记里的图片。 */
+    var api by mutableIntStateOf(1)
 
     private var app: Context? = null
     fun init(ctx: Context) { app = ctx.applicationContext }
@@ -48,6 +50,7 @@ object Yu {
         val ctx = app ?: return@withContext
         if (!installed(ctx)) { set("missing", 0); return@withContext }
         val s = call("status", null)
+        if (s != null) withContext(Dispatchers.Main) { api = s.optInt("api", 1) }
         if (s != null && s.optBoolean("connected")) set("on", s.optInt("notes")) else set("off", 0)
     }
 
@@ -82,10 +85,44 @@ object Yu {
         JSONObject().put("notes", out).toString()
     }
 
-    suspend fun read(id: String): String = withContext(Dispatchers.IO) {
+    /**
+     * 读一篇笔记。羽支持图片（api ≥ 2）时：图片 id 记进 onImgs 给界面显示；
+     * vision = true 时再把前几张缩小后带给模型看。
+     */
+    suspend fun read(id: String, vision: Boolean, onImgs: suspend (List<String>) -> Unit): ToolOut = withContext(Dispatchers.IO) {
         val o = call("read", id.trim())
-        error(o)?.let { return@withContext it }
-        o!!.put("created", date(o.optLong("created"))).put("updated", date(o.optLong("updated"))).toString()
+        error(o)?.let { return@withContext ToolOut(it) }
+        o!!.put("created", date(o.optLong("created"))).put("updated", date(o.optLong("updated")))
+        val imgs = o.optJSONArray("images")
+        if (api < 2 || imgs == null || imgs.length() == 0) return@withContext ToolOut(o.toString())
+        val noteId = o.optString("id").ifBlank { id.trim() }
+        val refs = List(imgs.length()) { k -> noteId + "/" + imgs.optJSONObject(k)?.optString("id").orEmpty() }.filter { !it.endsWith("/") }
+        withContext(Dispatchers.Main) { onImgs(refs) }
+        val pics = if (!vision) emptyList() else refs.take(MAX_VISION).mapNotNull { ref ->
+            bytes(ref, 1024)?.let { ToolImage("image/jpeg", android.util.Base64.encodeToString(it, android.util.Base64.NO_WRAP)) }
+        }
+        val note = if (pics.isNotEmpty()) "\n（笔记里有 ${refs.size} 张图片，附上了前 ${pics.size} 张；图片已经显示给用户看了。）"
+        else "\n（笔记里有 ${refs.size} 张图片，已经显示给用户看了；你这边看不到图片内容。）"
+        ToolOut(o.toString() + note, pics)
+    }
+
+    private const val MAX_VISION = 4
+
+    private fun imageUri(ref: String, max: Int): Uri =
+        Uri.parse("content://com.yu.notes.connector/image/" + ref.split('/').joinToString("/") { Uri.encode(it) } + "?max=$max")
+
+    /** 从羽读一张图（羽缩放成 JPEG，长边不超过 max）。 */
+    private fun bytes(ref: String, max: Int): ByteArray? {
+        val ctx = app ?: return null
+        return runCatching { ctx.contentResolver.openInputStream(imageUri(ref, max))?.use { it.readBytes() } }.getOrNull()
+    }
+
+    private val cache = android.util.LruCache<String, android.graphics.Bitmap>(24)
+
+    /** 给界面用：读一张图成 Bitmap，带缓存。 */
+    suspend fun bitmap(ref: String, max: Int): android.graphics.Bitmap? = withContext(Dispatchers.IO) {
+        val key = "$ref@$max"
+        cache.get(key) ?: bytes(ref, max)?.let { b -> android.graphics.BitmapFactory.decodeByteArray(b, 0, b.size) }?.also { cache.put(key, it) }
     }
 
     suspend fun todos(includeDone: Boolean): String = withContext(Dispatchers.IO) {
@@ -136,12 +173,15 @@ object Yu {
         ),
     )
 
-    suspend fun run(name: String, args: JSONObject): String = when (name) {
-        "search_notes" -> search(args.optString("query"))
-        "read_note" -> read(args.optString("id"))
-        "list_todos" -> todos(args.optBoolean("include_done", false))
-        else -> "没有这个工具：$name"
+    suspend fun run(name: String, args: JSONObject, vision: Boolean, onImgs: suspend (List<String>) -> Unit): ToolOut = when (name) {
+        "search_notes" -> ToolOut(search(args.optString("query")))
+        "read_note" -> read(args.optString("id"), vision, onImgs)
+        "list_todos" -> ToolOut(todos(args.optBoolean("include_done", false)))
+        else -> ToolOut("没有这个工具：$name")
     }
+
+    /** 能看图的供应商：Claude、OpenAI、Gemini。其他家不一定支持，就只把图显示给用户。 */
+    fun vision(providerId: String) = providerId in setOf("claude", "openai", "gemini")
 
     /** 不支持工具的模型：先用用户的问题搜一次，把结果放进 system 提示。 */
     suspend fun context(question: String): String {
