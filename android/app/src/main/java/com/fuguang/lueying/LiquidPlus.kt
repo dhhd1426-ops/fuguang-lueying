@@ -13,6 +13,9 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -53,9 +56,14 @@ class LiquidPlusState {
     var open by mutableStateOf(false)
     /** 加号圆心，屏幕坐标（px）。 */
     var center by mutableStateOf(Offset.Unspecified)
+    /** 加号左上角，屏幕坐标（px），用来把手指位置换算成屏幕坐标。 */
+    var origin by mutableStateOf(Offset.Zero)
+    /** 手指正停在哪颗球上：-1 = 没有。 */
+    var hover by mutableStateOf(-1)
 }
 
 private val GooColor = Color(0xFF2B2F37)
+private val GooHover = Color(0xFF4A3F37)
 private val Items = listOf("照片" to Ic("M4 7.5A2.5 2.5 0 0 1 6.5 5h11A2.5 2.5 0 0 1 20 7.5v9a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 16.5zM5 17l4.5-4.5 3.5 3.5 2.5-2.5L20 17", circles = listOf(floatArrayOf(9.5f, 10f, 1.6f))),
     "拍照" to Ic("M4 8.5A1.5 1.5 0 0 1 5.5 7H8l1.5-2h5L16 7h2.5A1.5 1.5 0 0 1 20 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 17.5z", circles = listOf(floatArrayOf(12f, 12.5f, 3.2f))),
     "文件" to Ic("M7 3.5h7l4 4V20.5H7zM14 3.5v4h4"))
@@ -63,22 +71,47 @@ private val Items = listOf("照片" to Ic("M4 7.5A2.5 2.5 0 0 1 6.5 5h11A2.5 2.5
 /** 三颗球相对加号圆心的落点（dp）。 */
 private val Spots = listOf(Offset(-2f, -128f), Offset(58f, -118f), Offset(112f, -96f))
 
-/** 输入框里的加号：长按打开，打开时变成 × 点它收起。 */
+/** 输入框里的加号：按住约半秒，小球滴出；手指不松滑到某颗球上再松开就是选它，在别处松开就融回去。 */
 @Composable
-fun LiquidPlusButton(state: LiquidPlusState) {
+fun LiquidPlusButton(state: LiquidPlusState, onPick: (Int) -> Unit) {
     val haptic = LocalHapticFeedback.current
     val rot = remember { Animatable(0f) }
     LaunchedEffect(state.open) { rot.animateTo(if (state.open) 45f else 0f, spring(dampingRatio = .5f, stiffness = Spring.StiffnessMediumLow)) }
     Box(
         Modifier
             .size(36.dp)
-            .onGloballyPositioned { state.center = it.boundsInRoot().center }
+            .onGloballyPositioned { state.center = it.boundsInRoot().center; state.origin = it.positionInRoot() }
             .border(1.dp, Page.line, CircleShape)
             .pointerInput(Unit) {
-                detectTapGestures(
-                    onTap = { if (state.open) state.open = false },
-                    onLongPress = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); state.open = true },
-                )
+                awaitEachGesture {
+                    awaitFirstDown(requireUnconsumed = false)
+                    // 没按够时间就松开：什么都不做
+                    val early = withTimeoutOrNull(viewConfiguration.longPressTimeoutMillis) { waitForUpOrCancellation() }
+                    if (early != null) return@awaitEachGesture
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    state.open = true
+                    val hitR = 34.dp.toPx()
+                    while (true) {
+                        val ev = awaitPointerEvent()
+                        val ch = ev.changes.firstOrNull() ?: break
+                        val p = state.origin + ch.position
+                        var h = -1
+                        Spots.forEachIndexed { k, sp ->
+                            val c = state.center + Offset(sp.x.dp.toPx(), sp.y.dp.toPx())
+                            if ((p - c).getDistance() < hitR) h = k
+                        }
+                        if (h != state.hover) {
+                            if (h >= 0) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            state.hover = h
+                        }
+                        if (!ch.pressed) break
+                        ch.consume()
+                    }
+                    val picked = state.hover
+                    state.hover = -1
+                    state.open = false
+                    if (picked >= 0) onPick(picked)
+                }
             },
         contentAlignment = Alignment.Center,
     ) { SvgIcon(Ic("M12 5v14M5 12h14"), Page.ink, 18.dp, modifier = Modifier.rotate(rot.value)) }
@@ -121,7 +154,8 @@ fun LiquidPlusLayer(state: LiquidPlusState, onPick: (Int) -> Unit) {
             drawCircle(GooColor, r * .82f, c, alpha = base.value)
             anims.forEachIndexed { k, a ->
                 val p = Offset(Spots[k].x.dp.toPx(), Spots[k].y.dp.toPx()) * a.value
-                drawCircle(GooColor, r * (.55f + .45f * a.value.coerceIn(0f, 1f)), c + p)
+                val grow = if (state.hover == k) 1.18f else 1f
+                drawCircle(if (state.hover == k) GooHover else GooColor, r * grow * (.55f + .45f * a.value.coerceIn(0f, 1f)), c + p)
             }
         }
         // 图标与文字，不加滤镜，保持清楚
@@ -139,7 +173,7 @@ fun LiquidPlusLayer(state: LiquidPlusState, onPick: (Int) -> Unit) {
                     Modifier.size(44.dp).pointerInput(k) { detectTapGestures { onPick(k); state.open = false } },
                     contentAlignment = Alignment.Center,
                 ) { SvgIcon(Items[k].second, Page.ink, 19.dp) }
-                Txt(Items[k].first, Page.muted, 11.sp, Modifier.padding(top = 4.dp))
+                Txt(Items[k].first, if (state.hover == k) Page.ink else Page.muted, 11.sp, Modifier.padding(top = 4.dp))
             }
         }
     }

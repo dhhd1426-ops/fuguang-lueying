@@ -554,7 +554,7 @@ private fun ChatInput(
         )
         Spacer(Modifier.height(14.dp))
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            LiquidPlusButton(plus)
+            LiquidPlusButton(plus) { /* 照片、拍照、文件：功能后面接 */ }
             Pressable(onPick, enabled = !chat.busy, label = "选择模型") { pressed ->
                 Row(
                     Modifier.widthIn(max = 240.dp)
