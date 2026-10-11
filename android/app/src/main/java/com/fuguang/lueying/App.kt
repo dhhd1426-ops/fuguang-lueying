@@ -293,7 +293,7 @@ private fun Header(
         Row(horizontalArrangement = Arrangement.spacedBy(gap), verticalAlignment = Alignment.CenterVertically) {
             NavItem("浮光", true, compact) { onOpen(ModalKind.Scene) }
             NavItem("掠影", false, compact, dot = newLuoying, onClick = onReader)
-            NavItem("留言", false, compact, dot = newLetters, onClick = onLetters)
+            NavItem("绯句", false, compact, dot = newLetters, onClick = onLetters)
             NavItem("关于", false, compact) { onOpen(ModalKind.About) }
         }
         if (!compact) {
