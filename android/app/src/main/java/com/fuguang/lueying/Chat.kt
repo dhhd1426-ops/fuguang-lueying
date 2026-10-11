@@ -237,12 +237,6 @@ fun ChatPage(
 @Composable
 private fun ChatHeader(compact: Boolean, title: String, subtitle: String, onNew: () -> Unit) {
     Box(Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
-        Column(Modifier.align(Alignment.Center).padding(horizontal = 44.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            val ts = if (compact) 17f else 19f
-            Txt(title, Page.ink, ts.sp, spacing = ls(1f, ts), weight = FontWeight.Medium, maxLines = 1)
-            Spacer(Modifier.height(5.dp))
-            Txt(subtitle, Page.muted, 10.sp, maxLines = 1)
-        }
         Pressable(onNew, Modifier.align(Alignment.CenterEnd), label = "新对话") { pressed ->
             SvgIcon(ChatIcons.newChat, if (pressed) Page.ink else Page.ink.copy(alpha = .85f), 22.dp, modifier = Modifier.padding(6.dp))
         }
@@ -485,7 +479,7 @@ private fun ChatInput(
                 }
             }
             Row(
-                Modifier.weight(1f, fill = false).background(rgba(255, 255, 255, .07f), RoundedCornerShape(50)).padding(horizontal = 14.dp, vertical = 9.dp),
+                Modifier.widthIn(max = 240.dp).background(rgba(255, 255, 255, .07f), RoundedCornerShape(50)).padding(horizontal = 14.dp, vertical = 9.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Txt(model, Page.ink, 12.sp, maxLines = 1)
