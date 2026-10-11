@@ -43,6 +43,10 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.foundation.layout.only
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -140,7 +144,7 @@ class ChatState {
         val system = "你是${store.name}，一个温和、真诚、说话简洁的中文助理。用自然的口吻回答，不堆砌格式。"
         job = scope.launch {
             try {
-                ChatApi.stream(p, c, store.activeModel, system, history, onThink = { thinking = true }) { partial += it; thinking = false }
+                ChatApi.stream(p, c, store.activeModel, system, history, store.deepThink, onThink = { thinking = true }) { partial += it; thinking = false }
                 streamDone = true
                 // 等书写追上再收尾
                 snapshotFlow { shown >= partial.length }.first { it }
@@ -186,6 +190,7 @@ fun ChatPage(
     onHome: () -> Unit,
     onMine: () -> Unit,
     onSetup: () -> Unit,
+    onMoreModels: () -> Unit,
     onOpen: (ModalKind) -> Unit,
 ) {
     val side = if (compact) (if (tiny) 18.dp else 24.dp) else (width * .052f)
@@ -208,6 +213,8 @@ fun ChatPage(
         }
     }
 
+    var picker by remember { mutableStateOf(false) }
+    androidx.activity.compose.BackHandler(enabled = picker) { picker = false }
     Box(Modifier.fillMaxSize().background(rgba(14, 17, 23, .38f))) {
         Column(
             Modifier
@@ -223,7 +230,8 @@ fun ChatPage(
             }
             Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                 ChatInput(
-                    compact, blur, title, store.activeModel, chat,
+                    compact, blur, title, store.activeModel, store.deepThink, chat,
+                    onPick = { picker = true },
                     onSend = { chat.send(scope, store) },
                     onStop = { chat.stop() },
                     modifier = Modifier.widthIn(max = 720.dp).fillMaxWidth(),
@@ -231,6 +239,7 @@ fun ChatPage(
             }
             BottomNav(compact, active = "聊天", onHome = onHome, onChat = {}, onMine = onMine, onOpen = onOpen)
         }
+        ModelDrawer(picker, store, compact, onClose = { picker = false }, onMore = { picker = false; onMoreModels() })
     }
 }
 
@@ -300,7 +309,7 @@ private fun Conversation(chat: ChatState, store: AssistantStore, compact: Boolea
                     }
                 }
                 if (chat.busy) {
-                    if (chat.partial.isEmpty()) Thinking(if (chat.thinking) "正在思考…" else "${store.name} 正在想…")
+                    if (chat.partial.isEmpty()) ThinkingMotion(if (chat.thinking || store.deepThink) "正在思考…" else "${store.name} 正在想…", Modifier.padding(start = 2.dp, top = 2.dp))
                     else Reply(chat.partial.take(ceil(chat.shown).toInt()), compact, fadeTail = chat.shown < chat.partial.length + 1)
                 }
                 chat.error?.let { err ->
@@ -341,20 +350,6 @@ private fun UserBubble(text: String, compact: Boolean) {
             .border(1.dp, rgba(255, 255, 255, .1f), RoundedCornerShape(18.dp))
             .padding(horizontal = 16.dp, vertical = 11.dp),
     ) { Txt(text, Page.ink, 15.sp, lineHeight = 24.sp) }
-}
-
-/** 等第一句话时的过程行：两颗暖色小点轻轻起伏 + 一行淡字。 */
-@Composable
-private fun Thinking(text: String) {
-    val t = rememberInfiniteTransition(label = "think")
-    val a by t.animateFloat(.35f, 1f, infiniteRepeatable(tween(700), RepeatMode.Reverse), label = "a")
-    Row(Modifier.padding(start = 2.dp, top = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(5.dp).alpha(a).background(Page.accent, CircleShape))
-        Spacer(Modifier.width(5.dp))
-        Box(Modifier.size(5.dp).alpha((1.35f - a).coerceIn(0f, 1f)).background(Page.accent, CircleShape))
-        Spacer(Modifier.width(12.dp))
-        Txt(text, Page.muted, 14.sp)
-    }
 }
 
 @Composable
@@ -443,7 +438,9 @@ private fun ChatInput(
     blur: Dp,
     title: String,
     model: String,
+    think: Boolean,
     chat: ChatState,
+    onPick: () -> Unit,
     onSend: () -> Unit,
     onStop: () -> Unit,
     modifier: Modifier,
@@ -478,12 +475,17 @@ private fun ChatInput(
                     SvgIcon(ChatIcons.plus, Page.ink, 18.dp)
                 }
             }
-            Row(
-                Modifier.widthIn(max = 240.dp).background(rgba(255, 255, 255, .07f), RoundedCornerShape(50)).padding(horizontal = 14.dp, vertical = 9.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Txt(model, Page.ink, 12.sp, maxLines = 1)
-                Txt(" · 自动", Page.muted, 12.sp, maxLines = 1)
+            Pressable(onPick, enabled = !chat.busy, label = "选择模型") { pressed ->
+                Row(
+                    Modifier.widthIn(max = 240.dp)
+                        .background(rgba(255, 255, 255, if (pressed) .13f else .07f), RoundedCornerShape(50))
+                        .padding(horizontal = 14.dp, vertical = 9.dp)
+                        .alpha(if (chat.busy) .45f else 1f),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Txt(model.ifBlank { "选择模型" }, Page.ink, 12.sp, maxLines = 1)
+                    Txt(if (think) " · 深思" else " · 自动", if (think) Page.accent else Page.muted, 12.sp, maxLines = 1)
+                }
             }
             Spacer(Modifier.weight(1f))
             SvgIcon(ChatIcons.mic, Page.ink.copy(alpha = .85f), 21.dp)
@@ -498,6 +500,104 @@ private fun ChatInput(
                     contentAlignment = Alignment.Center,
                 ) { SvgIcon(icon, css("#2a211b"), 20.dp, stroke = 1.6f) }
             }
+        }
+    }
+}
+
+
+/* ---------------- 选择模型抽屉（方案 1：无边框，选中项淡暖色块） ---------------- */
+
+@Composable
+private fun ModelDrawer(open: Boolean, store: AssistantStore, compact: Boolean, onClose: () -> Unit, onMore: () -> Unit) {
+    val shown by androidx.compose.animation.core.animateFloatAsState(
+        if (open) 1f else 0f, tween(if (open) 320 else 220, easing = androidx.compose.animation.core.CubicBezierEasing(.2f, .8f, .2f, 1f)), label = "drawer",
+    )
+    if (shown <= 0f) return
+    val warm = rgba(233, 180, 142, 1f)
+    Box(Modifier.fillMaxSize()) {
+        // 暗幕：点空白处收起
+        Box(
+            Modifier.fillMaxSize().alpha(shown).background(rgba(6, 9, 14, .5f))
+                .pointerInput(Unit) { detectTapGestures { onClose() } },
+        )
+        BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
+            val h = maxHeight
+            Column(
+                Modifier
+                    .widthIn(max = 560.dp).fillMaxWidth()
+                    .graphicsLayer { translationY = (1f - shown) * h.toPx() * .6f; alpha = shown }
+                    .background(rgba(20, 24, 31, .97f), RoundedCornerShape(topStart = 26.dp, topEnd = 26.dp))
+                    .pointerInput(Unit) { detectTapGestures { } }
+                    .windowInsetsPadding(WindowInsets.safeDrawing.only(androidx.compose.foundation.layout.WindowInsetsSides.Bottom))
+                    .heightIn(max = h * .78f)
+                    .verticalScroll(rememberScrollState())
+                    .padding(start = 20.dp, end = 20.dp, top = 10.dp, bottom = 22.dp),
+            ) {
+                Box(Modifier.align(Alignment.CenterHorizontally).width(40.dp).height(4.dp).background(rgba(255, 255, 255, .25f), RoundedCornerShape(2.dp)))
+                Spacer(Modifier.height(14.dp))
+                Box(Modifier.fillMaxWidth()) {
+                    Pressable(onClose, Modifier.align(Alignment.CenterStart), label = "关闭") { _ ->
+                        SvgIcon(Icons.close, Page.ink, 20.dp, modifier = Modifier.padding(6.dp))
+                    }
+                    Txt("选择模型", Page.ink, 16.sp, Modifier.align(Alignment.Center), weight = FontWeight.SemiBold)
+                }
+                Spacer(Modifier.height(10.dp))
+                val ready = store.ready()
+                if (ready.isEmpty()) {
+                    Spacer(Modifier.height(8.dp))
+                    DrawerRow("还没有可用的模型", selected = false, dim = true) { onMore() }
+                }
+                ready.forEach { p ->
+                    val c = store.config(p.id)
+                    Txt(c.name.uppercase(), Page.muted, 10.sp, Modifier.padding(start = 6.dp, top = 14.dp, bottom = 8.dp), spacing = ls(2.5f, 10f))
+                    c.models.forEach { m ->
+                        val sel = store.activeProvider == p.id && store.activeModel == m
+                        DrawerRow(m, selected = sel) { store.use(p.id, m); onClose() }
+                    }
+                }
+                Spacer(Modifier.height(16.dp))
+                Row(
+                    Modifier.fillMaxWidth().background(rgba(255, 255, 255, .06f), RoundedCornerShape(14.dp))
+                        .padding(start = 16.dp, end = 14.dp, top = 12.dp, bottom = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Txt("深度思考", Page.ink, 15.sp, Modifier.weight(1f))
+                    Pressable({ store.setThink(!store.deepThink) }, label = "深度思考") { _ ->
+                        val on = store.deepThink
+                        Box(
+                            Modifier.width(46.dp).height(26.dp)
+                                .background(if (on) warm.copy(alpha = .85f) else rgba(255, 255, 255, .14f), RoundedCornerShape(50)).padding(3.dp),
+                            contentAlignment = if (on) Alignment.CenterEnd else Alignment.CenterStart,
+                        ) { Box(Modifier.size(20.dp).background(if (on) css("#2a211b") else Page.ink.copy(alpha = .7f), CircleShape)) }
+                    }
+                }
+                Spacer(Modifier.height(10.dp))
+                Pressable(onMore, Modifier.align(Alignment.CenterHorizontally), label = "更多模型") { pressed ->
+                    Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Txt("更多模型", if (pressed) Page.ink else Page.muted, 13.sp)
+                        Spacer(Modifier.width(4.dp))
+                        SvgIcon(Ic("M9.5 6l6 6-6 6"), Page.muted, 14.dp)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DrawerRow(text: String, selected: Boolean, dim: Boolean = false, onClick: () -> Unit) {
+    Pressable(onClick, Modifier.fillMaxWidth().padding(bottom = 6.dp), label = text) { pressed ->
+        Row(
+            Modifier.fillMaxWidth()
+                .background(
+                    when { selected -> rgba(233, 180, 142, .16f); pressed -> rgba(255, 255, 255, .05f); else -> Color.Transparent },
+                    RoundedCornerShape(14.dp),
+                )
+                .padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Txt(text, if (selected) Page.ink else if (dim) Page.muted else Page.ink.copy(alpha = .78f), 15.sp, Modifier.weight(1f), maxLines = 1)
+            if (selected) SvgIcon(Ic("M5 12.5l4.5 4.5L19 7.5"), rgba(233, 180, 142, 1f), 18.dp, stroke = 1.8f)
         }
     }
 }

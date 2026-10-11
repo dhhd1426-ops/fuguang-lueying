@@ -196,6 +196,7 @@ fun FuguangApp(prefs: Prefs, fullscreen: Boolean, setFullscreen: (Boolean) -> Un
                         onHome = { chatOpen = false },
                         onMine = { chatOpen = false; mineOpen = true; mineNav.screen = "mine" },
                         onSetup = { chatOpen = false; mineOpen = true; mineNav.screen = "provider/${assistant.activeProvider}" },
+                        onMoreModels = { chatOpen = false; mineOpen = true; mineNav.screen = "providers" },
                         onOpen = { modal = it },
                     )
                 }

@@ -62,6 +62,8 @@ class AssistantStore(private val prefs: Prefs) {
     var name by mutableStateOf("Amor")
     var activeProvider by mutableStateOf("deepseek")
     var activeModel by mutableStateOf("deepseek-flash")
+    /** 深度思考：开着时发送带思考参数；这家不认就自动去掉再发。 */
+    var deepThink by mutableStateOf(false)
     val configs = mutableStateMapOf<String, ProviderConfig>()
     /** 最近一次查到的余额，只在本次打开 App 期间显示。 */
     val balances = mutableStateMapOf<String, String>()
@@ -74,6 +76,7 @@ class AssistantStore(private val prefs: Prefs) {
             name = o.optString("name", "Amor").ifBlank { "Amor" }
             activeProvider = o.optString("provider", "deepseek")
             activeModel = o.optString("model", "deepseek-flash")
+            deepThink = o.optBoolean("think", false)
             val cs = o.optJSONObject("configs") ?: JSONObject()
             PROVIDERS.forEach { p ->
                 val c = cs.optJSONObject(p.id) ?: return@forEach
@@ -104,6 +107,11 @@ class AssistantStore(private val prefs: Prefs) {
 
     fun rename(v: String) { name = v; save() }
 
+    fun setThink(on: Boolean) { deepThink = on; save() }
+
+    /** 填了密钥的供应商，按列表顺序。 */
+    fun ready(): List<Provider> = PROVIDERS.filter { config(it.id).configured }
+
     fun save() {
         val cs = JSONObject()
         configs.forEach { (id, c) ->
@@ -113,7 +121,7 @@ class AssistantStore(private val prefs: Prefs) {
             })
         }
         prefs.putString(KEY, JSONObject().apply {
-            put("name", name); put("provider", activeProvider); put("model", activeModel); put("configs", cs)
+            put("name", name); put("provider", activeProvider); put("model", activeModel); put("think", deepThink); put("configs", cs)
         }.toString())
     }
 
@@ -218,12 +226,34 @@ data class ChatMsg(val role: String, val text: String)
 object ChatApi {
     private fun trim(base: String) = base.trim().trimEnd('/')
 
+    /** 这家不认思考参数（400 / 422）。 */
+    private class ThinkRejected : Exception()
+
     suspend fun stream(
         p: Provider,
         c: ProviderConfig,
         model: String,
         system: String,
         history: List<ChatMsg>,
+        think: Boolean,
+        onThink: suspend () -> Unit,
+        onText: suspend (String) -> Unit,
+    ) {
+        try {
+            once(p, c, model, system, history, think, onThink, onText)
+        } catch (e: ThinkRejected) {
+            // 和云朵一样：先怀疑思考参数，去掉再发一次
+            once(p, c, model, system, history, false, onThink, onText)
+        }
+    }
+
+    private suspend fun once(
+        p: Provider,
+        c: ProviderConfig,
+        model: String,
+        system: String,
+        history: List<ChatMsg>,
+        think: Boolean,
         onThink: suspend () -> Unit,
         onText: suspend (String) -> Unit,
     ) = withContext(Dispatchers.IO) {
@@ -251,9 +281,14 @@ object ChatApi {
             history.forEach { msgs.put(JSONObject().put("role", it.role).put("content", it.text)) }
             val body = JSONObject().put("model", model).put("messages", msgs).put("stream", true)
             if (anthropic) body.put("system", system).put("max_tokens", 4096)
+            if (think) {
+                if (anthropic) body.put("thinking", JSONObject().put("type", "enabled").put("budget_tokens", 4000)).put("max_tokens", 8192)
+                else body.put("reasoning_effort", "high")
+            }
             conn.outputStream.use { it.write(body.toString().toByteArray()) }
 
             val code = conn.responseCode
+            if (think && (code == 400 || code == 422)) throw ThinkRejected()
             if (code !in 200..299) {
                 val err = conn.errorStream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() } ?: ""
                 val msg = runCatching { JSONObject(err).optJSONObject("error")?.optString("message") }.getOrNull()
@@ -292,6 +327,8 @@ object ChatApi {
         } catch (e: CancellationException) {
             throw e
         } catch (e: IllegalStateException) {
+            throw e
+        } catch (e: ThinkRejected) {
             throw e
         } catch (e: java.net.UnknownHostException) {
             throw IllegalStateException("连不上服务器，检查网络或地址")
