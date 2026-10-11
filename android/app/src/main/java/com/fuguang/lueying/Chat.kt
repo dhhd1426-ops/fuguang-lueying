@@ -55,6 +55,8 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.foundation.layout.offset
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalDensity
@@ -234,6 +236,7 @@ fun ChatPage(
 
     var picker by remember { mutableStateOf(false) }
     val plus = remember { LiquidPlusState() }
+    val flight = remember { SendFlight() }
     androidx.activity.compose.BackHandler(enabled = plus.open) { plus.open = false }
     /** 正在看哪条消息的思考：-1 = 正在进行的这一轮。 */
     var thinkOf by remember { mutableIntStateOf(-1) }
@@ -261,19 +264,24 @@ fun ChatPage(
             ChatHeader(compact, title, subtitle, onMenu = { menu = true }) { chat.reset() }
             Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                 if (chat.messages.isEmpty() && !chat.busy) Hello(compact, hour)
-                else Conversation(chat, store, compact, onSetup = onSetup, onRetry = { chat.retry(scope, store) }, onThink = { thinkOf = it; thinkOpen = true })
+                else Conversation(chat, store, compact, flight, onSetup = onSetup, onRetry = { chat.retry(scope, store) }, onThink = { thinkOf = it; thinkOpen = true })
             }
             Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                 ChatInput(
-                    compact, blur, title, store.activeModel, store.deepThink, chat, plus,
+                    compact, blur, title, store.activeModel, store.deepThink, chat, plus, flight,
                     onPick = { picker = true },
-                    onSend = { chat.send(scope, store) },
+                    onSend = {
+                        val n = chat.messages.size
+                        chat.send(scope, store)
+                        if (chat.messages.size > n) scope.launch { flight.launch(n) }
+                    },
                     onStop = { chat.stop() },
                     modifier = Modifier.widthIn(max = 720.dp).fillMaxWidth(),
                 )
             }
             BottomNav(compact, active = "聊天", onHome = onHome, onChat = {}, onMine = onMine, onOpen = onOpen)
         }
+        SendFlightLayer(flight)
         if (menuT > 0f) {
             Box(
                 Modifier.fillMaxSize().alpha(menuT).background(rgba(6, 9, 14, .68f))
@@ -341,7 +349,7 @@ private fun Hello(compact: Boolean, hour: Int) {
 /* ---------------- 对话区 ---------------- */
 
 @Composable
-private fun Conversation(chat: ChatState, store: AssistantStore, compact: Boolean, onSetup: () -> Unit, onRetry: () -> Unit, onThink: (Int) -> Unit) {
+private fun Conversation(chat: ChatState, store: AssistantStore, compact: Boolean, flight: SendFlight, onSetup: () -> Unit, onRetry: () -> Unit, onThink: (Int) -> Unit) {
     val scroll = rememberScrollState()
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
@@ -372,7 +380,7 @@ private fun Conversation(chat: ChatState, store: AssistantStore, compact: Boolea
                             Modifier.fillMaxWidth().padding(top = if (i == 0) 0.dp else 26.dp, bottom = 16.dp)
                                 .then(if (i == lastUser) Modifier.onGloballyPositioned { lastUserTop = it.positionInParent().y } else Modifier),
                             contentAlignment = Alignment.CenterEnd,
-                        ) { UserBubble(m.text, compact) }
+                        ) { UserBubble(m.text, compact, Modifier.flightBubble(flight, i == flight.idx, 18.dp)) }
                     } else {
                         if (m.think.isNotBlank()) ThinkSummaryLine(thinkSummary(m.think)) { onThink(i) }
                         Reply(m.text, compact, fadeTail = false)
@@ -426,9 +434,9 @@ private fun Conversation(chat: ChatState, store: AssistantStore, compact: Boolea
 }
 
 @Composable
-private fun UserBubble(text: String, compact: Boolean) {
+private fun UserBubble(text: String, compact: Boolean, modifier: Modifier = Modifier) {
     Box(
-        Modifier.widthIn(max = if (compact) 300.dp else 460.dp)
+        modifier.widthIn(max = if (compact) 300.dp else 460.dp)
             .background(rgba(255, 255, 255, .08f), RoundedCornerShape(18.dp))
             .border(1.dp, rgba(255, 255, 255, .1f), RoundedCornerShape(18.dp))
             .padding(horizontal = 16.dp, vertical = 11.dp),
@@ -524,6 +532,7 @@ private fun ChatInput(
     think: Boolean,
     chat: ChatState,
     plus: LiquidPlusState,
+    flight: SendFlight,
     onPick: () -> Unit,
     onSend: () -> Unit,
     onStop: () -> Unit,
@@ -532,53 +541,78 @@ private fun ChatInput(
     val shape = RoundedCornerShape(22.dp)
     val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
     val focus = androidx.compose.ui.platform.LocalFocusManager.current
-    Column(
-        modifier
-            .padding(top = 10.dp)
-            .glass(shape, blur, fill = rgba(30, 34, 42, .42f))
-            .padding(start = 16.dp, end = 12.dp, top = 15.dp, bottom = 12.dp),
-    ) {
-        BasicTextField(
-            value = chat.draft,
-            onValueChange = { chat.draft = it },
-            textStyle = TextStyle(color = Page.ink, fontSize = if (compact) 15.sp else 16.sp, lineHeight = 24.sp),
-            cursorBrush = SolidColor(Page.accent),
-            maxLines = 6,
-            modifier = Modifier.fillMaxWidth().heightIn(min = 24.dp).padding(start = 4.dp),
-            decorationBox = { inner ->
-                Box {
-                    if (chat.draft.isEmpty()) Txt("回信给 $title…", Page.muted, if (compact) 15.sp else 16.sp)
-                    inner()
+    val canSend = chat.draft.isNotBlank() && !chat.busy
+    // 方案 2：开始打字，发送球从输入框里拉出来；删空了再被吸回去
+    val t by androidx.compose.animation.core.animateFloatAsState(
+        if (canSend) 1f else 0f,
+        androidx.compose.animation.core.spring(dampingRatio = .62f, stiffness = 210f), label = "sep",
+    )
+    // 方案 3：发出去那一下，球先挤一下再弹回
+    val pulse = remember { androidx.compose.animation.core.Animatable(1f) }
+    LaunchedEffect(flight.count) {
+        if (flight.count == 0) return@LaunchedEffect
+        pulse.animateTo(.62f, tween(110))
+        pulse.animateTo(1f, androidx.compose.animation.core.spring(dampingRatio = .42f, stiffness = 320f))
+    }
+    var pressed by remember { mutableStateOf(false) }
+    val ball = 42.dp
+    val inset = 12.dp
+    val sep = 54.dp
+    Box(modifier.padding(top = 10.dp)) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .padding(end = sep * t.coerceAtLeast(0f))
+                .glass(shape, blur, fill = rgba(30, 34, 42, .42f))
+                .padding(start = 16.dp, end = inset, top = 15.dp, bottom = inset),
+        ) {
+            BasicTextField(
+                value = chat.draft,
+                onValueChange = { chat.draft = it },
+                textStyle = TextStyle(color = Page.ink, fontSize = if (compact) 15.sp else 16.sp, lineHeight = 24.sp),
+                cursorBrush = SolidColor(Page.accent),
+                maxLines = 6,
+                modifier = Modifier.fillMaxWidth().heightIn(min = 24.dp).padding(start = 4.dp),
+                decorationBox = { inner ->
+                    Box {
+                        if (chat.draft.isEmpty()) Txt("回信给 $title…", Page.muted, if (compact) 15.sp else 16.sp)
+                        inner()
+                    }
+                },
+            )
+            Spacer(Modifier.height(14.dp))
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                LiquidPlusButton(plus) { /* 照片、拍照、文件：功能后面接 */ }
+                Pressable(onPick, enabled = !chat.busy, label = "选择模型") { p ->
+                    Row(
+                        Modifier.widthIn(max = 240.dp)
+                            .background(rgba(255, 255, 255, if (p) .13f else .07f), RoundedCornerShape(50))
+                            .padding(horizontal = 14.dp, vertical = 9.dp)
+                            .alpha(if (chat.busy) .45f else 1f),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Txt(model.ifBlank { "选择模型" }, Page.ink, 12.sp, maxLines = 1)
+                        Txt(if (think) " · 深思" else " · 自动", if (think) Page.accent else Page.muted, 12.sp, maxLines = 1)
+                    }
                 }
-            },
-        )
-        Spacer(Modifier.height(14.dp))
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            LiquidPlusButton(plus) { /* 照片、拍照、文件：功能后面接 */ }
-            Pressable(onPick, enabled = !chat.busy, label = "选择模型") { pressed ->
-                Row(
-                    Modifier.widthIn(max = 240.dp)
-                        .background(rgba(255, 255, 255, if (pressed) .13f else .07f), RoundedCornerShape(50))
-                        .padding(horizontal = 14.dp, vertical = 9.dp)
-                        .alpha(if (chat.busy) .45f else 1f),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Txt(model.ifBlank { "选择模型" }, Page.ink, 12.sp, maxLines = 1)
-                    Txt(if (think) " · 深思" else " · 自动", if (think) Page.accent else Page.muted, 12.sp, maxLines = 1)
-                }
+                Spacer(Modifier.weight(1f))
+                SvgIcon(ChatIcons.mic, Page.ink.copy(alpha = .85f), 21.dp)
+                // 给球在框里留的位置：球拉出去后，这块空位也跟着收拢
+                Spacer(Modifier.width((ball - 10.dp) * (1f - t).coerceIn(0f, 1f)))
             }
-            Spacer(Modifier.weight(1f))
-            SvgIcon(ChatIcons.mic, Page.ink.copy(alpha = .85f), 21.dp)
-            val canSend = chat.draft.isNotBlank() && !chat.busy
-            val icon = when { chat.busy -> ChatIcons.stop; canSend -> ChatIcons.up; else -> ChatIcons.wave }
-            Pressable(
-                { if (chat.busy) onStop() else if (canSend) { onSend(); keyboard?.hide(); focus.clearFocus() } },
-                label = when { chat.busy -> "停止"; canSend -> "发送"; else -> "语音" },
-            ) { pressed ->
-                Box(
-                    Modifier.size(42.dp).background(rgba(233, 180, 142, if (pressed) .7f else .9f), CircleShape),
-                    contentAlignment = Alignment.Center,
-                ) { SvgIcon(icon, css("#2a211b"), 20.dp, stroke = 1.6f) }
+        }
+        // 杏色的液体球（带黏连），画在输入框外层
+        Box(Modifier.matchParentSize()) { SendGoo(t, pulse.value, pressed, inset, sep, ball) }
+        val icon = when { chat.busy -> ChatIcons.stop; canSend -> ChatIcons.up; else -> ChatIcons.wave }
+        Pressable(
+            { if (chat.busy) onStop() else if (canSend) { onSend(); keyboard?.hide(); focus.clearFocus() } },
+            Modifier.align(Alignment.BottomEnd).offset(x = -inset * (1f - t), y = -inset)
+                .onGloballyPositioned { flight.from = it.boundsInRoot().center },
+            label = when { chat.busy -> "停止"; canSend -> "发送"; else -> "语音" },
+        ) { p ->
+            LaunchedEffect(p) { pressed = p }
+            Box(Modifier.size(ball).graphicsLayer { scaleX = pulse.value; scaleY = pulse.value }, contentAlignment = Alignment.Center) {
+                SvgIcon(icon, css("#2a211b"), 20.dp, stroke = 1.6f)
             }
         }
     }
