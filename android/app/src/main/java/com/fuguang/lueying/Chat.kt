@@ -174,7 +174,7 @@ class ChatState(val history: ConvStore) {
                 val yu = Yu.connected
                 val question = history.lastOrNull { it.role == "user" }?.text.orEmpty()
                 ChatApi.stream(
-                    p, c, store.activeModel, if (yu) system + "\n" + Yu.SYSTEM else system, history, store.deepThink,
+                    p, c, store.activeModel, if (yu) system + "\n" + Yu.system() else system, history, store.deepThink,
                     onThink = { thinkText += it; thinking = true },
                     tools = if (yu) Tools(Yu.tools, { n, a -> Yu.run(n, a, Yu.vision(p.id)) { refs -> refs.forEach { r -> if (r !in pendingImgs) pendingImgs.add(r) } } }, { toolNote = if (it == "list_todos") "正在查看羽的待办…" else "正在查阅羽的笔记…" }) else null,
                     fallback = if (yu) ({ Yu.context(question) }) else null,

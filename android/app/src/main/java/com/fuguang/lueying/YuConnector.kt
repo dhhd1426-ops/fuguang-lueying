@@ -147,13 +147,19 @@ object Yu {
 
     /* ---------- 给模型的工具 ---------- */
 
-    val SYSTEM = "你可以用 search_notes、read_note 查阅用户在「羽」（笔记 App）里的笔记，用 list_todos 查看羽里的待办。" +
-        "用户问到自己记过、写过的东西，或者要做的事、提醒时先去查；引用笔记时说出笔记标题。"
+    /** 告诉模型：羽已经连上、本机就能查，提到笔记就一定先查，不要说自己访问不了。 */
+    fun system(): String =
+        "用户已经把自己的笔记 App「羽」连接给你了（就在这台手机上，已授权，可以直接查），里面有 $notes 篇笔记。" +
+            "你有三个工具：search_notes 搜索笔记，read_note 读一篇笔记的全文和图片，list_todos 看待办。" +
+            "只要用户提到笔记、记录、写过的东西、笔记里的图片、要做的事或提醒，就是指羽里的内容：先调用工具去查，再回答。" +
+            "不要说你无法访问用户的笔记，也不要让用户把内容发给你。" +
+            "不知道搜什么关键词时，用空字符串调用 search_notes 看最近的笔记。引用笔记时说出笔记标题。"
 
     val tools = listOf(
         ToolSpec(
             "search_notes",
-            "在用户的笔记 App「羽」里搜索笔记，返回标题、片段和 id。关键词可以有多个，用空格分开；#标签 按标签筛选；空字符串返回最近的笔记。",
+            "在用户的笔记 App「羽」里搜索笔记，返回标题、片段和 id。用户问到自己的笔记、记录、笔记里的图片时使用。" +
+                "关键词可以有多个，用空格分开；#标签 按标签筛选；空字符串返回最近的笔记。",
             JSONObject().put("type", "object")
                 .put("properties", JSONObject().put("query", JSONObject().put("type", "string").put("description", "搜索关键词")))
                 .put("required", JSONArray().put("query")),
@@ -185,7 +191,9 @@ object Yu {
 
     /** 不支持工具的模型：先用用户的问题搜一次，把结果放进 system 提示。 */
     suspend fun context(question: String): String {
-        val r = search(question, 5)
+        var r = search(question, 5)
+        // 整句话搜不到时，退回给最近的笔记
+        if (!r.startsWith("{")) r = search("", 8)
         return "以下是在用户的笔记 App「羽」里按这次问题搜到的笔记（可能不相关，引用时说出笔记标题）：\n$r"
     }
 }
