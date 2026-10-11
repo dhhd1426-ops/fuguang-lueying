@@ -2,7 +2,7 @@ name: Android APK
 
 on:
   push:
-    branches: [native-app, main]
+    branches: [native-app, main, check]
     paths:
       - "android/**"
       - "public/**"
@@ -52,6 +52,8 @@ jobs:
           path: out/*.apk
 
       - name: Publish to release
+        # check 分支只编译验证，不发版；确认没问题再合到 native-app 才出安装包
+        if: github.ref != 'refs/heads/check'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: app-build-${{ github.run_number }}
