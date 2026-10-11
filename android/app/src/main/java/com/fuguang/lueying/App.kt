@@ -446,31 +446,37 @@ private fun BottomBar(
 }
 
 
-/** 底部导航：无框纯文字，和顶部导航同一种宋体，选中项下面一个暖色小点。 */
+/** 底部导航：无框纯文字，和顶部导航同一种宋体，选中项下面一个暖色小点。
+ *  四项平分宽度，任何屏宽都排得下；展开的折叠屏、平板上限制总宽并居中，免得字隔得太开。 */
 @Composable
 private fun BottomNav(compact: Boolean, onHome: () -> Unit, onOpen: (ModalKind) -> Unit) {
-    Row(
+    Box(
         Modifier
             .fillMaxWidth()
             .padding(top = if (compact) 16.dp else 22.dp)
             .topLine(Page.line)
-            .padding(top = if (compact) 6.dp else 8.dp),
-        horizontalArrangement = Arrangement.SpaceAround,
-        verticalAlignment = Alignment.CenterVertically,
+            .padding(top = if (compact) 4.dp else 8.dp),
+        contentAlignment = Alignment.Center,
     ) {
-        BottomNavItem("主页", true, compact, onHome)
-        BottomNavItem("聊天", false, compact) { onOpen(ModalKind.Chat) }
-        BottomNavItem("手记", false, compact) { onOpen(ModalKind.Journal) }
-        BottomNavItem("我的", false, compact) { onOpen(ModalKind.Mine) }
+        Row(Modifier.widthIn(max = 560.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            val item = Modifier.weight(1f)
+            BottomNavItem("主页", true, compact, item, onHome)
+            BottomNavItem("聊天", false, compact, item) { onOpen(ModalKind.Chat) }
+            BottomNavItem("手记", false, compact, item) { onOpen(ModalKind.Journal) }
+            BottomNavItem("我的", false, compact, item) { onOpen(ModalKind.Mine) }
+        }
     }
 }
 
 @Composable
-private fun BottomNavItem(label: String, active: Boolean, compact: Boolean, onClick: () -> Unit) {
-    Pressable(onClick, Modifier.widthIn(min = 64.dp), label = label) { pressed ->
-        Column(Modifier.padding(vertical = 10.dp).fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+private fun BottomNavItem(label: String, active: Boolean, compact: Boolean, modifier: Modifier, onClick: () -> Unit) {
+    Pressable(onClick, modifier, label = label) { pressed ->
+        Column(Modifier.fillMaxWidth().padding(vertical = 10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             val fs = if (compact) 13f else 14f
-            Txt(label, if (active || pressed) Page.ink else Page.muted, fs.sp, spacing = ls(if (compact) 3f else 4f, fs), family = Serif)
+            Txt(
+                label, if (active || pressed) Page.ink else Page.muted, fs.sp,
+                spacing = ls(if (compact) 3f else 4f, fs), family = Serif, maxLines = 1,
+            )
             Spacer(Modifier.height(7.dp))
             Box(Modifier.size(4.dp).background(if (active) Page.accent else Color.Transparent, CircleShape))
         }
