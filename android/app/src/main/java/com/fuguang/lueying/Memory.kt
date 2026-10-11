@@ -81,6 +81,16 @@ object Memory {
     }
 
     fun remove(m: Mem) { items.remove(m); save() }
+    fun restore(m: Mem, i: Int) { if (m !in items) { items.add(i.coerceIn(0, items.size), m); save() } }
+
+    /** 手动加一件事：标题 + 内容。没写标题就用内容的第一句。 */
+    fun add(title: String, content: String) {
+        val t = title.trim().ifEmpty { firstSentence(content.trim(), 20) }
+        if (t.isEmpty()) return
+        val now = System.currentTimeMillis()
+        items.add(0, Mem("$now-m", t, content.trim(), now, "", ""))
+        save()
+    }
     fun addLike(s: String) { val t = s.trim(); if (t.isNotEmpty() && t !in likes) { likes += t; save() } }
     fun addAmor(s: String) { val t = s.trim(); if (t.isNotEmpty() && t !in amor) { amor += t; save() } }
 
