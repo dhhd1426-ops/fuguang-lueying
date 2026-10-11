@@ -86,6 +86,7 @@ fun FuguangApp(prefs: Prefs, fullscreen: Boolean, setFullscreen: (Boolean) -> Un
     var readerOpen by remember { mutableStateOf(false) }
     var lettersOpen by remember { mutableStateOf(false) }
     var letterIndex by remember { mutableStateOf<Int?>(null) }
+    var chatOpen by remember { mutableStateOf(false) }
 
     // 切到后台时暂停，回来后按原状态继续（网站的 visibilitychange）
     val lifecycle = LocalLifecycleOwner.current.lifecycle
@@ -110,6 +111,7 @@ fun FuguangApp(prefs: Prefs, fullscreen: Boolean, setFullscreen: (Boolean) -> Un
     BackHandler(enabled = !lettersOpen && readerOpen) { readerOpen = false }
     BackHandler(enabled = !lettersOpen && !readerOpen && modal != null) { modal = null }
     BackHandler(enabled = !lettersOpen && !readerOpen && modal == null && zen) { zen = false }
+    BackHandler(enabled = !lettersOpen && !readerOpen && modal == null && !zen && chatOpen) { chatOpen = false }
 
     val haze = rememberHazeState()
     val palette = if (light) LightPalette else DarkPalette
@@ -127,7 +129,8 @@ fun FuguangApp(prefs: Prefs, fullscreen: Boolean, setFullscreen: (Boolean) -> Un
                 lettersOpen -> 8.dp
                 readerOpen -> 9.dp
                 modal == ModalKind.About -> 8.dp
-                modal != null -> 4.dp
+                modal != null -> if (chatOpen) 18.dp else 4.dp
+                chatOpen -> 18.dp
                 else -> 0.dp
             },
             label = "backdrop",
@@ -143,7 +146,7 @@ fun FuguangApp(prefs: Prefs, fullscreen: Boolean, setFullscreen: (Boolean) -> Un
         }
 
         CompositionLocalProvider(LocalHaze provides haze) {
-            val pageAlpha = appear(!zen, 260)
+            val pageAlpha = appear(!zen && !chatOpen, 260)
             if (pageAlpha > 0f) {
                 HomePage(
                     compact = compact,
@@ -159,7 +162,8 @@ fun FuguangApp(prefs: Prefs, fullscreen: Boolean, setFullscreen: (Boolean) -> Un
                     newLetters = store.newLetters,
                     onReader = { readerOpen = true; store.markLuoyingSeen() },
                     onLetters = { lettersOpen = true; store.markLettersSeen() },
-                    onHome = { modal = null; readerOpen = false; lettersOpen = false; letterIndex = null },
+                    onHome = { modal = null; readerOpen = false; lettersOpen = false; letterIndex = null; chatOpen = false },
+                    onChat = { chatOpen = true },
                     onZen = { zen = true },
                 )
             }
@@ -168,6 +172,24 @@ fun FuguangApp(prefs: Prefs, fullscreen: Boolean, setFullscreen: (Boolean) -> Un
                 ShowUiButton(blur.dp) { zen = false }
             }
         }
+        }
+
+        // 聊天页：盖在虚化后的背景上，自己不虚化
+        CompositionLocalProvider(LocalHaze provides haze) {
+            val chatAlpha = appear(chatOpen && !zen, 260)
+            if (chatAlpha > 0f) {
+                Box(Modifier.fillMaxSize().alpha(chatAlpha)) {
+                    ChatPage(
+                        compact = compact,
+                        tiny = tiny,
+                        width = screenW,
+                        blur = blur.dp,
+                        hour = java.util.Calendar.getInstance().apply { time = now }.get(java.util.Calendar.HOUR_OF_DAY),
+                        onHome = { chatOpen = false },
+                        onOpen = { modal = it },
+                    )
+                }
+            }
         }
 
         CompositionLocalProvider(LocalPalette provides palette) {
@@ -217,6 +239,7 @@ private fun HomePage(
     onReader: () -> Unit,
     onLetters: () -> Unit,
     onHome: () -> Unit,
+    onChat: () -> Unit,
     onZen: () -> Unit,
 ) {
     val side = if (compact) (if (tiny) 18.dp else 24.dp) else (width * .052f)
@@ -234,7 +257,7 @@ private fun HomePage(
             }
         }
         BottomBar(compact, now, paused, blur, onOpen)
-        BottomNav(compact, onHome, onOpen)
+        BottomNav(compact, active = "主页", onHome = onHome, onChat = onChat, onOpen = onOpen)
     }
 }
 
@@ -449,7 +472,7 @@ private fun BottomBar(
 /** 底部导航：无框纯文字，和顶部导航同一种宋体，选中项下面一个暖色小点。
  *  四项平分宽度，任何屏宽都排得下；展开的折叠屏、平板上限制总宽并居中，免得字隔得太开。 */
 @Composable
-private fun BottomNav(compact: Boolean, onHome: () -> Unit, onOpen: (ModalKind) -> Unit) {
+fun BottomNav(compact: Boolean, active: String, onHome: () -> Unit, onChat: () -> Unit, onOpen: (ModalKind) -> Unit) {
     Box(
         Modifier
             .fillMaxWidth()
@@ -460,10 +483,10 @@ private fun BottomNav(compact: Boolean, onHome: () -> Unit, onOpen: (ModalKind) 
     ) {
         Row(Modifier.widthIn(max = 560.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             val item = Modifier.weight(1f)
-            BottomNavItem("主页", true, compact, item, onHome)
-            BottomNavItem("聊天", false, compact, item) { onOpen(ModalKind.Chat) }
-            BottomNavItem("手记", false, compact, item) { onOpen(ModalKind.Journal) }
-            BottomNavItem("我的", false, compact, item) { onOpen(ModalKind.Mine) }
+            BottomNavItem("主页", active == "主页", compact, item, onHome)
+            BottomNavItem("聊天", active == "聊天", compact, item, onChat)
+            BottomNavItem("手记", active == "手记", compact, item) { onOpen(ModalKind.Journal) }
+            BottomNavItem("我的", active == "我的", compact, item) { onOpen(ModalKind.Mine) }
         }
     }
 }

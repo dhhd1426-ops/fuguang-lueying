@@ -25,6 +25,16 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v5
 
+      - name: Fetch fonts
+        run: |
+          # 聊天页问候字体：Cormorant Garamond（OFL 开源可商用），取 Light 300 斜体生成静态字体
+          set -e
+          pip install --quiet fonttools
+          curl -fsSL -o cg.ttf "https://github.com/google/fonts/raw/main/ofl/cormorantgaramond/CormorantGaramond-Italic%5Bwght%5D.ttf"
+          mkdir -p android/app/src/main/res/font
+          fonttools varLib.instancer cg.ttf wght=300 -o android/app/src/main/res/font/cormorant_light_italic.ttf
+          ls -la android/app/src/main/res/font
+
       - name: Build APK
         working-directory: android
         run: |
