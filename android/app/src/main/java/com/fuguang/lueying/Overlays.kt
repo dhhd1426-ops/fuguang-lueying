@@ -239,7 +239,7 @@ fun Overlays(
         androidx.compose.runtime.LaunchedEffect(content) { readerState.data = content }
         val closeReader = { readerState.saveProgress(); onCloseReader() }
         OverlayFrame(readerOpen, p.readerBackdrop, closeReader) {
-            Reader(readerState, w, h, closeReader)
+            Reader(readerState, w, h, closeReader, onToggleTheme)
         }
         val lettersScroll = remember { androidx.compose.foundation.ScrollState(0) }
         OverlayFrame(lettersOpen, p.lettersBackdrop, onCloseLetters) {

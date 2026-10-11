@@ -136,7 +136,7 @@ class ReaderState(private val prefs: Prefs, initial: Luoying) {
 
 @OptIn(FlowPreview::class)
 @Composable
-fun Reader(state: ReaderState, w: Dp, h: Dp, onClose: () -> Unit) {
+fun Reader(state: ReaderState, w: Dp, h: Dp, onClose: () -> Unit, onToggleTheme: (Offset) -> Unit) {
     val p = LocalPalette.current
     val narrow = w < 720.dp
     LaunchedEffect(Unit) { state.open() }
@@ -204,7 +204,8 @@ fun Reader(state: ReaderState, w: Dp, h: Dp, onClose: () -> Unit) {
             TextButton(if (state.expanded) "还原 ↙" else "全屏 ↗", p.fullInk, if (narrow) 10f else 11f, label = if (state.expanded) "退出全屏阅读" else "全屏阅读") {
                 state.expanded = !state.expanded
             }
-            Spacer(Modifier.width(if (narrow) 4.dp else 8.dp))
+            Spacer(Modifier.width(if (narrow) 8.dp else 12.dp))
+            ThemeToggle(onToggleTheme)
             CloseButton(p.readerInk, "关闭阅读") {
                 state.saveProgress()
                 onClose()
