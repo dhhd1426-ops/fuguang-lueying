@@ -47,6 +47,7 @@ import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.Layout
@@ -66,7 +67,7 @@ import java.util.Date
 import java.util.Locale
 
 enum class ModalKind(val title: String) {
-    Settings("显示设置"), Journal("此刻手记"), Scene("晚风与浮光"), About("关于浮光掠影")
+    Settings("显示设置"), Journal("此刻手记"), Scene("晚风与浮光"), About("关于浮光掠影"), Chat("聊天"), Mine("我的")
 }
 
 @Composable
@@ -159,14 +160,7 @@ fun FuguangApp(prefs: Prefs, fullscreen: Boolean, setFullscreen: (Boolean) -> Un
                     onReader = { readerOpen = true; store.markLuoyingSeen() },
                     onLetters = { lettersOpen = true; store.markLettersSeen() },
                     onHome = { modal = null; readerOpen = false; lettersOpen = false; letterIndex = null },
-                    onTogglePlay = { paused = !paused },
                     onZen = { zen = true },
-                    onFullscreen = { setFullscreen(!fullscreen) },
-                    onCredit = {
-                        runCatching {
-                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://steamcommunity.com/sharedfiles/filedetails/?id=2886288494")))
-                        }
-                    },
                 )
             }
 
@@ -223,10 +217,7 @@ private fun HomePage(
     onReader: () -> Unit,
     onLetters: () -> Unit,
     onHome: () -> Unit,
-    onTogglePlay: () -> Unit,
     onZen: () -> Unit,
-    onFullscreen: () -> Unit,
-    onCredit: () -> Unit,
 ) {
     val side = if (compact) (if (tiny) 18.dp else 24.dp) else (width * .052f)
     Column(
@@ -242,24 +233,8 @@ private fun HomePage(
                 VerticalLabel("LIGHT / WIND / A QUIET MOMENT", Modifier.align(Alignment.CenterEnd))
             }
         }
-        BottomBar(compact, now, paused, fullscreen, blur, onOpen, onTogglePlay, onZen, onFullscreen)
-        Row(
-            Modifier.fillMaxWidth().padding(top = if (compact) 16.dp else 21.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            val fs = if (compact) 7f else 8f
-            Txt("慢一点，看见光。", rgba(255, 255, 255, .35f), fs.sp, spacing = ls(if (compact) 1f else 2f, fs))
-            Pressable(onCredit, label = "打开背景作品页面") { pressed ->
-                Txt(
-                    "背景：WLOP · SKY2 ↗",
-                    if (pressed) Page.ink else rgba(255, 255, 255, .35f),
-                    fs.sp,
-                    Modifier.padding(5.dp),
-                    spacing = ls(if (compact) 1f else 2f, fs),
-                )
-            }
-        }
+        BottomBar(compact, now, paused, blur, onOpen)
+        BottomNav(compact, onHome, onOpen)
     }
 }
 
@@ -396,12 +371,8 @@ private fun BottomBar(
     compact: Boolean,
     now: Date,
     paused: Boolean,
-    fullscreen: Boolean,
     blur: Dp,
     onOpen: (ModalKind) -> Unit,
-    onTogglePlay: () -> Unit,
-    onZen: () -> Unit,
-    onFullscreen: () -> Unit,
 ) {
     val shape = RoundedCornerShape(16.dp)
     val clock = SimpleDateFormat("HH:mm", Locale.CHINA).format(now)
@@ -445,21 +416,6 @@ private fun BottomBar(
     }
 
     @Composable
-    fun Tools(mod: Modifier) {
-        Row(
-            mod.glass(shape, blur).padding(horizontal = if (compact) 15.dp else 20.dp),
-            horizontalArrangement = if (compact) Arrangement.SpaceAround else Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            val h = if (compact) 75.dp else 96.dp
-            Tool(if (paused) Icons.play else Icons.pause, if (paused) "播放" else "暂停", h, if (paused) "播放背景" else "暂停背景", onTogglePlay)
-            Tool(Icons.eye, "纯净模式", h, "纯净模式", onZen)
-            Tool(Icons.expand, if (fullscreen) "退出全屏" else "全屏", h, "全屏", onFullscreen)
-            Tool(Icons.note, "写手记", h, "写手记") { onOpen(ModalKind.Journal) }
-        }
-    }
-
-    @Composable
     fun TimeCard(mod: Modifier) {
         Column(
             mod.glass(shape, blur).padding(horizontal = if (compact) 13.dp else 24.dp, vertical = if (compact) 18.dp else 19.dp),
@@ -479,12 +435,10 @@ private fun BottomBar(
                 SceneCard(Modifier.weight(1f).fillMaxHeight())
                 TimeCard(Modifier.widthIn(min = 100.dp).fillMaxHeight())
             }
-            Tools(Modifier.fillMaxWidth())
         }
     } else {
         Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
             SceneCard(Modifier.widthIn(min = 300.dp).fillMaxHeight())
-            Tools(Modifier.fillMaxHeight())
             Spacer(Modifier.weight(1f))
             TimeCard(Modifier.widthIn(min = 158.dp).fillMaxHeight())
         }
@@ -492,14 +446,33 @@ private fun BottomBar(
 }
 
 
+/** 底部导航：无框纯文字，和顶部导航同一种宋体，选中项下面一个暖色小点。 */
 @Composable
-private fun Tool(icon: Ic, label: String, height: Dp, a11y: String, onClick: () -> Unit) {
-    Pressable(onClick, Modifier.width(67.dp).height(height), label = a11y) { pressed ->
-        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-            val c = if (pressed) Page.ink.copy(alpha = 1f) else rgba(250, 245, 238, .78f)
-            SvgIcon(icon, c, modifier = Modifier.graphicsLayer { scaleX = if (pressed) .9f else 1f; scaleY = scaleX })
-            Spacer(Modifier.height(11.dp))
-            Txt(label, c, 9.sp, spacing = ls(1f, 9f), maxLines = 1)
+private fun BottomNav(compact: Boolean, onHome: () -> Unit, onOpen: (ModalKind) -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(top = if (compact) 16.dp else 22.dp)
+            .topLine(Page.line)
+            .padding(top = if (compact) 6.dp else 8.dp),
+        horizontalArrangement = Arrangement.SpaceAround,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        BottomNavItem("主页", true, compact, onHome)
+        BottomNavItem("聊天", false, compact) { onOpen(ModalKind.Chat) }
+        BottomNavItem("手记", false, compact) { onOpen(ModalKind.Journal) }
+        BottomNavItem("我的", false, compact) { onOpen(ModalKind.Mine) }
+    }
+}
+
+@Composable
+private fun BottomNavItem(label: String, active: Boolean, compact: Boolean, onClick: () -> Unit) {
+    Pressable(onClick, Modifier.widthIn(min = 64.dp), label = label) { pressed ->
+        Column(Modifier.padding(vertical = 10.dp).fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+            val fs = if (compact) 13f else 14f
+            Txt(label, if (active || pressed) Page.ink else Page.muted, fs.sp, spacing = ls(if (compact) 3f else 4f, fs), family = Serif)
+            Spacer(Modifier.height(7.dp))
+            Box(Modifier.size(4.dp).background(if (active) Page.accent else Color.Transparent, CircleShape))
         }
     }
 }

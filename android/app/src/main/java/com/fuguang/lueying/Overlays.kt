@@ -292,6 +292,9 @@ private fun ModalSheet(
                 Txt("调整会保存在本机。切到后台时，动态背景会自动暂停。", p.modalMuted, 12.sp, lineHeight = 24.sp)
             }
             ModalKind.Journal -> Journal(prefs)
+            ModalKind.Chat, ModalKind.Mine -> {
+                Txt("即将开放。", p.modalMuted, 13.sp, lineHeight = 26.sp)
+            }
             ModalKind.Scene -> {
                 val poster = rememberPoster()
                 if (poster != null) {
