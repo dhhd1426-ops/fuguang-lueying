@@ -90,7 +90,7 @@ fun FuguangApp(prefs: Prefs, fullscreen: Boolean, setFullscreen: (Boolean) -> Un
     var mineOpen by remember { mutableStateOf(false) }
     val mineNav = remember { MineNav() }
     val assistant = remember { AssistantStore(prefs) }
-    val chatState = remember { ChatState() }
+    val chatState = remember { ChatState(ConvStore(prefs)) }
 
     // 切到后台时暂停，回来后按原状态继续（网站的 visibilitychange）
     val lifecycle = LocalLifecycleOwner.current.lifecycle

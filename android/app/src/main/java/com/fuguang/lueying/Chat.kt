@@ -97,8 +97,10 @@ private object ChatIcons {
  * 网络数据一阵一阵到，这里把它变成匀速、连续的书写——积压得多就写快一点，积压得少就放慢，
  * 最后几个字淡淡浮现；写到一半的 ** 符号先不露出来。
  */
-class ChatState {
+class ChatState(val history: ConvStore) {
     val messages = mutableStateListOf<ChatMsg>()
+    /** 当前这段对话在记录里的 id；还没发过消息时为 null。 */
+    var convId by mutableStateOf<String?>(null)
     var partial by mutableStateOf("")
     var shown by mutableFloatStateOf(0f)
     var busy by mutableStateOf(false)
@@ -116,7 +118,18 @@ class ChatState {
     fun reset() {
         job?.cancel(); job = null
         messages.clear(); partial = ""; shown = 0f; busy = false; thinking = false; thinkText = ""; error = null; needsSetup = false
+        convId = null
     }
+
+    /** 打开记录里的一段对话。 */
+    fun open(c: Conv) {
+        reset()
+        messages.addAll(c.msgs)
+        convId = c.id
+        sent++
+    }
+
+    private fun persist() { convId = history.save(convId, messages) }
 
     fun send(scope: CoroutineScope, store: AssistantStore) {
         val text = draft.trim()
@@ -124,6 +137,7 @@ class ChatState {
         draft = ""
         error = null; needsSetup = false
         messages.add(ChatMsg("user", text))
+        persist()
         sent++
         ask(scope, store)
     }
@@ -162,6 +176,7 @@ class ChatState {
                 error = e.message ?: "出错了"
             } finally {
                 partial = ""; shown = 0f; busy = false; thinking = false; thinkText = ""
+                persist()
             }
         }
     }
@@ -265,14 +280,20 @@ fun ChatPage(
         }
       }
         if (menuT > 0f) {
-            // 菜单本体：先留空，等分组模块
+            // 菜单本体：对话记录
             Box(
                 Modifier.fillMaxHeight().width(menuW)
                     .graphicsLayer { translationX = (menuT - 1f) * menuPx }
-                    .background(rgba(18, 21, 27, .98f))
+                    .background(rgba(20, 23, 29, 1f))
                     .pointerInput(Unit) { detectTapGestures { } }
                     .windowInsetsPadding(WindowInsets.safeDrawing),
-            )
+            ) {
+                HistoryMenu(
+                    chat.history, chat.convId,
+                    onOpen = { if (!chat.busy) chat.open(it); menu = false },
+                    onNew = { chat.reset(); menu = false },
+                )
+            }
         }
         ModelDrawer(picker, store, compact, onClose = { picker = false }, onMore = { picker = false; onMoreModels() })
         val liveThink = thinkOf < 0 || thinkOf >= chat.messages.size
