@@ -90,6 +90,7 @@ fun FuguangApp(prefs: Prefs, fullscreen: Boolean, setFullscreen: (Boolean) -> Un
     var mineOpen by remember { mutableStateOf(false) }
     val mineNav = remember { MineNav() }
     val assistant = remember { AssistantStore(prefs) }
+    val chatState = remember { ChatState() }
 
     // 切到后台时暂停，回来后按原状态继续（网站的 visibilitychange）
     val lifecycle = LocalLifecycleOwner.current.lifecycle
@@ -190,10 +191,11 @@ fun FuguangApp(prefs: Prefs, fullscreen: Boolean, setFullscreen: (Boolean) -> Un
                         width = screenW,
                         blur = blur.dp,
                         hour = java.util.Calendar.getInstance().apply { time = now }.get(java.util.Calendar.HOUR_OF_DAY),
-                        title = assistant.name,
-                        subtitle = "${assistant.name} · ${assistant.config(assistant.activeProvider).name} · ${assistant.activeModel}",
+                        store = assistant,
+                        chat = chatState,
                         onHome = { chatOpen = false },
                         onMine = { chatOpen = false; mineOpen = true; mineNav.screen = "mine" },
+                        onSetup = { chatOpen = false; mineOpen = true; mineNav.screen = "provider/${assistant.activeProvider}" },
                         onOpen = { modal = it },
                     )
                 }

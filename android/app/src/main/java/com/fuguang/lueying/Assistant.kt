@@ -4,7 +4,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
@@ -202,5 +205,104 @@ object AssistantApi {
             val sign = if (info.optString("currency") == "USD") "$" else "¥"
             "余额 $sign${info.optString("total_balance")} · 赠送 ${info.optString("granted_balance")} · 充值 ${info.optString("topped_up_balance")}"
         }.recoverCatching { throw IllegalStateException(friendly(it)) }
+    }
+}
+
+/** 一条聊天消息。role = "user" / "assistant"。 */
+data class ChatMsg(val role: String, val text: String)
+
+/**
+ * 流式对话：OpenAI 兼容接口（stream=true 的 SSE）或 Anthropic messages 接口。
+ * 每收到一段正文调 onText，收到思考过程调 onThink（只用来显示“正在思考”）。
+ */
+object ChatApi {
+    private fun trim(base: String) = base.trim().trimEnd('/')
+
+    suspend fun stream(
+        p: Provider,
+        c: ProviderConfig,
+        model: String,
+        system: String,
+        history: List<ChatMsg>,
+        onThink: suspend () -> Unit,
+        onText: suspend (String) -> Unit,
+    ) = withContext(Dispatchers.IO) {
+        if (c.key.isBlank()) throw IllegalStateException("还没填 ${c.name} 的 API Key")
+        val anthropic = p.kind == "anthropic"
+        val url = if (anthropic) trim(c.base) + "/messages"
+        else trim(c.base) + c.path.trim().let { if (it.startsWith("/")) it else "/$it" }
+        val conn = URL(url).openConnection() as HttpURLConnection
+        val job = coroutineContext[Job]
+        val handle = job?.invokeOnCompletion { runCatching { conn.disconnect() } }
+        try {
+            conn.requestMethod = "POST"
+            conn.connectTimeout = 15_000
+            conn.readTimeout = 90_000
+            conn.doOutput = true
+            conn.setRequestProperty("Content-Type", "application/json")
+            conn.setRequestProperty("Accept", "text/event-stream")
+            if (anthropic) {
+                conn.setRequestProperty("x-api-key", c.key.trim())
+                conn.setRequestProperty("anthropic-version", "2023-06-01")
+            } else conn.setRequestProperty("Authorization", "Bearer " + c.key.trim())
+
+            val msgs = JSONArray()
+            if (!anthropic) msgs.put(JSONObject().put("role", "system").put("content", system))
+            history.forEach { msgs.put(JSONObject().put("role", it.role).put("content", it.text)) }
+            val body = JSONObject().put("model", model).put("messages", msgs).put("stream", true)
+            if (anthropic) body.put("system", system).put("max_tokens", 4096)
+            conn.outputStream.use { it.write(body.toString().toByteArray()) }
+
+            val code = conn.responseCode
+            if (code !in 200..299) {
+                val err = conn.errorStream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() } ?: ""
+                val msg = runCatching { JSONObject(err).optJSONObject("error")?.optString("message") }.getOrNull()
+                throw IllegalStateException(
+                    when (code) {
+                        401, 403 -> "密钥不对或没有权限（$code）"
+                        402 -> "账户余额不足（402）"
+                        404 -> "地址或模型名不对（404）"
+                        429 -> "请求太频繁或额度用完（429）"
+                        else -> "出错了（$code）" + (msg?.takeIf { it.isNotBlank() }?.let { "：" + it.take(80) } ?: "")
+                    },
+                )
+            }
+            conn.inputStream.bufferedReader(Charsets.UTF_8).use { r ->
+                while (true) {
+                    ensureActive()
+                    val line = r.readLine() ?: break
+                    if (!line.startsWith("data:")) continue
+                    val data = line.removePrefix("data:").trim()
+                    if (data == "[DONE]") break
+                    val o = runCatching { JSONObject(data) }.getOrNull() ?: continue
+                    if (anthropic) {
+                        if (o.optString("type") == "error") throw IllegalStateException("出错了：" + o.optJSONObject("error")?.optString("message").orEmpty().take(80))
+                        val d = o.optJSONObject("delta") ?: continue
+                        when (d.optString("type")) {
+                            "text_delta" -> d.optString("text").takeIf { it.isNotEmpty() }?.let { withContext(Dispatchers.Main) { onText(it) } }
+                            "thinking_delta" -> withContext(Dispatchers.Main) { onThink() }
+                        }
+                    } else {
+                        val d = o.optJSONArray("choices")?.optJSONObject(0)?.optJSONObject("delta") ?: continue
+                        if (!d.isNull("reasoning_content") && d.optString("reasoning_content").isNotEmpty()) withContext(Dispatchers.Main) { onThink() }
+                        if (!d.isNull("content")) d.optString("content").takeIf { it.isNotEmpty() }?.let { withContext(Dispatchers.Main) { onText(it) } }
+                    }
+                }
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: IllegalStateException) {
+            throw e
+        } catch (e: java.net.UnknownHostException) {
+            throw IllegalStateException("连不上服务器，检查网络或地址")
+        } catch (e: java.net.SocketTimeoutException) {
+            throw IllegalStateException("等太久没有回应，稍后再试")
+        } catch (e: Exception) {
+            if (job?.isActive == false) throw CancellationException()
+            throw IllegalStateException("连接中断：" + (e.message ?: e.javaClass.simpleName).take(60))
+        } finally {
+            handle?.dispose()
+            runCatching { conn.disconnect() }
+        }
     }
 }
