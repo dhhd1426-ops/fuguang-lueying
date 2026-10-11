@@ -219,6 +219,63 @@ private fun ColumnScope.MineRoot(store: AssistantStore, compact: Boolean, blur: 
                 SvgIcon(MineIcons.next, Page.muted, 18.dp)
             }
         }
+        ConnectorGroup(blur)
+    }
+}
+
+/* ---------- 连接器（方案 2：宋体图标 + 一句说明，状态在右） ---------- */
+
+@Composable
+private fun ConnectorGroup(blur: Dp) {
+    val scope = rememberCoroutineScope()
+    // 进来、从别的 App 回来时都查一次：羽那边可能刚断开或刚装上
+    androidx.lifecycle.compose.LifecycleResumeEffect(Unit) {
+        scope.launch { Yu.refresh() }
+        onPauseOrDispose { }
+    }
+    val launcher = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult(),
+    ) { scope.launch { Yu.refresh() } }
+    val state = Yu.state
+    Txt("连接器", Page.muted, 11.sp, Modifier.padding(start = 6.dp, top = 26.dp, bottom = 10.dp), spacing = ls(2.5f, 11f))
+    Pressable(
+        { if (state == "off") runCatching { launcher.launch(Yu.connectIntent()) }.onFailure { scope.launch { Yu.refresh() } } },
+        Modifier.fillMaxWidth(),
+        label = "羽",
+    ) { pressed ->
+        Row(
+            Modifier.fillMaxWidth()
+                .glass(RoundedCornerShape(20.dp), blur, fill = if (pressed && state == "off") rgba(255, 255, 255, .08f) else glassFill)
+                .padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                Modifier.size(36.dp).background(rgba(233, 180, 142, .16f), RoundedCornerShape(11.dp)),
+                contentAlignment = Alignment.Center,
+            ) { Txt("羽", css("#e9b48e"), 18.sp, family = Serif) }
+            Spacer(Modifier.width(13.dp))
+            Column(Modifier.weight(1f)) {
+                Txt("羽", Page.ink, 15.sp)
+                Spacer(Modifier.height(3.dp))
+                Txt(
+                    when (state) { "on" -> "助理可以查阅 ${Yu.notes} 篇笔记"; "missing" -> "需要先安装羽"; else -> "让助理读取你的笔记" },
+                    Page.muted, 12.5.sp, maxLines = 1,
+                )
+            }
+            Spacer(Modifier.width(10.dp))
+            when (state) {
+                "on" -> Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.size(6.dp).background(css("#e9b48e"), CircleShape))
+                    Spacer(Modifier.width(7.dp))
+                    Txt("已连接", Page.muted, 13.sp)
+                }
+                "missing" -> Txt("未安装", Page.muted, 13.sp)
+                else -> Txt(
+                    "连接", css("#2a211b"), 13.sp,
+                    Modifier.background(rgba(233, 180, 142, if (pressed) .75f else .92f), RoundedCornerShape(50)).padding(horizontal = 15.dp, vertical = 7.dp),
+                )
+            }
+        }
     }
 }
 

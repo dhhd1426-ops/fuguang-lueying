@@ -245,15 +245,28 @@ fun latestSentence(raw: String, n: Int = 28): String {
 /** 思考结束后的一句总结：取最后一段的第一句。 */
 fun thinkSummary(raw: String): String = thinkSegments(raw).lastOrNull()?.let { firstSentence(it, 32) }.orEmpty()
 
+/** 这一轮对话可以用的工具：工具说明、怎么执行、执行时告诉界面一声。 */
+class Tools(
+    val specs: List<ToolSpec>,
+    val run: suspend (String, JSONObject) -> String,
+    val onUse: suspend (String) -> Unit,
+)
+
 /**
  * 流式对话：OpenAI 兼容接口（stream=true 的 SSE）或 Anthropic messages 接口。
  * 每收到一段正文调 onText，收到思考过程调 onThink（只用来显示“正在思考”）。
+ * 带工具时：模型要用工具 → 执行 → 把结果发回去 → 继续写，最多来回几轮。
  */
 object ChatApi {
     private fun trim(base: String) = base.trim().trimEnd('/')
 
-    /** 这家不认思考参数（400 / 422）。 */
-    private class ThinkRejected : Exception()
+    /** 这家不认思考参数或工具（400 / 422）。 */
+    private class Rejected : Exception()
+
+    private class Call(var id: String = "", val name: StringBuilder = StringBuilder(), val args: StringBuilder = StringBuilder())
+
+    /** 一次请求的结果。 */
+    private class Round(val text: String, val reasoning: String, val calls: List<Call>, val blocks: JSONArray)
 
     suspend fun stream(
         p: Provider,
@@ -263,26 +276,83 @@ object ChatApi {
         history: List<ChatMsg>,
         think: Boolean,
         onThink: suspend (String) -> Unit,
+        tools: Tools? = null,
+        /** 模型不支持工具时，放进 system 提示的补充内容。 */
+        fallback: (suspend () -> String)? = null,
         onText: suspend (String) -> Unit,
     ) {
-        try {
-            once(p, c, model, system, history, think, onThink, onText)
-        } catch (e: ThinkRejected) {
-            // 和云朵一样：先怀疑思考参数，去掉再发一次
-            once(p, c, model, system, history, false, onThink, onText)
+        // 先怀疑工具，再怀疑思考参数，逐个去掉再发
+        val tries = listOf(think to (tools != null), think to false, false to false).distinct()
+        tries.forEachIndexed { i, (th, useTools) ->
+            try {
+                val sys = if (tools != null && !useTools && fallback != null)
+                    system + "\n\n" + runCatching { fallback() }.getOrDefault("") else system
+                conversation(p, c, model, sys, history, th, if (useTools) tools else null, onThink, onText)
+                return
+            } catch (e: Rejected) {
+                if (i == tries.lastIndex) throw IllegalStateException("出错了（400）")
+            }
         }
     }
+
+    private suspend fun conversation(
+        p: Provider, c: ProviderConfig, model: String, system: String, history: List<ChatMsg>,
+        think: Boolean, tools: Tools?, onThink: suspend (String) -> Unit, onText: suspend (String) -> Unit,
+    ) {
+        val anthropic = p.kind == "anthropic"
+        val msgs = JSONArray()
+        if (!anthropic) msgs.put(JSONObject().put("role", "system").put("content", system))
+        history.forEach { msgs.put(JSONObject().put("role", it.role).put("content", it.text)) }
+        var round = 0
+        while (true) {
+            val r = once(p, c, model, system, msgs, think, if (round < 5) tools else null, round == 0, onThink, onText)
+            if (r.calls.isEmpty() || tools == null || round >= 5) return
+            round++
+            if (anthropic) {
+                msgs.put(JSONObject().put("role", "assistant").put("content", r.blocks))
+                val results = JSONArray()
+                r.calls.forEach { call ->
+                    tools.onUse(call.name.toString())
+                    val out = tools.run(call.name.toString(), args(call))
+                    results.put(JSONObject().put("type", "tool_result").put("tool_use_id", call.id).put("content", out))
+                }
+                msgs.put(JSONObject().put("role", "user").put("content", results))
+            } else {
+                val tc = JSONArray()
+                r.calls.forEachIndexed { k, call ->
+                    if (call.id.isBlank()) call.id = "call_${round}_$k"
+                    tc.put(
+                        JSONObject().put("id", call.id).put("type", "function")
+                            .put("function", JSONObject().put("name", call.name.toString()).put("arguments", call.args.toString().ifBlank { "{}" })),
+                    )
+                }
+                val am = JSONObject().put("role", "assistant").put("content", r.text).put("tool_calls", tc)
+                // DeepSeek 思考模式下用工具，要把这一轮的思考原样带回去
+                if (p.id == "deepseek" && r.reasoning.isNotEmpty()) am.put("reasoning_content", r.reasoning)
+                msgs.put(am)
+                r.calls.forEach { call ->
+                    tools.onUse(call.name.toString())
+                    val out = tools.run(call.name.toString(), args(call))
+                    msgs.put(JSONObject().put("role", "tool").put("tool_call_id", call.id).put("content", out))
+                }
+            }
+        }
+    }
+
+    private fun args(call: Call) = runCatching { JSONObject(call.args.toString().ifBlank { "{}" }) }.getOrDefault(JSONObject())
 
     private suspend fun once(
         p: Provider,
         c: ProviderConfig,
         model: String,
         system: String,
-        history: List<ChatMsg>,
+        msgs: JSONArray,
         think: Boolean,
+        tools: Tools?,
+        canReject: Boolean,
         onThink: suspend (String) -> Unit,
         onText: suspend (String) -> Unit,
-    ) = withContext(Dispatchers.IO) {
+    ): Round = withContext(Dispatchers.IO) {
         if (c.key.isBlank()) throw IllegalStateException("还没填 ${c.name} 的 API Key")
         val anthropic = p.kind == "anthropic"
         val url = if (anthropic) trim(c.base) + "/messages"
@@ -290,6 +360,12 @@ object ChatApi {
         val conn = URL(url).openConnection() as HttpURLConnection
         val job = coroutineContext[Job]
         val handle = job?.invokeOnCompletion { runCatching { conn.disconnect() } }
+        val text = StringBuilder()
+        val reasoning = StringBuilder()
+        val calls = sortedMapOf<Int, Call>()
+        // Anthropic：按序号收集每一块（思考、正文、工具调用），用工具时要原样发回
+        val blocks = sortedMapOf<Int, JSONObject>()
+        val partial = mutableMapOf<Int, StringBuilder>()
         try {
             conn.requestMethod = "POST"
             conn.connectTimeout = 15_000
@@ -302,19 +378,28 @@ object ChatApi {
                 conn.setRequestProperty("anthropic-version", "2023-06-01")
             } else conn.setRequestProperty("Authorization", "Bearer " + c.key.trim())
 
-            val msgs = JSONArray()
-            if (!anthropic) msgs.put(JSONObject().put("role", "system").put("content", system))
-            history.forEach { msgs.put(JSONObject().put("role", it.role).put("content", it.text)) }
             val body = JSONObject().put("model", model).put("messages", msgs).put("stream", true)
             if (anthropic) body.put("system", system).put("max_tokens", 4096)
             if (think) {
                 if (anthropic) body.put("thinking", JSONObject().put("type", "enabled").put("budget_tokens", 4000)).put("max_tokens", 8192)
                 else body.put("reasoning_effort", "high")
             }
+            if (tools != null) {
+                val arr = JSONArray()
+                tools.specs.forEach { t ->
+                    arr.put(
+                        if (anthropic) JSONObject().put("name", t.name).put("description", t.description).put("input_schema", t.schema)
+                        else JSONObject().put("type", "function").put(
+                            "function", JSONObject().put("name", t.name).put("description", t.description).put("parameters", t.schema),
+                        ),
+                    )
+                }
+                body.put("tools", arr)
+            }
             conn.outputStream.use { it.write(body.toString().toByteArray()) }
 
             val code = conn.responseCode
-            if (think && (code == 400 || code == 422)) throw ThinkRejected()
+            if (canReject && (think || tools != null) && (code == 400 || code == 422)) throw Rejected()
             if (code !in 200..299) {
                 val err = conn.errorStream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() } ?: ""
                 val msg = runCatching { JSONObject(err).optJSONObject("error")?.optString("message") }.getOrNull()
@@ -337,24 +422,73 @@ object ChatApi {
                     if (data == "[DONE]") break
                     val o = runCatching { JSONObject(data) }.getOrNull() ?: continue
                     if (anthropic) {
-                        if (o.optString("type") == "error") throw IllegalStateException("出错了：" + o.optJSONObject("error")?.optString("message").orEmpty().take(80))
-                        val d = o.optJSONObject("delta") ?: continue
-                        when (d.optString("type")) {
-                            "text_delta" -> d.optString("text").takeIf { it.isNotEmpty() }?.let { withContext(Dispatchers.Main) { onText(it) } }
-                            "thinking_delta" -> d.optString("thinking").takeIf { it.isNotEmpty() }?.let { withContext(Dispatchers.Main) { onThink(it) } }
+                        when (o.optString("type")) {
+                            "error" -> throw IllegalStateException("出错了：" + o.optJSONObject("error")?.optString("message").orEmpty().take(80))
+                            "content_block_start" -> {
+                                val i = o.optInt("index")
+                                val cb = o.optJSONObject("content_block") ?: JSONObject()
+                                blocks[i] = JSONObject(cb.toString())
+                                if (cb.optString("type") == "tool_use") calls[i] = Call(cb.optString("id")).also { it.name.append(cb.optString("name")) }
+                            }
+                            "content_block_delta" -> {
+                                val i = o.optInt("index")
+                                val d = o.optJSONObject("delta") ?: continue
+                                val b = blocks[i]
+                                when (d.optString("type")) {
+                                    "text_delta" -> d.optString("text").takeIf { it.isNotEmpty() }?.let {
+                                        text.append(it); b?.put("text", b.optString("text") + it)
+                                        withContext(Dispatchers.Main) { onText(it) }
+                                    }
+                                    "thinking_delta" -> d.optString("thinking").takeIf { it.isNotEmpty() }?.let {
+                                        b?.put("thinking", b.optString("thinking") + it)
+                                        withContext(Dispatchers.Main) { onThink(it) }
+                                    }
+                                    "signature_delta" -> b?.put("signature", b.optString("signature") + d.optString("signature"))
+                                    "input_json_delta" -> {
+                                        val pj = d.optString("partial_json")
+                                        partial.getOrPut(i) { StringBuilder() }.append(pj)
+                                        calls[i]?.args?.append(pj)
+                                    }
+                                }
+                            }
                         }
                     } else {
                         val d = o.optJSONArray("choices")?.optJSONObject(0)?.optJSONObject("delta") ?: continue
-                        if (!d.isNull("reasoning_content")) d.optString("reasoning_content").takeIf { it.isNotEmpty() }?.let { withContext(Dispatchers.Main) { onThink(it) } }
-                        if (!d.isNull("content")) d.optString("content").takeIf { it.isNotEmpty() }?.let { withContext(Dispatchers.Main) { onText(it) } }
+                        if (!d.isNull("reasoning_content")) d.optString("reasoning_content").takeIf { it.isNotEmpty() }?.let {
+                            reasoning.append(it); withContext(Dispatchers.Main) { onThink(it) }
+                        }
+                        if (!d.isNull("content")) d.optString("content").takeIf { it.isNotEmpty() }?.let {
+                            text.append(it); withContext(Dispatchers.Main) { onText(it) }
+                        }
+                        d.optJSONArray("tool_calls")?.let { arr ->
+                            for (k in 0 until arr.length()) {
+                                val tc = arr.optJSONObject(k) ?: continue
+                                val call = calls.getOrPut(tc.optInt("index", k)) { Call() }
+                                tc.optString("id").takeIf { it.isNotEmpty() && call.id.isEmpty() }?.let { call.id = it }
+                                tc.optJSONObject("function")?.let { f ->
+                                    if (!f.isNull("name")) call.name.append(f.optString("name"))
+                                    if (!f.isNull("arguments")) call.args.append(f.optString("arguments"))
+                                }
+                            }
+                        }
                     }
                 }
             }
+            // 整理成要发回去的内容块
+            val out = JSONArray()
+            blocks.forEach { (i, b) ->
+                when (b.optString("type")) {
+                    "text" -> if (b.optString("text").isNotEmpty()) out.put(b)
+                    "tool_use" -> out.put(b.put("input", runCatching { JSONObject(partial[i]?.toString().orEmpty().ifBlank { "{}" }) }.getOrDefault(JSONObject())))
+                    else -> out.put(b)
+                }
+            }
+            Round(text.toString(), reasoning.toString(), calls.values.filter { it.name.isNotEmpty() }, out)
         } catch (e: CancellationException) {
             throw e
         } catch (e: IllegalStateException) {
             throw e
-        } catch (e: ThinkRejected) {
+        } catch (e: Rejected) {
             throw e
         } catch (e: java.net.UnknownHostException) {
             throw IllegalStateException("连不上服务器，检查网络或地址")

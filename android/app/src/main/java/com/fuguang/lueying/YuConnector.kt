@@ -1,0 +1,130 @@
+package com.fuguang.lueying
+
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.os.Bundle
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import org.json.JSONArray
+import org.json.JSONObject
+
+/**
+ * 连接器「羽」（笔记 App，com.yu.notes）。只读：搜索、读取笔记。
+ * 数据走羽提供的 ContentProvider.call，不联网，羽没开着也能用。
+ */
+object Yu {
+    const val PKG = "com.yu.notes"
+    const val ACTION_CONNECT = "com.yu.notes.action.CONNECT"
+    private val URI: Uri = Uri.parse("content://com.yu.notes.connector")
+
+    /** "missing" 未安装 / "off" 未连接 / "on" 已连接 */
+    var state by mutableStateOf("off")
+    var notes by mutableIntStateOf(0)
+
+    private var app: Context? = null
+    fun init(ctx: Context) { app = ctx.applicationContext }
+
+    val connected get() = state == "on"
+
+    fun connectIntent(): Intent = Intent(ACTION_CONNECT).setPackage(PKG)
+
+    private fun installed(ctx: Context) = ctx.packageManager.resolveActivity(connectIntent(), 0) != null
+
+    /** 调羽的接口，拿回 json；羽没装或出错返回 null。 */
+    private fun call(method: String, arg: String?, extras: Bundle? = null): JSONObject? {
+        val ctx = app ?: return null
+        return runCatching {
+            ctx.contentResolver.call(URI, method, arg, extras)?.getString("json")?.let { JSONObject(it) }
+        }.getOrNull()
+    }
+
+    /** 重新查一次状态。进「我的」、授权回来、每次发消息前都会查。 */
+    suspend fun refresh() = withContext(Dispatchers.IO) {
+        val ctx = app ?: return@withContext
+        if (!installed(ctx)) { set("missing", 0); return@withContext }
+        val s = call("status", null)
+        if (s != null && s.optBoolean("connected")) set("on", s.optInt("notes")) else set("off", 0)
+    }
+
+    private suspend fun set(st: String, n: Int) = withContext(Dispatchers.Main) { state = st; notes = n }
+
+    /** 出错时给模型看的话；not_connected 时顺便把状态改成未连接。 */
+    private suspend fun error(o: JSONObject?): String? {
+        if (o == null) return "暂时读不到羽的笔记。"
+        return when (o.optString("error")) {
+            "" -> null
+            "not_connected" -> { set("off", 0); "羽还没有连接，或者已经断开。请告诉用户到「我的 → 连接器」里重新连接羽。" }
+            "not_found" -> "没有找到这篇笔记。"
+            else -> "读取羽的笔记出错：" + o.optString("error")
+        }
+    }
+
+    suspend fun search(query: String, limit: Int = 10): String = withContext(Dispatchers.IO) {
+        val o = call("search", query.trim(), Bundle().apply { putInt("limit", limit) })
+        error(o)?.let { return@withContext it }
+        val arr = o!!.optJSONArray("notes") ?: JSONArray()
+        if (arr.length() == 0) return@withContext "没有找到相关的笔记。"
+        // 原样转给模型，去掉没用的字段
+        val out = JSONArray()
+        for (i in 0 until arr.length()) {
+            val n = arr.getJSONObject(i)
+            out.put(
+                JSONObject().put("id", n.optString("id")).put("title", n.optString("title"))
+                    .put("snippet", n.optString("snippet")).put("folder", n.optString("folder"))
+                    .put("tags", n.optJSONArray("tags") ?: JSONArray()).put("updated", date(n.optLong("updated"))),
+            )
+        }
+        JSONObject().put("notes", out).toString()
+    }
+
+    suspend fun read(id: String): String = withContext(Dispatchers.IO) {
+        val o = call("read", id.trim())
+        error(o)?.let { return@withContext it }
+        o!!.put("created", date(o.optLong("created"))).put("updated", date(o.optLong("updated"))).toString()
+    }
+
+    private fun date(ms: Long) = if (ms <= 0) "" else
+        java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.CHINA).format(java.util.Date(ms))
+
+    /* ---------- 给模型的工具 ---------- */
+
+    val SYSTEM = "你可以用 search_notes 和 read_note 两个工具查阅用户在「羽」（笔记 App）里的笔记。" +
+        "用户问到自己记过、写过的东西时先去查；引用笔记时说出笔记标题。"
+
+    val tools = listOf(
+        ToolSpec(
+            "search_notes",
+            "在用户的笔记 App「羽」里搜索笔记，返回标题、片段和 id。关键词可以有多个，用空格分开；#标签 按标签筛选；空字符串返回最近的笔记。",
+            JSONObject().put("type", "object")
+                .put("properties", JSONObject().put("query", JSONObject().put("type", "string").put("description", "搜索关键词")))
+                .put("required", JSONArray().put("query")),
+        ),
+        ToolSpec(
+            "read_note",
+            "读取「羽」里一篇笔记的全文。id 来自 search_notes 的结果。",
+            JSONObject().put("type", "object")
+                .put("properties", JSONObject().put("id", JSONObject().put("type", "string").put("description", "笔记 id")))
+                .put("required", JSONArray().put("id")),
+        ),
+    )
+
+    suspend fun run(name: String, args: JSONObject): String = when (name) {
+        "search_notes" -> search(args.optString("query"))
+        "read_note" -> read(args.optString("id"))
+        else -> "没有这个工具：$name"
+    }
+
+    /** 不支持工具的模型：先用用户的问题搜一次，把结果放进 system 提示。 */
+    suspend fun context(question: String): String {
+        val r = search(question, 5)
+        return "以下是在用户的笔记 App「羽」里按这次问题搜到的笔记（可能不相关，引用时说出笔记标题）：\n$r"
+    }
+}
+
+/** 给模型的一个工具：名字、说明、参数的 JSON Schema。 */
+class ToolSpec(val name: String, val description: String, val schema: JSONObject)

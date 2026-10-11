@@ -109,6 +109,8 @@ class ChatState(val history: ConvStore) {
     var thinking by mutableStateOf(false)
     /** 正在进行的这轮思考原文。 */
     var thinkText by mutableStateOf("")
+    /** 正在用工具时的一行提示，如「正在查阅羽的笔记…」。 */
+    var toolNote by mutableStateOf("")
     var error by mutableStateOf<String?>(null)
     var needsSetup by mutableStateOf(false)
     var draft by mutableStateOf("")
@@ -164,7 +166,16 @@ class ChatState(val history: ConvStore) {
         val system = "你是${store.name}，一个温和、真诚、说话简洁的中文助理。用自然的口吻回答，不堆砌格式。"
         job = scope.launch {
             try {
-                ChatApi.stream(p, c, store.activeModel, system, history, store.deepThink, onThink = { thinkText += it; thinking = true }) { partial += it; thinking = false }
+                // 连接了羽：给模型两个查笔记的工具
+                Yu.refresh()
+                val yu = Yu.connected
+                val question = history.lastOrNull { it.role == "user" }?.text.orEmpty()
+                ChatApi.stream(
+                    p, c, store.activeModel, if (yu) system + "\n" + Yu.SYSTEM else system, history, store.deepThink,
+                    onThink = { thinkText += it; thinking = true },
+                    tools = if (yu) Tools(Yu.tools, { n, a -> Yu.run(n, a) }, { toolNote = "正在查阅羽的笔记…" }) else null,
+                    fallback = if (yu) ({ Yu.context(question) }) else null,
+                ) { partial += it; thinking = false; toolNote = "" }
                 streamDone = true
                 // 等书写追上再收尾
                 snapshotFlow { shown >= partial.length }.first { it }
@@ -177,7 +188,7 @@ class ChatState(val history: ConvStore) {
                 if (partial.isNotBlank()) messages.add(ChatMsg("assistant", partial.trim(), thinkText))
                 error = e.message ?: "出错了"
             } finally {
-                partial = ""; shown = 0f; busy = false; thinking = false; thinkText = ""
+                partial = ""; shown = 0f; busy = false; thinking = false; thinkText = ""; toolNote = ""
                 persist()
             }
         }
@@ -387,7 +398,9 @@ private fun Conversation(chat: ChatState, store: AssistantStore, compact: Boolea
                     }
                 }
                 if (chat.busy) {
-                    if (chat.partial.isEmpty()) {
+                    if (chat.partial.isEmpty() && chat.toolNote.isNotEmpty()) {
+                        ThinkingMotion(chat.toolNote, Modifier.padding(start = 2.dp, top = 6.dp, bottom = 10.dp))
+                    } else if (chat.partial.isEmpty()) {
                         if (chat.thinkText.isNotBlank()) {
                             // 深度思考中：三点动效 + 最新一句，点开看过程
                             Pressable({ onThink(-1) }, label = "查看思考过程") { _ ->
@@ -402,6 +415,7 @@ private fun Conversation(chat: ChatState, store: AssistantStore, compact: Boolea
                         if (chat.thinkText.isNotBlank()) ThinkSummaryLine(thinkSummary(chat.thinkText)) { onThink(-1) }
                     }
                     if (chat.partial.isNotEmpty()) Reply(chat.partial.take(ceil(chat.shown).toInt()), compact, fadeTail = chat.shown < chat.partial.length + 1)
+                    if (chat.partial.isNotEmpty() && chat.toolNote.isNotEmpty()) ThinkingMotion(chat.toolNote, Modifier.padding(start = 2.dp, top = 8.dp))
                 }
                 chat.error?.let { err ->
                     Column(Modifier.padding(top = 6.dp, start = 2.dp)) {
