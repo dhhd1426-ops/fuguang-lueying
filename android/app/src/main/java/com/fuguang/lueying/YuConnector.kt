@@ -88,13 +88,30 @@ object Yu {
         o!!.put("created", date(o.optLong("created"))).put("updated", date(o.optLong("updated"))).toString()
     }
 
+    suspend fun todos(includeDone: Boolean): String = withContext(Dispatchers.IO) {
+        val o = call("todos", null)
+        error(o)?.let { return@withContext it }
+        val arr = o!!.optJSONArray("todos") ?: JSONArray()
+        val out = JSONArray()
+        for (i in 0 until arr.length()) {
+            val t = arr.getJSONObject(i)
+            if (!includeDone && t.optBoolean("done")) continue
+            out.put(
+                JSONObject().put("id", t.optString("id")).put("text", t.optString("text")).put("done", t.optBoolean("done"))
+                    .put("remindAt", date(t.optLong("remindAt"))).put("repeat", t.optString("repeat")),
+            )
+        }
+        if (out.length() == 0) return@withContext if (includeDone) "羽里没有待办。" else "羽里没有未完成的待办。"
+        JSONObject().put("todos", out).toString()
+    }
+
     private fun date(ms: Long) = if (ms <= 0) "" else
         java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.CHINA).format(java.util.Date(ms))
 
     /* ---------- 给模型的工具 ---------- */
 
-    val SYSTEM = "你可以用 search_notes 和 read_note 两个工具查阅用户在「羽」（笔记 App）里的笔记。" +
-        "用户问到自己记过、写过的东西时先去查；引用笔记时说出笔记标题。"
+    val SYSTEM = "你可以用 search_notes、read_note 查阅用户在「羽」（笔记 App）里的笔记，用 list_todos 查看羽里的待办。" +
+        "用户问到自己记过、写过的东西，或者要做的事、提醒时先去查；引用笔记时说出笔记标题。"
 
     val tools = listOf(
         ToolSpec(
@@ -111,11 +128,18 @@ object Yu {
                 .put("properties", JSONObject().put("id", JSONObject().put("type", "string").put("description", "笔记 id")))
                 .put("required", JSONArray().put("id")),
         ),
+        ToolSpec(
+            "list_todos",
+            "列出用户在「羽」里的待办（内容、是否完成、提醒时间、重复规则），未完成的在前。",
+            JSONObject().put("type", "object")
+                .put("properties", JSONObject().put("include_done", JSONObject().put("type", "boolean").put("description", "是否包含已完成的待办，默认 false"))),
+        ),
     )
 
     suspend fun run(name: String, args: JSONObject): String = when (name) {
         "search_notes" -> search(args.optString("query"))
         "read_note" -> read(args.optString("id"))
+        "list_todos" -> todos(args.optBoolean("include_done", false))
         else -> "没有这个工具：$name"
     }
 

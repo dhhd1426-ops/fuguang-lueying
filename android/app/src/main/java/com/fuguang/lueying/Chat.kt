@@ -173,7 +173,7 @@ class ChatState(val history: ConvStore) {
                 ChatApi.stream(
                     p, c, store.activeModel, if (yu) system + "\n" + Yu.SYSTEM else system, history, store.deepThink,
                     onThink = { thinkText += it; thinking = true },
-                    tools = if (yu) Tools(Yu.tools, { n, a -> Yu.run(n, a) }, { toolNote = "正在查阅羽的笔记…" }) else null,
+                    tools = if (yu) Tools(Yu.tools, { n, a -> Yu.run(n, a) }, { toolNote = if (it == "list_todos") "正在查看羽的待办…" else "正在查阅羽的笔记…" }) else null,
                     fallback = if (yu) ({ Yu.context(question) }) else null,
                 ) { partial += it; thinking = false; toolNote = "" }
                 streamDone = true
