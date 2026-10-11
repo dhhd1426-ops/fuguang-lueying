@@ -262,7 +262,7 @@ private fun Article(state: ReaderState, narrow: Boolean) {
     } else if (chapter != null) {
         meta = "${chapter.group} / ${"%,d".format(chapter.characters)} 字"
         title = chapter.title
-        notice = "正文保留分享内容；章节标题为整理时添加。文中的日期、天气与地名属于原故事设定。"
+        notice = ""
     } else {
         meta = "LOADING"; title = "正在打开掠影…"; notice = ""
     }
@@ -291,35 +291,26 @@ private fun Article(state: ReaderState, narrow: Boolean) {
     }
 }
 
-/** 按空行分段；以【开头的是场景时间戳，**粗体**照网站显示。 */
+/** 按空行分段；以【开头的是场景时间戳：和正文同字体同字号，只是颜色变淡、不加框。**粗体**照网站显示。 */
 @Composable
 private fun Paragraphs(text: String, size: Int, narrow: Boolean) {
     val p = LocalPalette.current
     val parts = remember(text) { text.split(Regex("\\n\\s*\\n")) }
     parts.forEach { para ->
-        if (para.startsWith("【")) {
-            Txt(
-                para, p.stamp, 10.sp,
-                Modifier
-                    .fillMaxWidth()
-                    .border(1.dp, p.stampBorder, RoundedCornerShape(9.dp))
-                    .padding(horizontal = 14.dp, vertical = 12.dp),
-                lineHeight = 19.sp,
-            )
-            Spacer(Modifier.height(25.dp))
-        } else {
-            BasicText(
-                text = remember(para, p.strong) { bold(para, p.strong) },
-                style = TextStyle(
-                    color = p.text,
-                    fontSize = size.sp,
-                    lineHeight = (size * if (narrow) 2.05f else 2.15f).sp,
-                    letterSpacing = .02.em,
-                    fontFamily = Serif,
-                ),
-            )
-            Spacer(Modifier.height((size * 1.1f).dp))
-        }
+        val stamp = para.startsWith("【")
+        BasicText(
+            text = remember(para, p.strong, stamp) {
+                if (stamp) AnnotatedString(para) else bold(para, p.strong)
+            },
+            style = TextStyle(
+                color = if (stamp) p.stamp else p.text,
+                fontSize = size.sp,
+                lineHeight = (size * if (narrow) 2.05f else 2.15f).sp,
+                letterSpacing = .02.em,
+                fontFamily = Serif,
+            ),
+        )
+        Spacer(Modifier.height((size * 1.1f).dp))
     }
 }
 
