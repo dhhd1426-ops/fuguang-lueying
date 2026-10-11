@@ -259,7 +259,7 @@ fun ChatPage(
         }
         if (menuT > 0f) {
             Box(
-                Modifier.fillMaxSize().alpha(menuT).background(rgba(6, 9, 14, .45f))
+                Modifier.fillMaxSize().alpha(menuT).background(rgba(6, 9, 14, .68f))
                     .pointerInput(Unit) { detectTapGestures { menu = false } },
             )
         }
