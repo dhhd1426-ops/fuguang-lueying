@@ -67,7 +67,8 @@ class MineNav {
     fun back(): Boolean {
         screen = when {
             screen.startsWith("provider/") -> "providers"
-            screen == "providers" -> "mine"
+            screen == "providers" -> "assistant"
+            screen == "assistant" -> "mine"
             else -> return false
         }
         return true
@@ -99,6 +100,7 @@ fun MinePage(
             Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
                 Column(Modifier.widthIn(max = 720.dp).fillMaxWidth()) {
                     when {
+                        screen == "assistant" -> AssistantScreen(store, compact, blur, nav)
                         screen == "providers" -> ProvidersScreen(store, compact, blur, nav)
                         screen.startsWith("provider/") -> ProviderScreen(store, provider(screen.removePrefix("provider/")), compact, blur, nav)
                         else -> MineRoot(store, compact, blur, nav)
@@ -126,10 +128,6 @@ private fun Title(text: String, compact: Boolean, onBack: (() -> Unit)?, trailin
     }
 }
 
-@Composable
-private fun SectionLabel(text: String) {
-    Txt(text, Page.muted, 11.sp, Modifier.padding(start = 4.dp, bottom = 10.dp), spacing = ls(3f, 11f))
-}
 
 @Composable
 private fun Chip(text: String, fill: Color = Color.Transparent, ink: Color = Page.muted) {
@@ -208,7 +206,28 @@ private fun Divider() { Box(Modifier.fillMaxWidth().height(1.dp).background(rgba
 private fun ColumnScope.MineRoot(store: AssistantStore, compact: Boolean, blur: Dp, nav: MineNav) {
     Title("我的", compact, null)
     Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState())) {
-        SectionLabel("助 理")
+        Pressable({ nav.screen = "assistant" }, Modifier.fillMaxWidth(), label = "助理") { pressed ->
+            Row(
+                Modifier.fillMaxWidth()
+                    .glass(RoundedCornerShape(20.dp), blur, fill = if (pressed) rgba(255, 255, 255, .08f) else glassFill)
+                    .padding(horizontal = 18.dp, vertical = 18.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Txt("助理", Page.ink, 15.sp, Modifier.weight(1f))
+                Txt(store.name, Page.muted, 13.sp, maxLines = 1)
+                Spacer(Modifier.width(6.dp))
+                SvgIcon(MineIcons.next, Page.muted, 18.dp)
+            }
+        }
+    }
+}
+
+/* ---------- 助理：名称、模型与供应商 ---------- */
+
+@Composable
+private fun ColumnScope.AssistantScreen(store: AssistantStore, compact: Boolean, blur: Dp, nav: MineNav) {
+    Title("助理", compact, onBack = { nav.back() })
+    Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState())) {
         Column(Modifier.fillMaxWidth().glass(RoundedCornerShape(20.dp), blur, fill = glassFill)) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
                 Txt("名称", Page.ink, 15.sp, Modifier.width(78.dp))
@@ -223,20 +242,18 @@ private fun ColumnScope.MineRoot(store: AssistantStore, compact: Boolean, blur: 
                 )
             }
             Divider()
-            Pressable({ nav.screen = "providers" }, Modifier.fillMaxWidth(), label = "供应商与模型") { pressed ->
+            Pressable({ nav.screen = "providers" }, Modifier.fillMaxWidth(), label = "模型与供应商") { pressed ->
                 Row(
                     Modifier.fillMaxWidth().background(if (pressed) rgba(255, 255, 255, .04f) else Color.Transparent).padding(horizontal = 18.dp, vertical = 18.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Txt("供应商与模型", Page.ink, 15.sp, Modifier.weight(1f))
+                    Txt("模型与供应商", Page.ink, 15.sp, Modifier.weight(1f))
                     Txt("${provider(store.activeProvider).name} · ${store.activeModel}", Page.muted, 13.sp, maxLines = 1)
                     Spacer(Modifier.width(6.dp))
                     SvgIcon(MineIcons.next, Page.muted, 18.dp)
                 }
             }
         }
-        Spacer(Modifier.height(10.dp))
-        Txt("名称会显示在聊天页顶部。设置只保存在这台手机上。", Page.muted.copy(alpha = .7f), 12.sp, Modifier.padding(start = 4.dp), lineHeight = 20.sp)
     }
 }
 
