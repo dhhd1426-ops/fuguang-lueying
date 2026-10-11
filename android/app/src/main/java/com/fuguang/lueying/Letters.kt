@@ -80,14 +80,14 @@ fun Letters(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(Modifier.weight(1f)) {
-                Txt("留言", p.lettersInk, 20.sp, spacing = ls(5f, 20f))
+                Txt("绯句", p.lettersInk, 20.sp, spacing = ls(5f, 20f))
                 Spacer(Modifier.height(10.dp))
                 Txt("写给你", p.lettersSub, 10.sp, spacing = ls(3f, 10f))
             }
             TextButton(if (expanded) "还原 ↙" else "全屏 ↗", p.lettersAction, 11f, label = "全屏") { expanded = !expanded }
             Spacer(Modifier.width(if (narrow) 8.dp else 12.dp))
             ThemeToggle(onToggleTheme)
-            CloseButton(p.lettersInk, "关闭留言", onClose)
+            CloseButton(p.lettersInk, "关闭绯句", onClose)
         }
 
         Column(
