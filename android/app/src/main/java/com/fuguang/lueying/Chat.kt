@@ -230,7 +230,7 @@ fun ChatPage(
         if (menu) 1f else 0f, tween(320, easing = androidx.compose.animation.core.CubicBezierEasing(.2f, .8f, .2f, 1f)), label = "menu",
     )
     val density = LocalDensity.current
-    val menuW = min(width.value * .78f, 340f).dp
+    val menuW = min(width.value * .6f, 340f).dp
     val menuPx = with(density) { menuW.toPx() }
     Box(Modifier.fillMaxSize().background(rgba(14, 17, 23, .38f))) {
       Box(Modifier.fillMaxSize().graphicsLayer { translationX = menuT * menuPx }) {
