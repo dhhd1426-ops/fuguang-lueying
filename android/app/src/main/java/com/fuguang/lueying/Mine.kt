@@ -361,7 +361,13 @@ private fun ConfigTab(store: AssistantStore, p: Provider, blur: Dp) {
             scope.launch {
                 AssistantApi.models(p, draft)
                     .onSuccess { result = true to "连接成功，可用 ${it.size} 个模型" }
-                    .onFailure { result = false to (it.message ?: "连接失败") }
+                    .onFailure {
+                        val k = draft.key.trim()
+                        result = false to (
+                            if (p.id == "deepseek" && k.isNotEmpty() && !k.startsWith("sk-")) "密钥应以 sk- 开头，好像少了这几个字符"
+                            else it.message ?: "连接失败"
+                        )
+                    }
                 if (p.hasBalance && draft.balance && result?.first == true) {
                     AssistantApi.balance(p, draft).onSuccess { store.balances[p.id] = it }
                 }
