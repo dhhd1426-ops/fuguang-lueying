@@ -542,7 +542,7 @@ private fun SwipeToDelete(key: String, onDelete: () -> Unit, content: @Composabl
                         }
                     },
                     onDragCancel = { scope.launch { dx.animateTo(0f) } },
-                ) { ch, amount -> ch.consume(); scope.launch { dx.snapTo((dx.value + amount).coerceIn(-w, 0f)) } },
+                ) { ch, amount -> ch.consume(); scope.launch { dx.snapTo((dx.value + amount).coerceIn(-w, 0f)) } }
             },
     ) {
         // 底下的红色「删除」，只露出手指拉开的那一截
