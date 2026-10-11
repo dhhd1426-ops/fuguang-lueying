@@ -223,7 +223,17 @@ fun ChatPage(
     var thinkOpen by remember { mutableStateOf(false) }
     androidx.activity.compose.BackHandler(enabled = thinkOpen) { thinkOpen = false }
     androidx.activity.compose.BackHandler(enabled = picker) { picker = false }
+    // 左侧菜单：从左边推出来，聊天页整体右移并压暗；点右边空白处收回
+    var menu by remember { mutableStateOf(false) }
+    androidx.activity.compose.BackHandler(enabled = menu) { menu = false }
+    val menuT by androidx.compose.animation.core.animateFloatAsState(
+        if (menu) 1f else 0f, tween(320, easing = androidx.compose.animation.core.CubicBezierEasing(.2f, .8f, .2f, 1f)), label = "menu",
+    )
+    val density = LocalDensity.current
+    val menuW = min(width.value * .78f, 340f).dp
+    val menuPx = with(density) { menuW.toPx() }
     Box(Modifier.fillMaxSize().background(rgba(14, 17, 23, .38f))) {
+      Box(Modifier.fillMaxSize().graphicsLayer { translationX = menuT * menuPx }) {
         Column(
             Modifier
                 .fillMaxSize()
@@ -231,7 +241,7 @@ fun ChatPage(
                 .imePadding()
                 .padding(start = side, end = side, top = if (compact) 26.dp else 38.dp, bottom = if (compact) 22.dp else 30.dp),
         ) {
-            ChatHeader(compact, title, subtitle) { chat.reset() }
+            ChatHeader(compact, title, subtitle, onMenu = { menu = true }) { chat.reset() }
             Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                 if (chat.messages.isEmpty() && !chat.busy) Hello(compact, hour)
                 else Conversation(chat, store, compact, onSetup = onSetup, onRetry = { chat.retry(scope, store) }, onThink = { thinkOf = it; thinkOpen = true })
@@ -247,6 +257,23 @@ fun ChatPage(
             }
             BottomNav(compact, active = "聊天", onHome = onHome, onChat = {}, onMine = onMine, onOpen = onOpen)
         }
+        if (menuT > 0f) {
+            Box(
+                Modifier.fillMaxSize().alpha(menuT).background(rgba(6, 9, 14, .45f))
+                    .pointerInput(Unit) { detectTapGestures { menu = false } },
+            )
+        }
+      }
+        if (menuT > 0f) {
+            // 菜单本体：先留空，等分组模块
+            Box(
+                Modifier.fillMaxHeight().width(menuW)
+                    .graphicsLayer { translationX = (menuT - 1f) * menuPx }
+                    .background(rgba(18, 21, 27, .98f))
+                    .pointerInput(Unit) { detectTapGestures { } }
+                    .windowInsetsPadding(WindowInsets.safeDrawing),
+            )
+        }
         ModelDrawer(picker, store, compact, onClose = { picker = false }, onMore = { picker = false; onMoreModels() })
         val liveThink = thinkOf < 0 || thinkOf >= chat.messages.size
         ThinkDrawer(
@@ -259,8 +286,11 @@ fun ChatPage(
 }
 
 @Composable
-private fun ChatHeader(compact: Boolean, title: String, subtitle: String, onNew: () -> Unit) {
+private fun ChatHeader(compact: Boolean, title: String, subtitle: String, onMenu: () -> Unit, onNew: () -> Unit) {
     Box(Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
+        Pressable(onMenu, Modifier.align(Alignment.CenterStart), label = "菜单") { pressed ->
+            SvgIcon(Ic("M4 6.5h15M4 12h10M4 17.5h13"), if (pressed) Page.ink else Page.ink.copy(alpha = .85f), 22.dp, modifier = Modifier.padding(6.dp))
+        }
         Pressable(onNew, Modifier.align(Alignment.CenterEnd), label = "新对话") { pressed ->
             SvgIcon(ChatIcons.newChat, if (pressed) Page.ink else Page.ink.copy(alpha = .85f), 22.dp, modifier = Modifier.padding(6.dp))
         }
