@@ -233,6 +233,8 @@ fun ChatPage(
     }
 
     var picker by remember { mutableStateOf(false) }
+    val plus = remember { LiquidPlusState() }
+    androidx.activity.compose.BackHandler(enabled = plus.open) { plus.open = false }
     /** 正在看哪条消息的思考：-1 = 正在进行的这一轮。 */
     var thinkOf by remember { mutableIntStateOf(-1) }
     var thinkOpen by remember { mutableStateOf(false) }
@@ -263,7 +265,7 @@ fun ChatPage(
             }
             Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                 ChatInput(
-                    compact, blur, title, store.activeModel, store.deepThink, chat,
+                    compact, blur, title, store.activeModel, store.deepThink, chat, plus,
                     onPick = { picker = true },
                     onSend = { chat.send(scope, store) },
                     onStop = { chat.stop() },
@@ -295,6 +297,7 @@ fun ChatPage(
                 )
             }
         }
+        LiquidPlusLayer(plus) { /* 照片、拍照、文件：入口先放好，功能后面接 */ }
         ModelDrawer(picker, store, compact, onClose = { picker = false }, onMore = { picker = false; onMoreModels() })
         val liveThink = thinkOf < 0 || thinkOf >= chat.messages.size
         ThinkDrawer(
@@ -520,6 +523,7 @@ private fun ChatInput(
     model: String,
     think: Boolean,
     chat: ChatState,
+    plus: LiquidPlusState,
     onPick: () -> Unit,
     onSend: () -> Unit,
     onStop: () -> Unit,
@@ -550,11 +554,7 @@ private fun ChatInput(
         )
         Spacer(Modifier.height(14.dp))
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Box {
-                Box(Modifier.size(36.dp).border(1.dp, Page.line, CircleShape), contentAlignment = Alignment.Center) {
-                    SvgIcon(ChatIcons.plus, Page.ink, 18.dp)
-                }
-            }
+            LiquidPlusButton(plus)
             Pressable(onPick, enabled = !chat.busy, label = "选择模型") { pressed ->
                 Row(
                     Modifier.widthIn(max = 240.dp)
