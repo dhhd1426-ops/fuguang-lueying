@@ -368,92 +368,7 @@ private fun ago(t: Long): String {
 private fun ColumnScope.MemoryScreen(store: AssistantStore, compact: Boolean, blur: Dp, nav: MineNav) {
     Title("记忆", compact, onBack = { nav.back() })
     Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()).padding(bottom = 24.dp)) {
-        // 相识摘要
-        val days = if (Memory.firstAt <= 0) 0 else ((System.currentTimeMillis() - Memory.firstAt) / 86_400_000L).toInt() + 1
-        Txt(if (days == 0) "${store.name} 还在认识你" else "${store.name} 认识你 $days 天了", Page.ink, 19.sp, Modifier.padding(start = 4.dp, top = 2.dp), family = Serif, lineHeight = 30.sp)
-        Spacer(Modifier.height(4.dp))
-        Txt(
-            listOfNotNull("聊过 ${Memory.chats} 次", "记得 ${Memory.items.size} 件事", ago(Memory.lastAt).takeIf { it.isNotEmpty() }?.let { "上次是$it" }).joinToString(" · "),
-            Page.muted, 12.5.sp, Modifier.padding(start = 4.dp),
-        )
-
-        // 它记得 + 全局记忆开关
-        SectionLabel("它记得") {
-            Txt(if (Memory.enabled) "全局记忆" else "全局记忆已关", Page.muted, 12.sp, Modifier.padding(end = 10.dp))
-            Switch(Memory.enabled, "全局记忆") { Memory.enabled = it; Memory.save() }
-        }
-        var open by remember { mutableStateOf<String?>(null) }
-        var all by remember { mutableStateOf(false) }
-        Column(
-            Modifier.fillMaxWidth().glass(RoundedCornerShape(20.dp), blur, fill = glassFill)
-                .padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 12.dp)
-                .alpha(if (Memory.enabled) 1f else .5f)
-                .animateContentSize(),
-        ) {
-            if (!Memory.enabled) {
-                Txt("关闭后，${store.name} 不会记住新的事，也不会用到已经记住的。", Page.muted, 13.sp, Modifier.padding(bottom = 6.dp), lineHeight = 21.sp)
-            }
-            if (Memory.items.isEmpty()) {
-                Txt("还没有记住什么。聊得多了，值得记住的事会出现在这里。", Page.muted, 13.sp, Modifier.padding(bottom = 4.dp), lineHeight = 21.sp)
-            }
-            val shown = if (all) Memory.items.toList() else Memory.items.take(5)
-            shown.forEachIndexed { k, m ->
-                val isOpen = open == m.id
-                Pressable({ open = if (isOpen) null else m.id }, Modifier.fillMaxWidth(), label = m.text) { _ ->
-                    Row(Modifier.fillMaxWidth().height(androidx.compose.foundation.layout.IntrinsicSize.Min)) {
-                        // 时间线：竖线 + 节点，最新一条是杏色
-                        Box(Modifier.width(16.dp).fillMaxHeight()) {
-                            if (k < shown.lastIndex) Box(Modifier.padding(top = 14.dp).align(Alignment.TopCenter).width(1.dp).fillMaxHeight().background(rgba(255, 255, 255, .12f)))
-                            Box(Modifier.padding(top = 8.dp).align(Alignment.TopCenter).size(6.dp).background(if (k == 0) warm else rgba(255, 255, 255, .35f), CircleShape))
-                        }
-                        Column(Modifier.weight(1f).padding(start = 8.dp, bottom = 14.dp)) {
-                            Txt(m.text, Page.ink, 14.5.sp, lineHeight = 22.sp, maxLines = if (isOpen) Int.MAX_VALUE else 1)
-                            Spacer(Modifier.height(2.dp))
-                            Txt(ago(m.at), Page.muted, 12.sp)
-                            if (isOpen) {
-                                if (m.detail.isNotBlank()) {
-                                    Spacer(Modifier.height(10.dp))
-                                    Txt(m.detail, Page.ink.copy(alpha = .78f), 13.5.sp, lineHeight = 22.sp)
-                                }
-                                if (m.convTitle.isNotBlank()) {
-                                    Spacer(Modifier.height(8.dp))
-                                    Txt("来自「${m.convTitle}」", Page.muted, 12.sp, maxLines = 1)
-                                }
-                                Spacer(Modifier.height(10.dp))
-                                Pressable({ Memory.remove(m); open = null }, label = "忘掉这件事") { p ->
-                                    Txt(
-                                        "忘掉这件事", rose, 12.5.sp,
-                                        Modifier.background(rgba(201, 138, 134, if (p) .2f else .12f), RoundedCornerShape(50)).padding(horizontal = 13.dp, vertical = 6.dp),
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            if (Memory.items.size > 5) {
-                Pressable({ all = !all }, label = "全部") { p ->
-                    Txt(if (all) "收起" else "全部 ${Memory.items.size} 件 ›", if (p) Page.ink else Page.muted, 13.sp, Modifier.padding(top = 2.dp, bottom = 4.dp))
-                }
-            }
-        }
-
-        // 你喜欢
-        SectionLabel("你喜欢")
-        ChipEditor(Memory.likes, "比如：回答简洁", onAdd = { Memory.addLike(it) }, onRemove = { Memory.likes.remove(it); Memory.save() })
-
-        // 它的样子
-        SectionLabel("它的样子")
-        Column(Modifier.fillMaxWidth().glass(RoundedCornerShape(20.dp), blur, fill = glassFill).padding(horizontal = 16.dp, vertical = 16.dp)) {
-            ToneSlider("温柔", "直率", Memory.gentle) { Memory.gentle = it }
-            Spacer(Modifier.height(18.dp))
-            ToneSlider("平静", "活泼", Memory.lively) { Memory.lively = it }
-            Spacer(Modifier.height(16.dp))
-            ChipEditor(Memory.amor, "比如：叫我「你」，不用「您」", onAdd = { Memory.addAmor(it) }, onRemove = { Memory.amor.remove(it); Memory.save() })
-        }
-
-        // 更多
-        SectionLabel("更多")
+        // 系统提示词：最上面，点开原地编辑
         var sysOpen by remember { mutableStateOf(false) }
         Column(Modifier.fillMaxWidth().glass(RoundedCornerShape(20.dp), blur, fill = glassFill).animateContentSize()) {
             Pressable({ sysOpen = !sysOpen }, Modifier.fillMaxWidth(), label = "系统提示词") { p ->
@@ -482,7 +397,97 @@ private fun ColumnScope.MemoryScreen(store: AssistantStore, compact: Boolean, bl
                     },
                 )
             }
-            Divider()
+        }
+        Spacer(Modifier.height(22.dp))
+        // 相识摘要
+        val days = if (Memory.firstAt <= 0) 0 else ((System.currentTimeMillis() - Memory.firstAt) / 86_400_000L).toInt() + 1
+        Txt(if (days == 0) "${store.name} 还在认识你" else "${store.name} 认识你 $days 天了", Page.ink, 19.sp, Modifier.padding(start = 4.dp, top = 2.dp), family = Serif, lineHeight = 30.sp)
+        Spacer(Modifier.height(4.dp))
+        Txt(
+            listOfNotNull("聊过 ${Memory.chats} 次", "记得 ${Memory.items.size} 件事", ago(Memory.lastAt).takeIf { it.isNotEmpty() }?.let { "上次是$it" }).joinToString(" · "),
+            Page.muted, 12.5.sp, Modifier.padding(start = 4.dp),
+        )
+
+        // 它记得：开关在色块里；关着只剩这一行，打开后往下展开记忆
+        SectionLabel("它记得")
+        var open by remember { mutableStateOf<String?>(null) }
+        var all by remember { mutableStateOf(false) }
+        Column(Modifier.fillMaxWidth().glass(RoundedCornerShape(20.dp), blur, fill = glassFill).animateContentSize()) {
+            Row(Modifier.fillMaxWidth().padding(start = 18.dp, end = 16.dp, top = 14.dp, bottom = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Txt("全局记忆", Page.ink, 15.sp)
+                    Spacer(Modifier.height(3.dp))
+                    Txt(if (Memory.enabled) "记得 ${Memory.items.size} 件事，会自动记新的" else "关着，不记也不用", Page.muted, 12.5.sp)
+                }
+                Switch(Memory.enabled, "全局记忆") { Memory.enabled = it; Memory.save() }
+            }
+            if (Memory.enabled) {
+                Divider()
+                Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 12.dp)) {
+                    if (Memory.items.isEmpty()) {
+                        Txt("还没有记住什么。聊得多了，值得记住的事会出现在这里。", Page.muted, 13.sp, Modifier.padding(bottom = 4.dp), lineHeight = 21.sp)
+                    }
+                    val shown = if (all) Memory.items.toList() else Memory.items.take(5)
+                    shown.forEachIndexed { k, m ->
+                        val isOpen = open == m.id
+                        Pressable({ open = if (isOpen) null else m.id }, Modifier.fillMaxWidth(), label = m.text) { _ ->
+                            Row(Modifier.fillMaxWidth().height(androidx.compose.foundation.layout.IntrinsicSize.Min)) {
+                                // 时间线：竖线 + 节点，最新一条是杏色
+                                Box(Modifier.width(16.dp).fillMaxHeight()) {
+                                    if (k < shown.lastIndex) Box(Modifier.padding(top = 14.dp).align(Alignment.TopCenter).width(1.dp).fillMaxHeight().background(rgba(255, 255, 255, .12f)))
+                                    Box(Modifier.padding(top = 8.dp).align(Alignment.TopCenter).size(6.dp).background(if (k == 0) warm else rgba(255, 255, 255, .35f), CircleShape))
+                                }
+                                Column(Modifier.weight(1f).padding(start = 8.dp, bottom = 14.dp)) {
+                                    Txt(m.text, Page.ink, 14.5.sp, lineHeight = 22.sp, maxLines = if (isOpen) Int.MAX_VALUE else 1)
+                                    Spacer(Modifier.height(2.dp))
+                                    Txt(ago(m.at), Page.muted, 12.sp)
+                                    if (isOpen) {
+                                        if (m.detail.isNotBlank()) {
+                                            Spacer(Modifier.height(10.dp))
+                                            Txt(m.detail, Page.ink.copy(alpha = .78f), 13.5.sp, lineHeight = 22.sp)
+                                        }
+                                        if (m.convTitle.isNotBlank()) {
+                                            Spacer(Modifier.height(8.dp))
+                                            Txt("来自「${m.convTitle}」", Page.muted, 12.sp, maxLines = 1)
+                                        }
+                                        Spacer(Modifier.height(10.dp))
+                                        Pressable({ Memory.remove(m); open = null }, label = "忘掉这件事") { p ->
+                                            Txt(
+                                                "忘掉这件事", rose, 12.5.sp,
+                                                Modifier.background(rgba(201, 138, 134, if (p) .2f else .12f), RoundedCornerShape(50)).padding(horizontal = 13.dp, vertical = 6.dp),
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if (Memory.items.size > 5) {
+                        Pressable({ all = !all }, label = "全部") { p ->
+                            Txt(if (all) "收起" else "全部 ${Memory.items.size} 件 ›", if (p) Page.ink else Page.muted, 13.sp, Modifier.padding(top = 2.dp, bottom = 4.dp))
+                        }
+                    }
+                }
+            }
+        }
+
+        // 你喜欢
+        SectionLabel("你喜欢")
+        ChipEditor(Memory.likes, "比如：回答简洁", onAdd = { Memory.addLike(it) }, onRemove = { Memory.likes.remove(it); Memory.save() })
+
+        // 它的样子
+        SectionLabel("它的样子")
+        Column(Modifier.fillMaxWidth().glass(RoundedCornerShape(20.dp), blur, fill = glassFill).padding(horizontal = 16.dp, vertical = 16.dp)) {
+            ToneSlider("温柔", "直率", Memory.gentle) { Memory.gentle = it }
+            Spacer(Modifier.height(18.dp))
+            ToneSlider("平静", "活泼", Memory.lively) { Memory.lively = it }
+            Spacer(Modifier.height(16.dp))
+            ChipEditor(Memory.amor, "比如：叫我「你」，不用「您」", onAdd = { Memory.addAmor(it) }, onRemove = { Memory.amor.remove(it); Memory.save() })
+        }
+
+        // 更多
+        SectionLabel("更多")
+        Box(Modifier.fillMaxWidth().glass(RoundedCornerShape(20.dp), blur, fill = glassFill)) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 18.dp).alpha(.38f)) { Txt("待开放", Page.ink, 15.sp) }
         }
     }
