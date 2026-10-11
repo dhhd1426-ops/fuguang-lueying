@@ -223,7 +223,7 @@ fun ChatPage(
     var thinkOpen by remember { mutableStateOf(false) }
     androidx.activity.compose.BackHandler(enabled = thinkOpen) { thinkOpen = false }
     androidx.activity.compose.BackHandler(enabled = picker) { picker = false }
-    // 左侧菜单：从左边推出来，聊天页整体右移并压暗；点右边空白处收回
+    // 左侧菜单：从左边滑出，盖在聊天页上面（聊天页不动，只压暗）；点右边露出的部分收回
     var menu by remember { mutableStateOf(false) }
     androidx.activity.compose.BackHandler(enabled = menu) { menu = false }
     val menuT by androidx.compose.animation.core.animateFloatAsState(
@@ -233,7 +233,7 @@ fun ChatPage(
     val menuW = min(width.value * .6f, 340f).dp
     val menuPx = with(density) { menuW.toPx() }
     Box(Modifier.fillMaxSize().background(rgba(14, 17, 23, .38f))) {
-      Box(Modifier.fillMaxSize().graphicsLayer { translationX = menuT * menuPx }) {
+      Box(Modifier.fillMaxSize()) {
         Column(
             Modifier
                 .fillMaxSize()
