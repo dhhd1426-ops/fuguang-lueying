@@ -138,15 +138,32 @@ class ChatState(val history: ConvStore) {
 
     private fun persist() { convId = history.save(convId, messages) }
 
-    fun send(scope: CoroutineScope, store: AssistantStore) {
+    /** 正在编辑重发第几条消息：-1 = 没有。 */
+    var editing by mutableIntStateOf(-1)
+
+    /** 发出输入框里的话；编辑重发时，先删掉那条及之后的内容。返回新消息的序号，没发出去是 -1。 */
+    fun send(scope: CoroutineScope, store: AssistantStore): Int {
         val text = draft.trim()
-        if (text.isEmpty() || busy) return
+        if (text.isEmpty() || busy) return -1
         draft = ""
         error = null; needsSetup = false
+        if (editing in messages.indices) while (messages.size > editing) messages.removeAt(messages.lastIndex)
+        editing = -1
         messages.add(ChatMsg("user", text))
         Memory.touch(newChat = messages.size == 1)
         persist()
         sent++
+        ask(scope, store)
+        return messages.lastIndex
+    }
+
+    /** 让 Amor 对最后一个问题重新回答。 */
+    fun regenerate(scope: CoroutineScope, store: AssistantStore) {
+        if (busy) return
+        if (messages.lastOrNull()?.role == "assistant") messages.removeAt(messages.lastIndex)
+        if (messages.lastOrNull()?.role != "user") return
+        error = null; needsSetup = false
+        persist()
         ask(scope, store)
     }
 
@@ -264,6 +281,11 @@ fun ChatPage(
     var thinkOf by remember { mutableIntStateOf(-1) }
     var thinkOpen by remember { mutableStateOf(false) }
     var viewing by remember { mutableStateOf<String?>(null) }
+    // 长按菜单、选择文字、小提示
+    var press by remember { mutableStateOf<MsgPress?>(null) }
+    var selectText by remember { mutableStateOf<String?>(null) }
+    var toast by remember { mutableStateOf<String?>(null) }
+    val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
     androidx.activity.compose.BackHandler(enabled = thinkOpen) { thinkOpen = false }
     androidx.activity.compose.BackHandler(enabled = picker) { picker = false }
     // 左侧菜单：从左边滑出，盖在聊天页上面（聊天页不动，只压暗）；点右边露出的部分收回
@@ -287,16 +309,16 @@ fun ChatPage(
             ChatHeader(compact, title, subtitle, onMenu = { menu = true }) { chat.reset() }
             Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                 if (chat.messages.isEmpty() && !chat.busy) Hello(compact, hour)
-                else Conversation(chat, store, compact, flight, onSetup = onSetup, onRetry = { chat.retry(scope, store) }, onThink = { thinkOf = it; thinkOpen = true }, onImage = { viewing = it })
+                else Conversation(chat, store, compact, flight, onSetup = onSetup, onRetry = { chat.retry(scope, store) }, onThink = { thinkOf = it; thinkOpen = true }, onImage = { viewing = it },
+                    pressed = press?.index ?: -1, onLong = { if (!chat.busy || it.index < chat.messages.size) press = it })
             }
             Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                 ChatInput(
                     compact, blur, title, store.activeModel, store.deepThink, chat, plus, flight,
                     onPick = { picker = true },
                     onSend = {
-                        val n = chat.messages.size
-                        chat.send(scope, store)
-                        if (chat.messages.size > n) scope.launch { flight.launch(n) }
+                        val n = chat.send(scope, store)
+                        if (n >= 0) scope.launch { flight.launch(n) }
                     },
                     onStop = { chat.stop() },
                     modifier = Modifier.widthIn(max = 720.dp).fillMaxWidth(),
@@ -338,6 +360,22 @@ fun ChatPage(
             onClose = { thinkOpen = false },
         )
         NoteImageViewer(viewing) { viewing = null }
+        val pm = press?.let { chat.messages.getOrNull(it.index) }
+        MsgMenu(
+            press = if (pm != null) press else null, msg = pm,
+            isLast = press?.index == chat.messages.lastIndex && !chat.busy,
+            side = side,
+            onClose = { press = null },
+            onCopy = { pm?.let { clipboard.setText(AnnotatedString(it.text)); toast = "已复制" } },
+            onSelect = { selectText = pm?.text },
+            onEdit = {
+                val i = press?.index ?: -1
+                if (pm != null && i >= 0 && !chat.busy) { chat.editing = i; chat.draft = pm.text }
+            },
+            onRegen = { chat.regenerate(scope, store) },
+        )
+        SelectTextPage(selectText) { selectText = null }
+        BoxToast(toast, Modifier.align(Alignment.BottomCenter).padding(bottom = 150.dp)) { toast = null }
     }
 }
 
@@ -373,7 +411,10 @@ private fun Hello(compact: Boolean, hour: Int) {
 /* ---------------- 对话区 ---------------- */
 
 @Composable
-private fun Conversation(chat: ChatState, store: AssistantStore, compact: Boolean, flight: SendFlight, onSetup: () -> Unit, onRetry: () -> Unit, onThink: (Int) -> Unit, onImage: (String) -> Unit) {
+private fun Conversation(
+    chat: ChatState, store: AssistantStore, compact: Boolean, flight: SendFlight, onSetup: () -> Unit, onRetry: () -> Unit,
+    onThink: (Int) -> Unit, onImage: (String) -> Unit, pressed: Int, onLong: (MsgPress) -> Unit,
+) {
     val scroll = rememberScrollState()
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
@@ -404,10 +445,10 @@ private fun Conversation(chat: ChatState, store: AssistantStore, compact: Boolea
                             Modifier.fillMaxWidth().padding(top = if (i == 0) 0.dp else 26.dp, bottom = 16.dp)
                                 .then(if (i == lastUser) Modifier.onGloballyPositioned { lastUserTop = it.positionInParent().y } else Modifier),
                             contentAlignment = Alignment.CenterEnd,
-                        ) { UserBubble(m.text, compact, Modifier.flightBubble(flight, i == flight.idx, 18.dp)) }
+                        ) { UserBubble(m.text, compact, Modifier.longPressMsg(i, pressed == i, onLong).flightBubble(flight, i == flight.idx, 18.dp)) }
                     } else {
                         if (m.think.isNotBlank()) ThinkSummaryLine(thinkSummary(m.think)) { onThink(i) }
-                        Reply(m.text, compact, fadeTail = false)
+                        Box(Modifier.fillMaxWidth().longPressMsg(i, pressed == i, onLong)) { Reply(m.text, compact, fadeTail = false) }
                         NoteImageRow(m.imgs, onImage)
                     }
                 }
@@ -595,6 +636,17 @@ private fun ChatInput(
                 .glass(shape, blur, fill = rgba(30, 34, 42, .42f))
                 .padding(start = 16.dp, end = inset, top = 15.dp, bottom = inset),
         ) {
+            // 编辑重发：输入框上方一条杏色提示，点 × 放弃
+            if (chat.editing >= 0) {
+                Row(Modifier.fillMaxWidth().padding(start = 4.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    SvgIcon(Ic("M13.5 6.5l4 4M5 19l1-4.5L15.5 5a1.5 1.5 0 0 1 2 0l1.5 1.5a1.5 1.5 0 0 1 0 2L9.5 18z"), css("#e9b48e"), 15.dp)
+                    Spacer(Modifier.width(6.dp))
+                    Txt("编辑消息，发送后从这里重新回答", css("#e9b48e"), 12.5.sp, Modifier.weight(1f), maxLines = 1)
+                    Pressable({ chat.editing = -1; chat.draft = "" }, label = "放弃编辑") { _ ->
+                        SvgIcon(Icons.close, Page.muted, 16.dp, modifier = Modifier.padding(4.dp))
+                    }
+                }
+            }
             BasicTextField(
                 value = chat.draft,
                 onValueChange = { chat.draft = it },
