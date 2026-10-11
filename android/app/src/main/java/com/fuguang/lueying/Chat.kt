@@ -455,6 +455,8 @@ private fun ChatInput(
     modifier: Modifier,
 ) {
     val shape = RoundedCornerShape(22.dp)
+    val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
+    val focus = androidx.compose.ui.platform.LocalFocusManager.current
     Column(
         modifier
             .padding(top = 10.dp)
@@ -494,7 +496,7 @@ private fun ChatInput(
             val canSend = chat.draft.isNotBlank() && !chat.busy
             val icon = when { chat.busy -> ChatIcons.stop; canSend -> ChatIcons.up; else -> ChatIcons.wave }
             Pressable(
-                { if (chat.busy) onStop() else if (canSend) onSend() },
+                { if (chat.busy) onStop() else if (canSend) { onSend(); keyboard?.hide(); focus.clearFocus() } },
                 label = when { chat.busy -> "停止"; canSend -> "发送"; else -> "语音" },
             ) { pressed ->
                 Box(
