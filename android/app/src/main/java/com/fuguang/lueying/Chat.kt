@@ -216,7 +216,7 @@ class ChatState(val history: ConvStore) {
                     if (yu) append("\n").append(Yu.system())
                 }
                 ChatApi.stream(
-                    p, c, store.activeModel, Memory.prompt(who) + extra, history, store.deepThink,
+                    p, c, store.activeModel, Memory.prompt(who, store.activeModel) + extra, history, store.deepThink,
                     onThink = { thinkText += it; thinking = true },
                     tools = if (specs.isNotEmpty()) Tools(
                         specs,

@@ -727,7 +727,7 @@ private fun ColumnScope.PromptTab(p: Persona, blur: Dp) {
         },
     )
     Row(Modifier.fillMaxWidth().padding(start = 6.dp, top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-        Txt("写在这里的，就是她自己。", Page.muted, 12.5.sp, Modifier.weight(1f), lineHeight = 20.sp)
+        Txt("写在这里的，就是她自己。她的名字和你的称呼会先告诉她；文中可以写 {char}、{name}、{model}、{date}。", Page.muted, 12.5.sp, Modifier.weight(1f), lineHeight = 20.sp)
         if (draft.trim() != Memory.DEFAULT_SYS) {
             Pressable({ draft = Memory.DEFAULT_SYS }, Modifier.padding(end = 8.dp), label = "恢复默认") { pr ->
                 Txt("恢复默认", Page.muted, 12.5.sp, Modifier.background(rgba(255, 255, 255, if (pr) .1f else .05f), RoundedCornerShape(50)).padding(horizontal = 12.dp, vertical = 8.dp))

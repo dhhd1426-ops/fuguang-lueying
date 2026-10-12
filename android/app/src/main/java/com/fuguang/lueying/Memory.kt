@@ -51,6 +51,10 @@ object Memory {
     private var prefs: Prefs? = null
 
     const val DEFAULT_SYS =
+        "你温和、真诚，像一个认识{name}很久的老朋友。说话简洁自然，用口语，不堆砌格式，不用客套话开头，也不说教。" +
+            "{name}问问题，就直接给答案；{name}心情不好，就先陪着，不急着讲道理。不确定的事就说不确定，不编。"
+    /** 第 83 版以前的默认提示词：存着这段的助理，读出来时当成现在的默认，这样「恢复默认」不会凭空出现。 */
+    private const val OLD_DEFAULT_SYS =
         "你温和、真诚，像一个认识他很久的老朋友。说话简洁自然，用口语，不堆砌格式，不用客套话开头，也不说教。" +
             "他问问题，就直接给答案；他心情不好，就先陪着，不急着讲道理。不确定的事就说不确定，不编。"
 
@@ -90,7 +94,7 @@ object Memory {
 
     private fun mem(it: JSONObject) = Mem(it.optString("id"), it.optString("t"), it.optString("d"), it.optLong("at"), it.optString("c"), it.optString("ct"), it.optString("k", "know").ifBlank { "know" }, it.optString("b").ifBlank { if (it.optString("c").isEmpty()) "you" else "her" })
 
-    private fun read(o: JSONObject) = Persona(o.optString("id"), o.optString("name", "Amor"), o.optString("sys", DEFAULT_SYS)).apply {
+    private fun read(o: JSONObject) = Persona(o.optString("id"), o.optString("name", "Amor"), o.optString("sys", DEFAULT_SYS).let { if (it.trim() == OLD_DEFAULT_SYS) DEFAULT_SYS else it }).apply {
         memOn = o.optBoolean("on", true)
         firstAt = o.optLong("first"); lastAt = o.optLong("last"); chats = o.optInt("chats")
         temp = o.optDouble("temp", .7).toFloat(); topOn = o.optBoolean("topOn", false); top = o.optDouble("top", .9).toFloat(); limit = o.optInt("limit", 40)
@@ -212,12 +216,28 @@ object Memory {
     }
 
     /**
-     * 拼进 system 的部分，和云朵天气一样分段加【标签】：
-     * 你写的提示词（{name} 换成你的称呼）→【时间感知】→【关于你】→【你的偏好】→【她自己的样子】→【她自己记得的事】。
+     * 提示词里可以写的占位符（照 RikkaHub，{x} 和 {{x}} 都认，不分大小写）：
+     * {name} / {user} = 用户名称（没填就是「他」），{char} = 她的名字，{model} = 正在用的模型，{date} = 今天日期。
      */
-    fun prompt(p: Persona = active): String {
+    fun fill(text: String, p: Persona, model: String = ""): String {
+        val date = java.text.SimpleDateFormat("yyyy 年 M 月 d 日 EEEE", java.util.Locale.CHINA).format(java.util.Date())
+        var s = text
+        mapOf("name" to who, "user" to who, "char" to p.name, "model" to model.ifBlank { "未知" }, "date" to date).forEach { (k, v) ->
+            s = s.replace("{{$k}}", v, ignoreCase = true).replace("{$k}", v, ignoreCase = true)
+        }
+        return s
+    }
+
+    /**
+     * 拼进 system 的部分，和云朵天气一样分段加【标签】：
+     * 她是谁、在和谁聊 → 你写的提示词（占位符见 fill）→【时间感知】→【关于你】→【你的偏好】→【她自己的样子】→【她自己记得的事】。
+     */
+    fun prompt(p: Persona = active, model: String = ""): String {
         val sb = StringBuilder()
-        sb.append(p.sys.trim().ifEmpty { DEFAULT_SYS }.replace("{name}", who))
+        // 她是谁、在和谁聊：固定写在最前面，不靠记忆段落的标题带出来（照 RikkaHub：called {{char}} … User Nickname: {{user}}）
+        sb.append("你是").append(p.name).append("。")
+        if (userName.isNotBlank()) sb.append("正在和你聊天的是").append(who).append("。")
+        sb.append("\n\n").append(fill(p.sys.trim().ifEmpty { DEFAULT_SYS }, p, model))
         sb.append("\n\n【时间感知】\n").append(timeSense(p))
         fun line(m: Mem) = own(m.text).trimEnd('。') + if (m.detail.isNotBlank()) "（" + own(m.detail).trimEnd('。') + "）" else ""
         fun block(title: String, ms: List<Mem>) {
