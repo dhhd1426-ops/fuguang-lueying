@@ -13,6 +13,8 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -128,6 +130,8 @@ fun MinePage(
             }
             if (screen == "mine") BottomNav(compact, active = "我的", onHome = onHome, onChat = onChat, onMine = {}, onOpen = onOpen)
         }
+        // 添加记忆的卡片：画在整页最上层
+        MemoryCardHost()
     }
 }
 
@@ -466,7 +470,6 @@ private fun ColumnScope.PersonaScreen(store: AssistantStore, p: Persona, compact
     val scope = rememberCoroutineScope()
     LaunchedEffect(pager.currentPage) { nav.tab = pager.currentPage }
     SegTabs(listOf("基础", "提示词", "记忆"), pager, blur) { scope.launch { pager.animateScrollToPage(it) } }
-    var adding by remember { mutableStateOf(false) }
     var undo by remember { mutableStateOf<Pair<Mem, Int>?>(null) }
     LaunchedEffect(undo) { if (undo != null) { kotlinx.coroutines.delay(4000); undo = null } }
     Box(Modifier.weight(1f).fillMaxWidth()) {
@@ -480,7 +483,7 @@ private fun ColumnScope.PersonaScreen(store: AssistantStore, p: Persona, compact
                 when (page) {
                     0 -> BasicTab(store, p, blur, nav)
                     1 -> PromptTab(p, blur)
-                    else -> MemoryTab(p, blur, onAdd = { adding = true }, onDeleted = { m, i -> undo = m to i })
+                    else -> MemoryTab(p, blur, onDeleted = { m, i -> undo = m to i })
                 }
             }
         }
@@ -502,7 +505,6 @@ private fun ColumnScope.PersonaScreen(store: AssistantStore, p: Persona, compact
                 }
             }
         }
-        AddMemorySheet(adding, p) { adding = false }
     }
 }
 
@@ -660,7 +662,7 @@ private fun ago(t: Long): String {
 
 /* 记忆：相识摘要 + 全局记忆（关着只剩一行） */
 @Composable
-private fun ColumnScope.MemoryTab(p: Persona, blur: Dp, onAdd: () -> Unit, onDeleted: (Mem, Int) -> Unit) {
+private fun ColumnScope.MemoryTab(p: Persona, blur: Dp, onDeleted: (Mem, Int) -> Unit) {
     val days = if (p.firstAt <= 0) 0 else ((System.currentTimeMillis() - p.firstAt) / 86_400_000L).toInt() + 1
     Txt(if (days == 0) "${p.name} 还在认识你" else "${p.name} 认识你 $days 天了", Page.ink, 19.sp, Modifier.padding(start = 4.dp, top = 2.dp), family = Serif, lineHeight = 30.sp)
     Spacer(Modifier.height(4.dp))
@@ -679,8 +681,21 @@ private fun ColumnScope.MemoryTab(p: Persona, blur: Dp, onAdd: () -> Unit, onDel
                 Txt(if (p.memOn) "记得 ${p.items.size} 件事，会自动记新的" else "关着，不记也不用", Page.muted, 12.5.sp)
             }
             if (p.memOn) {
-                Pressable(onAdd, Modifier.padding(end = 12.dp), label = "添加记忆") { pr ->
-                    Box(Modifier.size(32.dp).background(rgba(233, 180, 142, if (pr) .28f else .16f), CircleShape), contentAlignment = Alignment.Center) {
+                // 卡片从这颗「＋」里长出来，也收回到这里；收回时轻轻跳一下
+                var at by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
+                val bump = remember { androidx.compose.animation.core.Animatable(1f) }
+                LaunchedEffect(MemoryCard.landed) {
+                    if (MemoryCard.landed > 0) { bump.snapTo(1.28f); bump.animateTo(1f, androidx.compose.animation.core.spring(dampingRatio = .45f, stiffness = 500f)) }
+                }
+                val hidden = MemoryCard.open && MemoryCard.persona?.id == p.id
+                Pressable({ MemoryCard.show(p, at) }, Modifier.padding(end = 12.dp), label = "添加记忆") { pr ->
+                    Box(
+                        Modifier.size(32.dp)
+                            .onGloballyPositioned { at = it.boundsInWindow().center }
+                            .graphicsLayer { val k = bump.value * if (hidden) .7f else 1f; scaleX = k; scaleY = k; alpha = if (hidden) .35f else 1f }
+                            .background(rgba(233, 180, 142, if (pr) .28f else .16f), CircleShape),
+                        contentAlignment = Alignment.Center,
+                    ) {
                         SvgIcon(Ic("M12 6v12M6 12h12"), warm, 16.dp, stroke = 1.7f)
                     }
                 }
@@ -696,6 +711,15 @@ private fun ColumnScope.MemoryTab(p: Persona, blur: Dp, onAdd: () -> Unit, onDel
                 val shown = if (all) p.items.toList() else p.items.take(5)
                 shown.forEachIndexed { k, m ->
                     val isOpen = open == m.id
+                    val drop = remember(m.id) { androidx.compose.animation.core.Animatable(if (m.id == MemoryCard.justAdded) 0f else 1f) }
+                    LaunchedEffect(m.id) {
+                        if (drop.value < 1f) {
+                            kotlinx.coroutines.delay(300)
+                            drop.animateTo(1f, androidx.compose.animation.core.spring(dampingRatio = .55f, stiffness = 420f))
+                            MemoryCard.justAdded = ""
+                        }
+                    }
+                    Box(Modifier.graphicsLayer { alpha = drop.value.coerceIn(0f, 1f); translationY = (1f - drop.value) * -16.dp.toPx() }) {
                     SwipeToDelete(m.id, onDelete = {
                         val idx = p.items.indexOf(m)
                         Memory.remove(p, m); open = null
@@ -725,6 +749,7 @@ private fun ColumnScope.MemoryTab(p: Persona, blur: Dp, onAdd: () -> Unit, onDel
                                 }
                             }
                         }
+                    }
                     }
                 }
                 if (p.items.size > 5) {
@@ -769,67 +794,6 @@ private fun SwipeToDelete(key: String, onDelete: () -> Unit, content: @Composabl
             ) { if (revealed > 56.dp) Txt("删除", css("#f6e3e1"), 13.sp, Modifier.padding(end = 16.dp), maxLines = 1) }
         }
         Box(Modifier.graphicsLayer { translationX = dx.value }) { content() }
-    }
-}
-
-/** 添加记忆：从底部升起的抽屉（和选择模型同款）；点暗处或返回键收起。 */
-@Composable
-private fun AddMemorySheet(open: Boolean, persona: Persona, onClose: () -> Unit) {
-    val name = persona.name
-    val shown by androidx.compose.animation.core.animateFloatAsState(
-        if (open) 1f else 0f, tween(if (open) 320 else 220, easing = androidx.compose.animation.core.CubicBezierEasing(.2f, .8f, .2f, 1f)), label = "addMem",
-    )
-    androidx.activity.compose.BackHandler(enabled = open) { onClose() }
-    if (shown <= 0f) return
-    var title by remember(open) { mutableStateOf("") }
-    var body by remember(open) { mutableStateOf("") }
-    val focus = remember { androidx.compose.ui.focus.FocusRequester() }
-    LaunchedEffect(open) { if (open) { kotlinx.coroutines.delay(260); runCatching { focus.requestFocus() } } }
-    Box(Modifier.fillMaxSize()) {
-        Box(Modifier.fillMaxSize().alpha(shown).background(rgba(6, 9, 14, .5f)).pointerInput(Unit) { detectTapGestures { onClose() } })
-        Column(
-            Modifier.align(Alignment.BottomCenter).widthIn(max = 560.dp).fillMaxWidth()
-                .graphicsLayer { translationY = (1f - shown) * 600f; alpha = shown }
-                .background(rgba(20, 24, 31, .97f), RoundedCornerShape(26.dp))
-                .pointerInput(Unit) { detectTapGestures { } }
-                .padding(start = 20.dp, end = 20.dp, top = 10.dp, bottom = 20.dp),
-        ) {
-            Box(Modifier.align(Alignment.CenterHorizontally).width(40.dp).height(4.dp).background(rgba(255, 255, 255, .25f), RoundedCornerShape(2.dp)))
-            Spacer(Modifier.height(14.dp))
-            Txt("让 $name 记住", Page.ink, 16.sp, Modifier.align(Alignment.CenterHorizontally), weight = FontWeight.SemiBold)
-            Spacer(Modifier.height(16.dp))
-            BasicTextField(
-                value = title, onValueChange = { title = it.take(40) }, singleLine = true,
-                textStyle = TextStyle(color = Page.ink, fontSize = 16.sp, fontFamily = Serif),
-                cursorBrush = SolidColor(warm),
-                modifier = Modifier.fillMaxWidth().focusRequester(focus),
-                decorationBox = { inner ->
-                    Box(Modifier.fillMaxWidth().background(rgba(0, 0, 0, .22f), RoundedCornerShape(14.dp)).padding(horizontal = 14.dp, vertical = 13.dp)) {
-                        if (title.isEmpty()) Txt("标题，比如：我的生日", Page.muted.copy(alpha = .6f), 15.sp, family = Serif)
-                        inner()
-                    }
-                },
-            )
-            Spacer(Modifier.height(10.dp))
-            BasicTextField(
-                value = body, onValueChange = { body = it.take(500) },
-                textStyle = TextStyle(color = Page.ink, fontSize = 14.sp, lineHeight = 22.sp),
-                cursorBrush = SolidColor(warm),
-                modifier = Modifier.fillMaxWidth(),
-                decorationBox = { inner ->
-                    Box(Modifier.fillMaxWidth().heightIn(min = 88.dp).background(rgba(0, 0, 0, .22f), RoundedCornerShape(14.dp)).padding(14.dp)) {
-                        if (body.isEmpty()) Txt("内容，比如：3 月 14 日，想安静地过", Page.muted.copy(alpha = .6f), 14.sp)
-                        inner()
-                    }
-                },
-            )
-            Spacer(Modifier.height(16.dp))
-            Pressable({ if (title.isNotBlank() || body.isNotBlank()) { Memory.add(persona, title, body); onClose() } else runCatching { focus.requestFocus() } }, Modifier.fillMaxWidth(), label = "记住") { p ->
-                Box(Modifier.fillMaxWidth().background(rgba(233, 180, 142, if (p) .75f else .92f), RoundedCornerShape(50)).padding(vertical = 13.dp), contentAlignment = Alignment.Center) {
-                    Txt("记住", css("#2a211b"), 15.sp)
-                }
-            }
-        }
     }
 }
 
