@@ -163,10 +163,10 @@ object Memory {
      */
     fun prompt(p: Persona = active): String {
         val sb = StringBuilder()
-        val mine = p.sys.trim().ifEmpty { DEFAULT_SYS }
-        if (!mine.contains(p.name)) sb.append("你叫${p.name}。")
-        sb.append(mine)
-        if (!mine.endsWith("。") && !mine.endsWith("\n")) sb.append("。")
+        // 和云朵天气一样：你写的提示词原样放在最前面，只把 {name} 换掉，后面再接别的
+        sb.append(p.sys.trim().ifEmpty { DEFAULT_SYS }.replace("{name}", "他"))
+        sb.append("\n\n")
+        val head = sb.length
         if (p.memOn) {
             if (p.firstAt > 0) {
                 val days = ((System.currentTimeMillis() - p.firstAt) / 86_400_000L).toInt()
@@ -189,6 +189,7 @@ object Memory {
                 sb.append("这些都是你自己记下的，是你本来就知道的事，像老朋友那样自然地带出来，用不上就不提；不要说“根据记忆”“我记得你说过”，也不要提起这段话。")
             }
         }
+        if (sb.length == head) sb.setLength(head - 2)
         return sb.toString()
     }
 
