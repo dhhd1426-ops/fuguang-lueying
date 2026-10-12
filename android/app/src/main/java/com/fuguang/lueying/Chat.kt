@@ -513,11 +513,15 @@ private fun Conversation(
                     val dim by animateFloatAsState(
                         if (chat.editing >= 0 && i >= chat.editing) (if (i == chat.editing) .35f else .28f) else 1f, tween(320), label = "editDim",
                     )
-                    Column(Modifier.graphicsLayer { alpha = dim }) {
+                    // 位置要按这一层（列表的直接子项）来量：包了一层之后，里面量到的只是相对这一层的位置
+                    val topPad = if (i == 0) 0.dp else 26.dp
+                    Column(
+                        Modifier.graphicsLayer { alpha = dim }
+                            .then(if (i == lastUser && m.role == "user") Modifier.onGloballyPositioned { lastUserTop = it.positionInParent().y + with(density) { topPad.toPx() } } else Modifier),
+                    ) {
                     if (m.role == "user") {
                         Box(
-                            Modifier.fillMaxWidth().padding(top = if (i == 0) 0.dp else 26.dp, bottom = 16.dp)
-                                .then(if (i == lastUser) Modifier.onGloballyPositioned { lastUserTop = it.positionInParent().y } else Modifier),
+                            Modifier.fillMaxWidth().padding(top = topPad, bottom = 16.dp),
                             contentAlignment = Alignment.CenterEnd,
                         ) { UserBubble(m.text, compact, Modifier.longPressMsg(i, pressed == i, onLong).flightBubble(flight, i == flight.idx, 18.dp)) }
                     } else {
