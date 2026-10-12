@@ -29,7 +29,7 @@ import androidx.compose.ui.unit.sp
  * AI 思考动效（来自 dongxiaosheji 仓库）：
  * 三个点在正三角 ▲ 与倒三角 ▼ 之间交替换位，旁边文字带左→右流光。
  * 点循环 3000ms = 4 步 × 750ms；每步停 150ms → 移 600ms，缓动 cubic-bezier(.6,0,.4,1)；
- * 三角框 13u × 12.4u，点径 5.4u（u = 字号 ÷ 14）；
+ * 三角框 13u × 12.4u，点径 5.4u（u = 字号 ÷ 14 × dotScale）；
  * 文字流光 2000ms 线性三角波，透明度 .22 ↔ 1，峰值停留 100ms，逐字延迟 22ms。
  */
 private object Tk {
@@ -104,6 +104,8 @@ fun ThinkingMotion(
     dot: Color = Color(0xFFD97757),
     ink: Color = Color(0xFFD0CEC7),
     size: TextUnit = 15.sp,
+    /** 三点相对字号的缩放：1 时三角约和一行字等高偏大，默认缩到 0.65 让它比字矮一点。 */
+    dotScale: Float = .65f,
 ) {
     var now by remember { mutableLongStateOf(0L) }
     LaunchedEffect(Unit) {
@@ -112,7 +114,7 @@ fun ThinkingMotion(
     }
     val density = LocalDensity.current
     val fontPx = with(density) { size.toPx() }
-    val u = fontPx / 14f
+    val u = fontPx / 14f * dotScale
     val boxDp = with(density) { (fontPx * 1.2f).toDp() }
     Row(modifier, verticalAlignment = Alignment.CenterVertically) {
         Canvas(Modifier.size(boxDp)) {
