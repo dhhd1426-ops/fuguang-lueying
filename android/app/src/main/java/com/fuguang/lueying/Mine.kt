@@ -560,20 +560,15 @@ private fun ColumnScope.BasicTab(store: AssistantStore, p: Persona, blur: Dp, na
             }
         }
         Divider()
-        // 带上最近几轮对话：1–30 轮，最右边是「不限」
+        // 上下文消息限制：10–200 条，最右边是「不限」
         Column(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 16.dp)) {
-            val v = if (p.rounds <= 0) 31f else p.rounds.toFloat()
+            val v = if (p.limit <= 0) 210f else p.limit.toFloat()
             Row(verticalAlignment = Alignment.Bottom) {
-                Column(Modifier.weight(1f)) {
-                    Txt("带上最近几轮对话", Page.ink, 15.sp)
-                    Spacer(Modifier.height(3.dp))
-                    Txt("一轮 = 你说一句、${p.name} 回一句", Page.muted, 12.sp)
-                }
-                Txt(if (p.rounds <= 0) "不限" else "${p.rounds} 轮", warm, 18.sp, family = Serif)
+                Txt("上下文消息限制", Page.ink, 15.sp, Modifier.weight(1f))
+                Txt(if (p.limit <= 0) "不限" else "${p.limit} 条", warm, 18.sp, family = Serif)
             }
             Spacer(Modifier.height(8.dp))
-            FeelSlider(v, 1f, 31f, 1f, ticks = 7, onDone = { Memory.save() }) { p.rounds = if (it >= 31f) 0 else it.toInt() }
-            Ends("省一点", "聊得越久越连贯")
+            FeelSlider(v, 10f, 210f, 10f, ticks = 5, onDone = { Memory.save() }) { p.limit = if (it >= 210f) 0 else it.toInt() }
         }
     }
     Spacer(Modifier.height(22.dp))

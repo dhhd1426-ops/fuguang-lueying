@@ -34,11 +34,11 @@ class Persona(val id: String, name: String, sys: String) {
     var firstAt by mutableLongStateOf(0L)
     var lastAt by mutableLongStateOf(0L)
     var chats by mutableIntStateOf(0)
-    /** 回答的手感：温度；Top P（topOn 关着就交给供应商默认）；带上最近几轮对话（0 = 不限）。 */
+    /** 回答的手感：温度；Top P（topOn 关着就交给供应商默认）；上下文消息限制：一段对话最多几条（0 = 不限）。 */
     var temp by mutableStateOf(.7f)
     var topOn by mutableStateOf(false)
     var top by mutableStateOf(.9f)
-    var rounds by mutableIntStateOf(10)
+    var limit by mutableIntStateOf(40)
 }
 
 /**
@@ -93,7 +93,7 @@ object Memory {
     private fun read(o: JSONObject) = Persona(o.optString("id"), o.optString("name", "Amor"), o.optString("sys", DEFAULT_SYS)).apply {
         memOn = o.optBoolean("on", true)
         firstAt = o.optLong("first"); lastAt = o.optLong("last"); chats = o.optInt("chats")
-        temp = o.optDouble("temp", .7).toFloat(); topOn = o.optBoolean("topOn", false); top = o.optDouble("top", .9).toFloat(); rounds = o.optInt("rounds", 10)
+        temp = o.optDouble("temp", .7).toFloat(); topOn = o.optBoolean("topOn", false); top = o.optDouble("top", .9).toFloat(); limit = o.optInt("limit", 40)
         o.optJSONArray("m")?.let { m -> for (i in 0 until m.length()) items += mem(m.getJSONObject(i)) }
     }
 
@@ -104,7 +104,7 @@ object Memory {
             p.items.forEach { m.put(JSONObject().put("id", it.id).put("t", it.text).put("d", it.detail).put("at", it.at).put("c", it.conv).put("ct", it.convTitle).put("k", it.kind).put("b", it.by)) }
             a.put(JSONObject().put("id", p.id).put("name", p.name).put("sys", p.sys).put("on", p.memOn)
                 .put("first", p.firstAt).put("last", p.lastAt).put("chats", p.chats)
-                .put("temp", p.temp.toDouble()).put("topOn", p.topOn).put("top", p.top.toDouble()).put("rounds", p.rounds).put("m", m))
+                .put("temp", p.temp.toDouble()).put("topOn", p.topOn).put("top", p.top.toDouble()).put("limit", p.limit).put("m", m))
         }
         prefs?.putString(KEY, JSONObject().put("active", activeId).put("user", userName).put("all", a).toString())
     }

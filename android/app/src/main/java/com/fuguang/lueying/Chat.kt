@@ -141,6 +141,9 @@ class ChatState(val history: ConvStore) {
 
     private fun persist() { convId = history.save(convId, messages) }
 
+    /** 上下文消息限制：这段对话到顶了，只能开新对话。 */
+    val full: Boolean get() = Memory.active.limit > 0 && messages.size >= Memory.active.limit
+
     /** 正在编辑重发第几条消息：-1 = 没有。 */
     var editing by mutableIntStateOf(-1)
     /** 输入框在屏幕上的位置：编辑时气泡往这里飞。 */
@@ -151,7 +154,7 @@ class ChatState(val history: ConvStore) {
     /** 发出输入框里的话；编辑重发时，先删掉那条及之后的内容。返回新消息的序号，没发出去是 -1。 */
     fun send(scope: CoroutineScope, store: AssistantStore): Int {
         val text = draft.trim()
-        if (text.isEmpty() || busy) return -1
+        if (text.isEmpty() || busy || (full && editing < 0)) return -1
         draft = ""
         error = null; needsSetup = false
         if (editing in messages.indices) while (messages.size > editing) messages.removeAt(messages.lastIndex)
@@ -192,13 +195,7 @@ class ChatState(val history: ConvStore) {
         busy = true; thinking = false; thinkText = ""; partial = ""; shown = 0f; streamDone = false
         pendingImgs.clear()
         val who = Memory.active
-        // 只带最近几轮（一轮 = 你说一句 + 她回一句）；0 = 不限
-        val history = messages.toList().let { all ->
-            if (who.rounds <= 0) all else {
-                val users = all.indices.filter { all[it].role == "user" }
-                if (users.size <= who.rounds) all else all.drop(users[users.size - who.rounds])
-            }
-        }
+        val history = messages.toList()
         ChatApi.temperature = who.temp
         ChatApi.topP = if (who.topOn) who.top else null
         job = scope.launch {
@@ -689,7 +686,7 @@ private fun ChatInput(
     val shape = RoundedCornerShape(22.dp)
     val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
     val focus = androidx.compose.ui.platform.LocalFocusManager.current
-    val canSend = chat.draft.isNotBlank() && !chat.busy
+    val canSend = chat.draft.isNotBlank() && !chat.busy && (!chat.full || chat.editing >= 0)
     // 方案 2：开始打字，发送球从输入框里拉出来；删空了再被吸回去
     val t by androidx.compose.animation.core.animateFloatAsState(
         if (canSend) 1f else 0f,
@@ -714,6 +711,26 @@ private fun ChatInput(
                 .glass(shape, blur, fill = rgba(30, 34, 42, .42f))
                 .padding(start = 16.dp, end = inset, top = 15.dp, bottom = inset),
         ) {
+            // 上下文消息限制到顶：输入框上方展开一行杏色提示，发送键变灰，提示里直接开新对话
+            androidx.compose.animation.AnimatedVisibility(
+                chat.full && chat.editing < 0,
+                enter = androidx.compose.animation.expandVertically(tween(280)) + androidx.compose.animation.fadeIn(tween(280)),
+                exit = androidx.compose.animation.shrinkVertically(tween(220)) + androidx.compose.animation.fadeOut(tween(180)),
+            ) {
+                Row(Modifier.fillMaxWidth().padding(start = 4.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.size(5.dp).background(css("#e9b48e"), CircleShape))
+                    Spacer(Modifier.width(8.dp))
+                    val lim = Memory.active.limit
+                    Txt("这段对话已经到上限（$lim/$lim）", css("#e9b48e"), 12.5.sp, Modifier.weight(1f), maxLines = 1)
+                    Pressable({ chat.reset() }, label = "开新对话") { pr ->
+                        Txt(
+                            "开新对话", css("#e9b48e"), 12.5.sp,
+                            Modifier.background(rgba(233, 180, 142, if (pr) .28f else .15f), RoundedCornerShape(50)).padding(horizontal = 12.dp, vertical = 6.dp),
+                            maxLines = 1,
+                        )
+                    }
+                }
+            }
             // 编辑重发：输入框上方一条杏色提示，点 × 放弃
             androidx.compose.animation.AnimatedVisibility(
                 chat.editing >= 0,
