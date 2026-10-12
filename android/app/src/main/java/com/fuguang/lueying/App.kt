@@ -46,6 +46,8 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.geometry.Offset
@@ -176,6 +178,8 @@ fun FuguangApp(prefs: Prefs, fullscreen: Boolean, setFullscreen: (Boolean) -> Un
                 )
             }
 
+            // 沉浸时轻点任意处就回来
+            if (zen) Box(Modifier.fillMaxSize().pointerInput(Unit) { detectTapGestures { zen = false } })
             AnimatedVisibility(zen, enter = fadeIn(), exit = fadeOut(), modifier = Modifier.align(Alignment.BottomCenter)) {
                 ShowUiButton(blur.dp) { zen = false }
             }
@@ -280,8 +284,9 @@ private fun HomePage(
             .padding(start = side, end = side, top = if (compact) 26.dp else 38.dp, bottom = if (compact) 22.dp else 30.dp),
     ) {
         Header(compact, tiny, now, newLuoying, newLetters, onOpen, onReader, onLetters, onHome)
-        Box(Modifier.weight(1f).fillMaxWidth()) {
-            Hero(compact, tiny, width, onZen, Modifier.align(Alignment.CenterStart))
+        // 双击画面空白处：进入沉浸，只看画面
+        Box(Modifier.weight(1f).fillMaxWidth().pointerInput(Unit) { detectTapGestures(onDoubleTap = { onZen() }) }) {
+            Hero(compact, Modifier.align(Alignment.CenterStart))
             if (!compact) {
                 VerticalLabel("LIGHT / WIND / A QUIET MOMENT", Modifier.align(Alignment.CenterEnd))
             }
@@ -314,9 +319,9 @@ private fun Header(
                 Spacer(Modifier.width(if (compact) 8.dp else 13.dp))
                 Column {
                     val bs = if (compact) 18f else 21f
-                    Txt("浮光", Page.ink, bs.sp, spacing = ls(if (compact) 4f else 6f, bs))
+                    Txt("浮光掠影", Page.ink, bs.sp, spacing = ls(if (tiny) 2f else if (compact) 3f else 6f, bs), maxLines = 1)
                     Spacer(Modifier.height(5.dp))
-                    Txt("FUGUANG", Page.muted, 8.sp, spacing = ls(4f, 8f))
+                    Txt("FUGUANG · LUEYING", Page.muted, 8.sp, spacing = ls(if (compact) 2.5f else 4f, 8f), maxLines = 1)
                 }
             }
         }
@@ -377,7 +382,7 @@ private fun NavItem(label: String, active: Boolean, compact: Boolean, dot: Boole
 }
 
 @Composable
-private fun Hero(compact: Boolean, tiny: Boolean, width: Dp, onEnter: () -> Unit, modifier: Modifier) {
+private fun Hero(compact: Boolean, modifier: Modifier) {
     Column(
         modifier
             .widthIn(max = if (compact) 340.dp else 590.dp)
@@ -389,16 +394,7 @@ private fun Hero(compact: Boolean, tiny: Boolean, width: Dp, onEnter: () -> Unit
             val es = if (compact) 8f else 10f
             Txt("A MOMENT OF STILLNESS", Page.eyebrow, es.sp, spacing = ls(if (compact) 3f else 4f, es))
         }
-        Spacer(Modifier.height(if (compact) 24.dp else 28.dp))
-        val h1 = when {
-            tiny -> 36f
-            compact -> 43f
-            else -> (width.value * .052f).coerceIn(42f, 78f)
-        }
-        val h1ls = ls(if (compact) 6f else 9f, h1)
-        Txt("浮光", Page.ink, h1.sp, spacing = h1ls, lineHeight = (h1 * 1.38f).sp, family = Serif)
-        Txt("掠影", rgba(250, 245, 238, .86f), h1.sp, spacing = h1ls, lineHeight = (h1 * 1.38f).sp, family = Serif)
-        Spacer(Modifier.height(26.dp))
+        Spacer(Modifier.height(if (compact) 26.dp else 32.dp))
         val isz = if (compact) 11f else 12f
         Txt(
             "时光匆匆而逝，\n回望只剩模糊余影的惆怅。",
@@ -408,18 +404,6 @@ private fun Hero(compact: Boolean, tiny: Boolean, width: Dp, onEnter: () -> Unit
             spacing = ls(if (compact) 1f else 2f, isz),
             lineHeight = (isz * 2.1f).sp,
         )
-        Spacer(Modifier.height(34.dp))
-        Pressable(onEnter, label = "进入此刻") { pressed ->
-            Column(Modifier.width(IntrinsicSize.Max)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Txt("进入此刻", Page.ink, 12.sp, spacing = ls(2f, 12f))
-                    Spacer(Modifier.width(if (pressed) 38.dp else 30.dp))
-                    SvgIcon(Icons.arrow, Page.ink, 18.dp)
-                }
-                Spacer(Modifier.height(12.dp))
-                Box(Modifier.fillMaxWidth().height(1.dp).background(rgba(239, 207, 180, if (pressed) .9f else .5f)))
-            }
-        }
     }
 }
 
