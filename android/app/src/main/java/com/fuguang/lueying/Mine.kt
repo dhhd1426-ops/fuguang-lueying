@@ -671,6 +671,7 @@ private fun ColumnScope.MemoryTab(p: Persona, blur: Dp, onDeleted: (Mem, Int) ->
         Page.muted, 12.5.sp, Modifier.padding(start = 4.dp),
     )
     SectionLabel("她记得")
+    Txt("${p.name} 自己记下的：你们聊过的事、她答应过你的、她对你的了解。", Page.muted, 12.5.sp, Modifier.padding(start = 4.dp, end = 4.dp, bottom = 12.dp), lineHeight = 20.sp)
     var open by remember { mutableStateOf<String?>(null) }
     var all by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxWidth().glass(RoundedCornerShape(20.dp), blur, fill = glassFill).animateContentSize()) {

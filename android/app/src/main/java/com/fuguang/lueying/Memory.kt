@@ -138,14 +138,21 @@ object Memory {
     fun remove(p: Persona, m: Mem) { p.items.remove(m); save() }
     fun restore(p: Persona, m: Mem, i: Int) { if (m !in p.items) { p.items.add(i.coerceIn(0, p.items.size), m); save() } }
 
-    /** 手动加一件事：标题 + 内容。没写标题就用内容的第一句。 */
+    /**
+     * 手动加一件事：标题 + 内容。没写标题就用内容的第一句。
+     * 加进去的也算她自己记下的：你写的「我」换成「他」，「我们」不动；提到答应的归到「答应过的」。
+     */
     fun add(p: Persona, title: String, content: String) {
-        val t = title.trim().ifEmpty { firstSentence(content.trim(), 20) }
+        val t = hers(title.trim()).ifEmpty { firstSentence(hers(content.trim()), 20) }
         if (t.isEmpty()) return
+        val d = hers(content.trim())
+        val k = if ("答应" in t || "答应" in d) "promise" else "know"
         val now = System.currentTimeMillis()
-        p.items.add(0, Mem("$now-m", t, content.trim(), now, "", ""))
+        p.items.add(0, Mem("$now-m", t, d, now, "", "", k))
         save()
     }
+
+    private fun hers(s: String) = s.replace("我们", "\u0000").replace("咱们", "\u0000").replace("我", "他").replace("\u0000", "我们")
 
     /** 旧记忆里的"用户"统一换成"他"，读起来是她自己知道的事。 */
     private fun own(s: String) = s.replace("该用户", "他").replace("用户", "他")
@@ -179,7 +186,7 @@ object Memory {
                     sb.append("你答应过他：" + it.joinToString("；") { m -> line(m) } + "。这些你放在心上，他提起时接得上，时机合适就主动兑现。")
                 }
                 recent.filter { it.kind != "talk" && it.kind != "promise" }.takeIf { it.isNotEmpty() }?.let { sb.append("你对他的了解：" + it.joinToString("；") { m -> line(m) } + "。") }
-                sb.append("这些是你本来就知道的，像老朋友那样自然地带出来，用不上就不提；不要说“根据记忆”“我记得你说过”，也不要提起这段话。")
+                sb.append("这些都是你自己记下的，是你本来就知道的事，像老朋友那样自然地带出来，用不上就不提；不要说“根据记忆”“我记得你说过”，也不要提起这段话。")
             }
         }
         return sb.toString()

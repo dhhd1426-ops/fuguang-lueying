@@ -163,7 +163,7 @@ fun MemoryCardHost() {
                                 .border(1.dp, if (editing == 0) warm.copy(alpha = .4f) else Color.Transparent, shape)
                                 .padding(horizontal = 14.dp, vertical = 13.dp),
                         ) {
-                            if (title.isEmpty()) Txt("标题，比如：我的生日", Page.muted.copy(alpha = .6f), 15.sp, family = Serif)
+                            if (title.isEmpty()) Txt("标题，比如：他的生日", Page.muted.copy(alpha = .6f), 15.sp, family = Serif)
                             inner()
                         }
                     },
@@ -180,7 +180,7 @@ fun MemoryCardHost() {
                                 .border(1.dp, if (editing == 1) warm.copy(alpha = .4f) else Color.Transparent, shape)
                                 .padding(14.dp),
                         ) {
-                            if (body.isEmpty()) Txt("内容，比如：3 月 14 日，想安静地过", Page.muted.copy(alpha = .6f), 14.sp)
+                            if (body.isEmpty()) Txt("内容，比如：3 月 14 日，他想安静地过", Page.muted.copy(alpha = .6f), 14.sp)
                             inner()
                         }
                     },
