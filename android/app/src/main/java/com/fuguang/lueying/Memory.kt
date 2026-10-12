@@ -150,12 +150,13 @@ object Memory {
      * 你手动加一件事到某一本里（book：diary / about / pref）。
      * 你写的「我」换成「他」，「我们」不动，这样拼进提示词时读起来是她知道的事。
      */
-    fun add(p: Persona, book: String, text: String): Mem? {
+    fun add(p: Persona, book: String, text: String, detail: String = ""): Mem? {
         val t = hers(text.trim())
         if (t.isEmpty()) return null
-        val k = when (book) { "about", "pref" -> book; else -> if ("答应" in t) "promise" else "know" }
+        val dt = hers(detail.trim())
+        val k = when (book) { "about", "pref" -> book; else -> if ("答应" in t || "答应" in dt) "promise" else "know" }
         val now = System.currentTimeMillis()
-        val m = Mem("$now-m", t, "", now, "", "", k, "you")
+        val m = Mem("$now-m", t, dt, now, "", "", k, "you")
         p.items.add(0, m)
         save()
         return m

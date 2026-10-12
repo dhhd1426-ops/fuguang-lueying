@@ -131,6 +131,8 @@ fun MinePage(
             }
             if (screen == "mine") BottomNav(compact, active = "我的", onHome = onHome, onChat = onChat, onMine = {}, onOpen = onOpen)
         }
+        // 添加记忆的卡片：画在整页最上层
+        MemoryCardHost()
     }
 }
 
@@ -761,11 +763,12 @@ private fun BookPage(p: Persona, b: Book, blur: Dp, onDeleted: (Mem, Int) -> Uni
         val shown = if (all) list else list.take(6)
         shown.forEachIndexed { k, m ->
             // 刚添加的那条：从上面轻轻落下来
-            val drop = remember(m.id) { androidx.compose.animation.core.Animatable(if (m.id == JustAdded.id) 0f else 1f) }
+            val drop = remember(m.id) { androidx.compose.animation.core.Animatable(if (m.id == MemoryCard.justAdded) 0f else 1f) }
             LaunchedEffect(m.id) {
                 if (drop.value < 1f) {
+                    kotlinx.coroutines.delay(320)
                     drop.animateTo(1f, androidx.compose.animation.core.spring(dampingRatio = .55f, stiffness = 420f))
-                    JustAdded.id = ""
+                    MemoryCard.justAdded = ""
                 }
             }
             Box(Modifier.graphicsLayer { alpha = drop.value.coerceIn(0f, 1f); translationY = (1f - drop.value) * -14.dp.toPx() }) {
@@ -774,7 +777,7 @@ private fun BookPage(p: Persona, b: Book, blur: Dp, onDeleted: (Mem, Int) -> Uni
                     val isOpen = open == m.id
                     Row(Modifier.fillMaxWidth().padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                         Pressable({ open = if (isOpen) null else m.id }, Modifier.weight(1f), label = m.text) { _ ->
-                            Column {
+                            Column(Modifier.fillMaxWidth()) {
                                 Txt(m.text, Page.ink, 14.5.sp, lineHeight = 22.sp, maxLines = if (isOpen) Int.MAX_VALUE else 2)
                                 if (isOpen && m.detail.isNotBlank()) {
                                     Spacer(Modifier.height(6.dp))
@@ -806,46 +809,26 @@ private fun BookPage(p: Persona, b: Book, blur: Dp, onDeleted: (Mem, Int) -> Uni
                 )
             }
         }
-        // 写一条：输入框 + 添加
-        var draft by remember(b.key) { mutableStateOf("") }
-        val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
-        val add = {
-            if (draft.isNotBlank()) {
-                Memory.add(p, b.key, draft)?.let { JustAdded.id = it.id }
-                draft = ""
-                haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
-            }
+        // 添加：卡片从这颗「＋ 添加」里长出来，记住后再缩回来，「＋」轻轻一跳
+        var at by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
+        val bump = remember { androidx.compose.animation.core.Animatable(1f) }
+        LaunchedEffect(MemoryCard.landed) {
+            if (MemoryCard.landed > 0 && MemoryCard.book == b.key) { bump.snapTo(1.2f); bump.animateTo(1f, androidx.compose.animation.core.spring(dampingRatio = .45f, stiffness = 500f)) }
         }
-        Spacer(Modifier.height(12.dp))
-        Row(Modifier.fillMaxWidth().padding(end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            BasicTextField(
-                value = draft, onValueChange = { draft = it.take(200) },
-                textStyle = TextStyle(color = Page.ink, fontSize = 14.sp, lineHeight = 21.sp),
-                cursorBrush = SolidColor(warm),
-                keyboardOptions = KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Done),
-                keyboardActions = androidx.compose.foundation.text.KeyboardActions(onDone = { add() }),
-                modifier = Modifier.weight(1f),
-                decorationBox = { inner ->
-                    Box(Modifier.fillMaxWidth().background(rgba(0, 0, 0, .2f), RoundedCornerShape(14.dp)).padding(horizontal = 14.dp, vertical = 12.dp)) {
-                        if (draft.isEmpty()) Txt(b.hint, Page.muted.copy(alpha = .6f), 13.5.sp, maxLines = 1)
-                        inner()
-                    }
-                },
+        val hidden = MemoryCard.open && MemoryCard.persona?.id == p.id && MemoryCard.book == b.key
+        Spacer(Modifier.height(10.dp))
+        Pressable({ MemoryCard.show(p, b.key, at) }, Modifier.align(Alignment.End).padding(end = 8.dp), label = "添加") { pr ->
+            Txt(
+                "＋ 添加", warm, 13.sp,
+                Modifier.onGloballyPositioned { at = it.boundsInWindow().center }
+                    .graphicsLayer { val k = bump.value * if (hidden) .85f else 1f; scaleX = k; scaleY = k; alpha = if (hidden) .4f else 1f }
+                    .background(rgba(233, 180, 142, if (pr) .26f else .14f), RoundedCornerShape(14.dp)).padding(horizontal = 16.dp, vertical = 11.dp),
+                maxLines = 1,
             )
-            Spacer(Modifier.width(8.dp))
-            Pressable({ add() }, label = "添加") { pr ->
-                Txt(
-                    "＋ 添加", if (draft.isBlank()) warm.copy(alpha = .55f) else warm, 13.sp,
-                    Modifier.background(rgba(233, 180, 142, if (pr) .26f else if (draft.isBlank()) .08f else .16f), RoundedCornerShape(14.dp)).padding(horizontal = 14.dp, vertical = 12.dp),
-                    maxLines = 1,
-                )
-            }
         }
     }
 }
 
-/** 刚添加的那条，用来让它落下来。 */
-private object JustAdded { var id by mutableStateOf("") }
 
 /** 往左滑：底下露出「删除」，滑过一半松手就删；没过一半就弹回。 */
 @Composable
