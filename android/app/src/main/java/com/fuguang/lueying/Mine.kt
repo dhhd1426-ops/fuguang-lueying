@@ -5,8 +5,6 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.ui.draw.alpha
@@ -378,8 +376,7 @@ private fun PersonaRow(p: Persona, blur: Dp, canDelete: Boolean, onOpen: () -> U
             Modifier.fillMaxWidth().padding(bottom = 10.dp)
                 .glass(RoundedCornerShape(20.dp), blur, fill = if (pressed) rgba(255, 255, 255, .08f) else glassFill)
                 .pointerInput(p.id, canDelete) {
-                    androidx.compose.foundation.gestures.awaitEachGesture {
-                        awaitFirstDown()
+                    detectTapGestures(onPress = {
                         pressed = true
                         val t0 = System.currentTimeMillis()
                         // 稍等一下再开始蓄，轻点不会闪红
@@ -389,14 +386,14 @@ private fun PersonaRow(p: Persona, blur: Dp, canDelete: Boolean, onOpen: () -> U
                             haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
                             gone = true
                         } else null
-                        val up = waitForUpOrCancellation()
+                        val up = tryAwaitRelease()
                         pressed = false
                         if (!gone) {
                             charge?.cancel()
                             if (fill.value > 0f) scope.launch { fill.animateTo(0f, androidx.compose.animation.core.spring(dampingRatio = .7f, stiffness = 400f)) }
-                            if (up != null && System.currentTimeMillis() - t0 < 300) onOpen()
+                            if (up && System.currentTimeMillis() - t0 < 300) onOpen()
                         }
-                    }
+                    })
                 },
         ) {
             // 底下的红色，跟着按住的时间从左往右长
