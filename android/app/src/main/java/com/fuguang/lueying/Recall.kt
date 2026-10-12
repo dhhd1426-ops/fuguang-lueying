@@ -23,7 +23,8 @@ object Recall {
     )
 
     fun system(): String =
-        "你能翻看你们以前的聊天：他提到以前聊过的事、问你还记不记得，或者你想接上前情时，先用 $TOOL 去找，再像自己想起来一样自然地说，不用提工具。"
+        "你们以前的聊天也在手边，用 $TOOL 能翻。要不要翻由你判断：他提起以前的事、问你还记不记得、或者你自己想接上前情时再翻；" +
+            "平常聊天不用翻。想起来了就像自己记得一样自然地说。"
 
     private fun day(t: Long) = SimpleDateFormat("M月d日", Locale.CHINA).format(Date(t))
 
@@ -59,6 +60,6 @@ object Recall {
     fun context(store: ConvStore, current: String?): String {
         val convs = store.all.filter { it.id != current }.sortedByDescending { it.updated }.take(6)
         if (convs.isEmpty()) return ""
-        return "你们最近还聊过：" + convs.joinToString("；") { day(it.updated) + "「" + it.title + "」" } + "。他提起时接得上就好。"
+        return "你们最近还聊过：" + convs.joinToString("；") { day(it.updated) + "「" + it.title + "」" } + "。他提起时接得上就好，不用主动提。"
     }
 }

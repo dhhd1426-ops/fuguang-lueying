@@ -195,7 +195,7 @@ object Memory {
             val diary = p.items.filter { it.book == "diary" }.take(48)
             diary.filter { it.kind == "talk" }.takeIf { it.isNotEmpty() }?.let { sb.append("你们聊过：" + part(it) + "。") }
             diary.filter { it.kind == "promise" }.takeIf { it.isNotEmpty() }?.let {
-                sb.append("你答应过他：" + part(it) + "。这些你放在心上，他提起时接得上，时机合适就主动兑现。")
+                sb.append("你答应过他：" + part(it) + "。这些你放在心上：他提起、或者聊到相关的事时自然接上；刚打招呼的时候不用急着提。")
             }
             diary.filter { it.kind == "know" }.takeIf { it.isNotEmpty() }?.let { sb.append("你对他的了解：" + part(it) + "。") }
             sb.append("这些都是你本来就知道的事，像老朋友那样自然地带出来，用不上就不提；不要说“根据记忆”“我记得你说过”，也不要提起这段话。")

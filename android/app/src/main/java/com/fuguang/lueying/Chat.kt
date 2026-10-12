@@ -197,7 +197,7 @@ class ChatState(val history: ConvStore) {
                 val question = history.lastOrNull { it.role == "user" }?.text.orEmpty()
                 val specs = (if (yu) Yu.tools else emptyList()) + (if (recall) listOf(Recall.spec) else emptyList())
                 val extra = buildString {
-                    if (yu || recall) append("\n\n— 以下是你能用的工具 —")
+                    if (yu || recall) append("\n\n你手边还有这些东西，需要时再用，不需要就不用：")
                     if (recall) append("\n").append(Recall.system())
                     if (yu) append("\n").append(Yu.system())
                 }
