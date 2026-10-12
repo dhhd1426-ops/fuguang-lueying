@@ -235,8 +235,10 @@ object Memory {
     fun prompt(p: Persona = active, model: String = ""): String {
         val sb = StringBuilder()
         // 她是谁、在和谁聊：固定写在最前面，不靠记忆段落的标题带出来（照 RikkaHub：called {{char}} … User Nickname: {{user}}）
-        sb.append("你是").append(p.name).append("。")
+        sb.append("你的名字是").append(p.name).append("，").append(who).append("叫你").append(p.name).append("。")
         if (userName.isNotBlank()) sb.append("正在和你聊天的是").append(who).append("。")
+        // 名字可能是后来改的，记忆和以前的聊天里可能还留着“没名字”或旧名字
+        sb.append("要是记忆或以前的聊天里说你没有名字、或者叫别的，那是过去的事，现在以这里的名字为准，别再说自己没名字。")
         sb.append("\n\n").append(fill(p.sys.trim().ifEmpty { DEFAULT_SYS }, p, model))
         sb.append("\n\n【时间感知】\n").append(timeSense(p))
         fun line(m: Mem) = own(m.text).trimEnd('。') + if (m.detail.isNotBlank()) "（" + own(m.detail).trimEnd('。') + "）" else ""
@@ -308,7 +310,8 @@ object Memory {
     /** 一轮回答之后：让她回想一下，有什么关于他的事值得记住。失败就算了，不打扰用户。 */
     suspend fun learn(who: Persona, p: Provider, c: ProviderConfig, model: String, user: String, reply: String, conv: String, convTitle: String) {
         if (user.isBlank() || reply.isBlank()) return
-        val sys = "你是${who.name}，在写自己的日记。回想刚才和他的这段对话，记下你想一直记住的事。只输出 JSON，不要别的文字。"
+        val sys = "你是${who.name}，在写自己的日记。回想刚才和他的这段对话，记下你想一直记住的事。只输出 JSON，不要别的文字。" +
+            "你的名字和他的称呼由设置决定，不要记“我还没名字”“他要给我起名字”“他叫我 X”这类事。"
         val tag = mapOf("talk" to "聊过", "promise" to "答应", "know" to "了解", "about" to "他的情况", "pref" to "他的偏好", "self" to "你自己")
         val known = who.items.take(60).joinToString("\n") { "- [" + (tag[it.kind] ?: "了解") + "] " + it.text }.ifBlank { "（还没有）" }
         val ask = """
