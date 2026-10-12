@@ -5,6 +5,8 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.ui.draw.alpha
@@ -319,38 +321,113 @@ private fun ColumnScope.AssistantScreen(compact: Boolean, blur: Dp, nav: MineNav
             }
         }
     }
-    Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Memory.all.forEach { p ->
-            val on = p.id == Memory.activeId
-            Pressable({ nav.open(p.id, 2) }, Modifier.fillMaxWidth(), label = p.name) { pressed ->
-                Row(
-                    Modifier.fillMaxWidth().glass(RoundedCornerShape(20.dp), blur, fill = if (pressed) rgba(255, 255, 255, .08f) else glassFill)
-                        .padding(horizontal = 16.dp, vertical = 14.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Initial(p.name, 44.dp)
-                    Spacer(Modifier.width(14.dp))
-                    Column(Modifier.weight(1f)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Txt(p.name, Page.ink, 16.sp, maxLines = 1, family = Serif)
-                            if (on) {
-                                Spacer(Modifier.width(8.dp))
-                                Box(Modifier.size(5.dp).background(warm, CircleShape))
-                                Spacer(Modifier.width(5.dp))
-                                Txt("正在陪你", warm, 11.5.sp, maxLines = 1)
-                            }
-                        }
-                        Spacer(Modifier.height(4.dp))
-                        Txt(
-                            listOfNotNull(if (p.memOn) "记得 ${p.items.size} 件事" else "记忆已关", if (p.chats > 0) "聊过 ${p.chats} 次" else null).joinToString(" · "),
-                            Page.muted, 12.5.sp, maxLines = 1,
-                        )
+    var undo by remember { mutableStateOf<Triple<Persona, Int, Boolean>?>(null) }
+    LaunchedEffect(undo) { if (undo != null) { kotlinx.coroutines.delay(4000); undo = null } }
+    Box(Modifier.weight(1f).fillMaxWidth()) {
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+            Memory.all.toList().forEach { p ->
+                androidx.compose.runtime.key(p.id) {
+                    PersonaRow(p, blur, canDelete = Memory.all.size > 1, onOpen = { nav.open(p.id, 2) }) {
+                        val i = Memory.all.indexOf(p)
+                        val was = p.id == Memory.activeId
+                        Memory.delete(p)
+                        undo = Triple(p, i, was)
                     }
-                    SvgIcon(MineIcons.next, Page.muted, 18.dp)
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+        }
+        androidx.compose.animation.AnimatedVisibility(
+            undo != null,
+            Modifier.align(Alignment.BottomCenter).padding(bottom = 8.dp),
+            enter = androidx.compose.animation.slideInVertically { it } + androidx.compose.animation.fadeIn(),
+            exit = androidx.compose.animation.slideOutVertically { it } + androidx.compose.animation.fadeOut(),
+        ) {
+            Row(
+                Modifier.widthIn(max = 520.dp).fillMaxWidth().background(rgba(47, 49, 54, .97f), RoundedCornerShape(16.dp))
+                    .padding(start = 16.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Txt("已删除 ${undo?.first?.name.orEmpty()}", Page.ink, 13.5.sp, Modifier.weight(1f), maxLines = 1)
+                Pressable({ undo?.let { (p, i, was) -> Memory.restore(p, i, was) }; undo = null }, label = "撤销") { pr ->
+                    Txt("撤销", warm, 13.5.sp, Modifier.background(if (pr) rgba(255, 255, 255, .06f) else Color.Transparent, RoundedCornerShape(12.dp)).padding(horizontal = 12.dp, vertical = 9.dp))
                 }
             }
         }
-        Spacer(Modifier.height(8.dp))
+    }
+}
+
+/**
+ * 一位助理。点一下进去；按住不放，红色从左往右蓄满就删掉（轻震一下，向左收拢），中途松手就弹回去。
+ */
+@Composable
+private fun PersonaRow(p: Persona, blur: Dp, canDelete: Boolean, onOpen: () -> Unit, onDelete: () -> Unit) {
+    val on = p.id == Memory.activeId
+    val fill = remember { androidx.compose.animation.core.Animatable(0f) }
+    var pressed by remember { mutableStateOf(false) }
+    var gone by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
+    LaunchedEffect(gone) { if (gone) { kotlinx.coroutines.delay(340); onDelete() } }
+    androidx.compose.animation.AnimatedVisibility(
+        !gone,
+        exit = androidx.compose.animation.shrinkVertically(tween(320)) + androidx.compose.animation.fadeOut(tween(220)) +
+            androidx.compose.animation.slideOutHorizontally(tween(320)) { -it / 6 },
+    ) {
+        Box(
+            Modifier.fillMaxWidth().padding(bottom = 10.dp)
+                .glass(RoundedCornerShape(20.dp), blur, fill = if (pressed) rgba(255, 255, 255, .08f) else glassFill)
+                .pointerInput(p.id, canDelete) {
+                    androidx.compose.foundation.gestures.awaitEachGesture {
+                        awaitFirstDown()
+                        pressed = true
+                        val t0 = System.currentTimeMillis()
+                        // 稍等一下再开始蓄，轻点不会闪红
+                        val charge = if (canDelete) scope.launch {
+                            kotlinx.coroutines.delay(160)
+                            fill.animateTo(1f, tween(800, easing = androidx.compose.animation.core.LinearEasing))
+                            haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                            gone = true
+                        } else null
+                        val up = waitForUpOrCancellation()
+                        pressed = false
+                        if (!gone) {
+                            charge?.cancel()
+                            if (fill.value > 0f) scope.launch { fill.animateTo(0f, androidx.compose.animation.core.spring(dampingRatio = .7f, stiffness = 400f)) }
+                            if (up != null && System.currentTimeMillis() - t0 < 300) onOpen()
+                        }
+                    }
+                },
+        ) {
+            // 底下的红色，跟着按住的时间从左往右长
+            Box(
+                Modifier.matchParentSize().graphicsLayer {
+                    scaleX = fill.value; transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, .5f)
+                }.background(css("#8f4f4b").copy(alpha = .85f), RoundedCornerShape(20.dp)),
+            )
+            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+                Initial(p.name, 44.dp)
+                Spacer(Modifier.width(14.dp))
+                Column(Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Txt(p.name, Page.ink, 16.sp, maxLines = 1, family = Serif)
+                        if (on) {
+                            Spacer(Modifier.width(8.dp))
+                            Box(Modifier.size(5.dp).background(warm, CircleShape))
+                            Spacer(Modifier.width(5.dp))
+                            Txt("正在陪你", warm, 11.5.sp, maxLines = 1)
+                        }
+                    }
+                    Spacer(Modifier.height(4.dp))
+                    Txt(
+                        if (fill.value > .05f) "按住，松手就取消"
+                        else listOfNotNull(if (p.memOn) "记得 ${p.items.size} 件事" else "记忆已关", if (p.chats > 0) "聊过 ${p.chats} 次" else null).joinToString(" · "),
+                        if (fill.value > .05f) css("#f6e3e1") else Page.muted, 12.5.sp, maxLines = 1,
+                    )
+                }
+                SvgIcon(MineIcons.next, Page.muted, 18.dp)
+            }
+        }
     }
 }
 
@@ -471,42 +548,94 @@ private fun ColumnScope.BasicTab(store: AssistantStore, p: Persona, blur: Dp, na
     } else {
         PillButton("让 ${p.name} 陪你聊天", null, primary = true, modifier = Modifier.fillMaxWidth()) { Memory.use(p) }
     }
-    if (Memory.all.size > 1) {
-        var armed by remember(p.id) { mutableStateOf(false) }
-        LaunchedEffect(armed) { if (armed) { kotlinx.coroutines.delay(3000); armed = false } }
-        Spacer(Modifier.height(18.dp))
-        Pressable({ if (armed) { Memory.delete(p); nav.back() } else armed = true }, Modifier.align(Alignment.CenterHorizontally), label = "删除这位助理") { pr ->
-            Txt(
-                if (armed) "再点一次，删除 ${p.name}" else "删除这位助理",
-                if (armed) css("#e8a29a") else Page.muted.copy(alpha = if (pr) .5f else .8f), 13.sp,
-                Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-            )
-        }
-    }
 }
 
-/* 提示词：她是谁，写在这里的就是她自己 */
+/* 提示词：她是谁，写在这里的就是她自己。改完点保存；没保存就离开，也替你存好。 */
 @Composable
 private fun ColumnScope.PromptTab(p: Persona, blur: Dp) {
+    var draft by remember(p.id) { mutableStateOf(p.sys) }
+    val latest = androidx.compose.runtime.rememberUpdatedState(draft)
+    androidx.compose.runtime.DisposableEffect(p.id) {
+        onDispose { if (latest.value != p.sys) { p.sys = latest.value; Memory.save() } }
+    }
     BasicTextField(
-        value = p.sys,
-        onValueChange = { p.sys = it; Memory.save() },
+        value = draft,
+        onValueChange = { draft = it },
         textStyle = TextStyle(color = Page.ink, fontSize = 14.5.sp, lineHeight = 24.sp),
         cursorBrush = SolidColor(Page.accent),
         modifier = Modifier.fillMaxWidth(),
         decorationBox = { inner ->
             Box(Modifier.fillMaxWidth().heightIn(min = 280.dp).glass(RoundedCornerShape(20.dp), blur, fill = glassFill).padding(18.dp)) {
-                if (p.sys.isEmpty()) Txt("写下 ${p.name} 是谁、怎么说话。留空就用默认的样子。", Page.muted.copy(alpha = .6f), 14.5.sp, lineHeight = 24.sp)
+                if (draft.isEmpty()) Txt("写下 ${p.name} 是谁、怎么说话。留空就用默认的样子。", Page.muted.copy(alpha = .6f), 14.5.sp, lineHeight = 24.sp)
                 inner()
             }
         },
     )
-    Row(Modifier.fillMaxWidth().padding(start = 6.dp, end = 2.dp, top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-        Txt("写在这里的，就是她自己。记得的事会自然接在后面。", Page.muted, 12.5.sp, Modifier.weight(1f), lineHeight = 20.sp)
-        if (p.sys.trim() != Memory.DEFAULT_SYS) {
-            Pressable({ p.sys = Memory.DEFAULT_SYS; Memory.save() }, label = "恢复默认") { pr ->
-                Txt("恢复默认", warm, 12.5.sp, Modifier.background(rgba(233, 180, 142, if (pr) .24f else .12f), RoundedCornerShape(50)).padding(horizontal = 12.dp, vertical = 6.dp))
+    Row(Modifier.fillMaxWidth().padding(start = 6.dp, top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+        Txt("写在这里的，就是她自己。", Page.muted, 12.5.sp, Modifier.weight(1f), lineHeight = 20.sp)
+        if (draft.trim() != Memory.DEFAULT_SYS) {
+            Pressable({ draft = Memory.DEFAULT_SYS }, Modifier.padding(end = 8.dp), label = "恢复默认") { pr ->
+                Txt("恢复默认", Page.muted, 12.5.sp, Modifier.background(rgba(255, 255, 255, if (pr) .1f else .05f), RoundedCornerShape(50)).padding(horizontal = 12.dp, vertical = 8.dp))
             }
+        }
+        SaveButton(dirty = draft != p.sys) { p.sys = draft; Memory.save() }
+    }
+}
+
+/**
+ * 保存：没改动时是暗的「已保存」，一改动亮成杏色「保存」。
+ * 点下去先缩成一颗圆点，再展开成画出来的 ✓ 已保存，过一会儿安静下来。
+ */
+@Composable
+private fun SaveButton(dirty: Boolean, onSave: () -> Unit) {
+    var phase by remember { mutableStateOf(0) } // 0 平常，1 圆点，2 已保存 ✓
+    val scope = rememberCoroutineScope()
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
+    val ease = androidx.compose.animation.core.CubicBezierEasing(.3f, .8f, .3f, 1f)
+    val w by androidx.compose.animation.core.animateDpAsState(
+        when { phase == 1 -> 34.dp; phase == 2 -> 96.dp; else -> 80.dp }, tween(300, easing = ease), label = "saveW",
+    )
+    val bg by androidx.compose.animation.animateColorAsState(
+        when { phase == 1 -> warm.copy(alpha = .92f); phase == 2 -> warm.copy(alpha = .18f); dirty -> warm.copy(alpha = .92f); else -> rgba(233, 180, 142, .1f) },
+        tween(300), label = "saveBg",
+    )
+    val tick by androidx.compose.animation.core.animateFloatAsState(if (phase == 2) 1f else 0f, tween(if (phase == 2) 380 else 0, delayMillis = if (phase == 2) 120 else 0), label = "tick")
+    Box(
+        Modifier.width(w).height(34.dp).background(bg, RoundedCornerShape(50))
+            .pointerInput(dirty, phase) {
+                detectTapGestures {
+                    if (!dirty || phase != 0) return@detectTapGestures
+                    onSave()
+                    scope.launch {
+                        phase = 1
+                        kotlinx.coroutines.delay(300)
+                        haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                        phase = 2
+                        kotlinx.coroutines.delay(1600)
+                        phase = 0
+                    }
+                }
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        when (phase) {
+            1 -> {}
+            2 -> Row(verticalAlignment = Alignment.CenterVertically) {
+                androidx.compose.foundation.Canvas(Modifier.size(14.dp)) {
+                    // 勾：先画短的一笔，再画长的一笔
+                    val u = size.width / 14f
+                    val a = androidx.compose.ui.geometry.Offset(3f * u, 7.5f * u)
+                    val m = androidx.compose.ui.geometry.Offset(5.6f * u, 10.1f * u)
+                    val e = androidx.compose.ui.geometry.Offset(11f * u, 4.6f * u)
+                    val k = .32f
+                    val st = 1.8f * u
+                    if (tick > 0f) drawLine(warm, a, a + (m - a) * (tick / k).coerceAtMost(1f), st, androidx.compose.ui.graphics.StrokeCap.Round)
+                    if (tick > k) drawLine(warm, m, m + (e - m) * ((tick - k) / (1f - k)), st, androidx.compose.ui.graphics.StrokeCap.Round)
+                }
+                Spacer(Modifier.width(6.dp))
+                Txt("已保存", warm, 13.sp, maxLines = 1)
+            }
+            else -> Txt(if (dirty) "保存" else "已保存", if (dirty) css("#2a211b") else Page.muted, 13.sp, maxLines = 1)
         }
     }
 }

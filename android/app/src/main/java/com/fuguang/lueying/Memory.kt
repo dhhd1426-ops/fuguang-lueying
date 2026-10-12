@@ -104,6 +104,14 @@ object Memory {
         save()
     }
 
+    /** 撤销删除：放回原位，原来正在用的话也换回来。 */
+    fun restore(p: Persona, i: Int, wasActive: Boolean) {
+        if (p in all) return
+        all.add(i.coerceIn(0, all.size), p)
+        if (wasActive) activeId = p.id
+        save()
+    }
+
     /** 第一次用：从已有的对话记录里补上相识时间和次数。 */
     fun seed(history: ConvStore) {
         val a = active
