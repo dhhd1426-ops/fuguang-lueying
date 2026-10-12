@@ -99,16 +99,17 @@ fun MemoryCardHost() {
             MemoryCard.persona = null
         }
     }
-    val close = {
+    val close: () -> Unit = {
         focusManager.clearFocus(); keyboard?.hide()
         MemoryCard.open = false
     }
-    val save = {
+    val save: () -> Unit = {
         if (title.isBlank() && body.isBlank()) {
             scope.launch {
                 for (x in listOf(-9f, 8f, -5f, 3f, 0f)) shake.animateTo(x, tween(55))
             }
             runCatching { focus.requestFocus() }
+            Unit
         } else {
             Memory.add(p, title, body)
             MemoryCard.justAdded = p.items.firstOrNull()?.id.orEmpty()
