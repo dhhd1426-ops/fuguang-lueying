@@ -55,6 +55,9 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.foundation.layout.offset
 import androidx.compose.ui.layout.onSizeChanged
@@ -140,6 +143,10 @@ class ChatState(val history: ConvStore) {
 
     /** 正在编辑重发第几条消息：-1 = 没有。 */
     var editing by mutableIntStateOf(-1)
+    /** 输入框在屏幕上的位置：编辑时气泡往这里飞。 */
+    var inputAt by mutableStateOf(androidx.compose.ui.geometry.Rect.Zero)
+    /** 让输入框拿到焦点（每加一次就要一次）。 */
+    var focusTick by mutableIntStateOf(0)
 
     /** 发出输入框里的话；编辑重发时，先删掉那条及之后的内容。返回新消息的序号，没发出去是 -1。 */
     fun send(scope: CoroutineScope, store: AssistantStore): Int {
@@ -311,6 +318,8 @@ fun ChatPage(
     androidx.activity.compose.BackHandler(enabled = picker) { picker = false }
     // 左侧菜单：从左边滑出，盖在聊天页上面（聊天页不动，只压暗）；点右边露出的部分收回
     var menu by remember { mutableStateOf(false) }
+    var editFly by remember { mutableStateOf<Pair<String, androidx.compose.ui.geometry.Rect>?>(null) }
+    var flyHost by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
     androidx.activity.compose.BackHandler(enabled = menu) { menu = false }
     val menuT by androidx.compose.animation.core.animateFloatAsState(
         if (menu) 1f else 0f, tween(320, easing = androidx.compose.animation.core.CubicBezierEasing(.2f, .8f, .2f, 1f)), label = "menu",
@@ -382,6 +391,8 @@ fun ChatPage(
         )
         NoteImageViewer(viewing) { viewing = null }
         val pm = press?.let { chat.messages.getOrNull(it.index) }
+        val pIdx = press?.index ?: -1
+        val pBounds = press?.bounds
         MsgMenu(
             press = if (pm != null) press else null, msg = pm,
             isLast = press?.index == chat.messages.lastIndex && !chat.busy,
@@ -390,11 +401,40 @@ fun ChatPage(
             onCopy = { pm?.let { clipboard.setText(AnnotatedString(it.text)); toast = "已复制" } },
             onSelect = { selectText = pm?.text },
             onEdit = {
-                val i = press?.index ?: -1
-                if (pm != null && i >= 0 && !chat.busy) { chat.editing = i; chat.draft = pm.text }
+                // 菜单先关再执行：这里用打开菜单时记下的那一条，别再读已经清空的 press
+                if (pm != null && pIdx >= 0 && !chat.busy) {
+                    chat.editing = pIdx
+                    if (pBounds != null && chat.inputAt != androidx.compose.ui.geometry.Rect.Zero) editFly = pm.text to pBounds
+                    else { chat.draft = pm.text; chat.focusTick++ }
+                }
             },
             onRegen = { chat.regenerate(scope, store) },
         )
+        // 编辑重发：那条气泡飞回输入框，落进去变成可以改的文字
+        editFly?.let { (text, from) ->
+            val k = remember(from) { androidx.compose.animation.core.Animatable(0f) }
+            LaunchedEffect(from) {
+                k.animateTo(1f, tween(420, easing = androidx.compose.animation.core.CubicBezierEasing(.4f, 0f, .2f, 1f)))
+                chat.draft = text; chat.focusTick++
+                editFly = null
+            }
+            val to = chat.inputAt
+            Box(Modifier.matchParentSize().onGloballyPositioned { flyHost = it.positionInRoot() }) {
+                Box(
+                    Modifier
+                        .offset {
+                            val x = from.left + (to.left + 12.dp.toPx() - from.left) * k.value - flyHost.x
+                            val y = from.top + (to.top + 8.dp.toPx() - from.top) * k.value - flyHost.y
+                            androidx.compose.ui.unit.IntOffset(x.toInt(), y.toInt())
+                        }
+                        .graphicsLayer {
+                            val sc = 1f - .1f * k.value; scaleX = sc; scaleY = sc
+                            alpha = 1f - .8f * k.value
+                            transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, 0f)
+                        },
+                ) { UserBubble(text, compact, Modifier) }
+            }
+        }
         SelectTextPage(selectText) { selectText = null }
         BoxToast(toast, Modifier.align(Alignment.BottomCenter).padding(bottom = 150.dp)) { toast = null }
     }
@@ -461,6 +501,11 @@ private fun Conversation(
         Column(Modifier.fillMaxSize().verticalScroll(scroll).padding(top = 6.dp)) {
             Column(Modifier.widthIn(max = 720.dp).fillMaxWidth().align(Alignment.CenterHorizontally)) {
                 chat.messages.forEachIndexed { i, m ->
+                    // 编辑重发时：那条自己变淡，后面的回复也变淡（发送后会被替换）
+                    val dim by animateFloatAsState(
+                        if (chat.editing >= 0 && i >= chat.editing) (if (i == chat.editing) .35f else .28f) else 1f, tween(320), label = "editDim",
+                    )
+                    Column(Modifier.graphicsLayer { alpha = dim }) {
                     if (m.role == "user") {
                         Box(
                             Modifier.fillMaxWidth().padding(top = if (i == 0) 0.dp else 26.dp, bottom = 16.dp)
@@ -471,6 +516,7 @@ private fun Conversation(
                         if (m.think.isNotBlank()) ThinkSummaryLine(thinkSummary(m.think)) { onThink(i) }
                         Box(Modifier.fillMaxWidth().longPressMsg(i, pressed == i, onLong)) { Reply(m.text, compact, fadeTail = false) }
                         NoteImageRow(m.imgs, onImage)
+                    }
                     }
                 }
                 if (chat.busy) {
@@ -658,7 +704,11 @@ private fun ChatInput(
                 .padding(start = 16.dp, end = inset, top = 15.dp, bottom = inset),
         ) {
             // 编辑重发：输入框上方一条杏色提示，点 × 放弃
-            if (chat.editing >= 0) {
+            androidx.compose.animation.AnimatedVisibility(
+                chat.editing >= 0,
+                enter = androidx.compose.animation.expandVertically(tween(260)) + androidx.compose.animation.fadeIn(tween(260)),
+                exit = androidx.compose.animation.shrinkVertically(tween(220)) + androidx.compose.animation.fadeOut(tween(180)),
+            ) {
                 Row(Modifier.fillMaxWidth().padding(start = 4.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                     SvgIcon(Ic("M13.5 6.5l4 4M5 19l1-4.5L15.5 5a1.5 1.5 0 0 1 2 0l1.5 1.5a1.5 1.5 0 0 1 0 2L9.5 18z"), css("#e9b48e"), 15.dp)
                     Spacer(Modifier.width(6.dp))
@@ -668,13 +718,17 @@ private fun ChatInput(
                     }
                 }
             }
+            val inputFocus = remember { androidx.compose.ui.focus.FocusRequester() }
+            LaunchedEffect(chat.focusTick) { if (chat.focusTick > 0) runCatching { inputFocus.requestFocus() } }
             BasicTextField(
                 value = chat.draft,
                 onValueChange = { chat.draft = it },
                 textStyle = TextStyle(color = Page.ink, fontSize = if (compact) 15.sp else 16.sp, lineHeight = 24.sp),
                 cursorBrush = SolidColor(Page.accent),
                 maxLines = 6,
-                modifier = Modifier.fillMaxWidth().heightIn(min = 24.dp).padding(start = 4.dp),
+                modifier = Modifier.fillMaxWidth().heightIn(min = 24.dp).padding(start = 4.dp)
+                    .focusRequester(inputFocus)
+                    .onGloballyPositioned { chat.inputAt = it.boundsInRoot() },
                 decorationBox = { inner ->
                     Box {
                         if (chat.draft.isEmpty()) Txt("回信给 $title…", Page.muted, if (compact) 15.sp else 16.sp)
