@@ -77,10 +77,15 @@ private val glassFill = rgba(30, 34, 42, .42f)
 /** “我的”页内部导航：mine → providers → provider/<id>。由 App 持有，返回键逐级退回。 */
 class MineNav {
     var screen by mutableStateOf("mine")
+    /** 正在看的那位助理，和她的哪个标签页。 */
+    var persona by mutableStateOf("")
+    var tab by mutableStateOf(0)
+    fun open(id: String, t: Int) { persona = id; tab = t; screen = "persona" }
     fun back(): Boolean {
         screen = when {
             screen.startsWith("provider/") -> "providers"
-            screen == "providers" || screen == "memory" -> "assistant"
+            screen == "providers" -> if (persona.isNotEmpty() && Memory.get(persona) != null) "persona" else "assistant"
+            screen == "persona" -> { persona = ""; "assistant" }
             screen == "assistant" -> "mine"
             else -> return false
         }
@@ -113,9 +118,9 @@ fun MinePage(
             Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
                 Column(Modifier.widthIn(max = 720.dp).fillMaxWidth()) {
                     when {
-                        screen == "assistant" -> AssistantScreen(store, compact, blur, nav)
+                        screen == "assistant" -> AssistantScreen(compact, blur, nav)
+                        screen == "persona" -> Memory.get(nav.persona)?.let { PersonaScreen(store, it, compact, blur, nav) } ?: AssistantScreen(compact, blur, nav)
                         screen == "providers" -> ProvidersScreen(store, compact, blur, nav)
-                        screen == "memory" -> MemoryScreen(store, compact, blur, nav)
                         screen.startsWith("provider/") -> ProviderScreen(store, provider(screen.removePrefix("provider/")), compact, blur, nav)
                         else -> MineRoot(store, compact, blur, nav)
                     }
@@ -228,7 +233,7 @@ private fun ColumnScope.MineRoot(store: AssistantStore, compact: Boolean, blur: 
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Txt("助理", Page.ink, 15.sp, Modifier.weight(1f))
-                Txt(store.name, Page.muted, 13.sp, maxLines = 1)
+                Txt(Memory.active.name, Page.muted, 13.sp, maxLines = 1)
                 Spacer(Modifier.width(6.dp))
                 SvgIcon(MineIcons.next, Page.muted, 18.dp)
             }
@@ -293,56 +298,218 @@ private fun ConnectorGroup(blur: Dp) {
     }
 }
 
-/* ---------- 助理：名称、模型与供应商 ---------- */
+/* ---------- 助理（方案 4：先选人，再进她的标签页） ---------- */
+
+private val warm = css("#e9b48e")
+
+/** 头像：宋体首字，杏色。 */
+@Composable
+private fun Initial(name: String, size: Dp) {
+    Box(Modifier.size(size).background(rgba(233, 180, 142, .14f), CircleShape), contentAlignment = Alignment.Center) {
+        Txt(name.trim().take(1).ifEmpty { "?" }, warm, (size.value * .42f).sp, family = Serif)
+    }
+}
 
 @Composable
-private fun ColumnScope.AssistantScreen(store: AssistantStore, compact: Boolean, blur: Dp, nav: MineNav) {
-    Title("助理", compact, onBack = { nav.back() })
-    Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState())) {
-        Column(Modifier.fillMaxWidth().glass(RoundedCornerShape(20.dp), blur, fill = glassFill)) {
-            Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-                Txt("名称", Page.ink, 15.sp, Modifier.width(78.dp))
-                var draft by remember(store.name) { mutableStateOf(store.name) }
-                BasicTextField(
-                    value = draft,
-                    onValueChange = { draft = it.take(16); if (it.isNotBlank()) store.rename(it.take(16).trim()) },
-                    singleLine = true,
-                    textStyle = TextStyle(color = Page.ink, fontSize = 15.sp, textAlign = androidx.compose.ui.text.style.TextAlign.End),
-                    cursorBrush = SolidColor(Page.accent),
-                    modifier = Modifier.weight(1f).padding(vertical = 6.dp),
-                )
+private fun ColumnScope.AssistantScreen(compact: Boolean, blur: Dp, nav: MineNav) {
+    Title("助理", compact, onBack = { nav.back() }) {
+        Pressable({ val n = Memory.create(); nav.open(n.id, 0) }, label = "新建助理") { p ->
+            Box(Modifier.size(36.dp).background(rgba(233, 180, 142, if (p) .28f else .14f), CircleShape), contentAlignment = Alignment.Center) {
+                SvgIcon(Ic("M12 6v12M6 12h12"), warm, 18.dp, stroke = 1.7f)
             }
-            Divider()
-            Pressable({ nav.screen = "providers" }, Modifier.fillMaxWidth(), label = "模型与供应商") { pressed ->
+        }
+    }
+    Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Memory.all.forEach { p ->
+            val on = p.id == Memory.activeId
+            Pressable({ nav.open(p.id, 2) }, Modifier.fillMaxWidth(), label = p.name) { pressed ->
                 Row(
-                    Modifier.fillMaxWidth().background(if (pressed) rgba(255, 255, 255, .04f) else Color.Transparent).padding(horizontal = 18.dp, vertical = 18.dp),
+                    Modifier.fillMaxWidth().glass(RoundedCornerShape(20.dp), blur, fill = if (pressed) rgba(255, 255, 255, .08f) else glassFill)
+                        .padding(horizontal = 16.dp, vertical = 14.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Txt("模型与供应商", Page.ink, 15.sp, Modifier.weight(1f))
-                    Txt("${provider(store.activeProvider).name} · ${store.activeModel}", Page.muted, 13.sp, maxLines = 1)
-                    Spacer(Modifier.width(6.dp))
+                    Initial(p.name, 44.dp)
+                    Spacer(Modifier.width(14.dp))
+                    Column(Modifier.weight(1f)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Txt(p.name, Page.ink, 16.sp, maxLines = 1, family = Serif)
+                            if (on) {
+                                Spacer(Modifier.width(8.dp))
+                                Box(Modifier.size(5.dp).background(warm, CircleShape))
+                                Spacer(Modifier.width(5.dp))
+                                Txt("正在陪你", warm, 11.5.sp, maxLines = 1)
+                            }
+                        }
+                        Spacer(Modifier.height(4.dp))
+                        Txt(
+                            listOfNotNull(if (p.memOn) "记得 ${p.items.size} 件事" else "记忆已关", if (p.chats > 0) "聊过 ${p.chats} 次" else null).joinToString(" · "),
+                            Page.muted, 12.5.sp, maxLines = 1,
+                        )
+                    }
                     SvgIcon(MineIcons.next, Page.muted, 18.dp)
                 }
             }
-            Divider()
-            Pressable({ nav.screen = "memory" }, Modifier.fillMaxWidth(), label = "记忆") { pressed ->
-                Row(
-                    Modifier.fillMaxWidth().background(if (pressed) rgba(255, 255, 255, .04f) else Color.Transparent).padding(horizontal = 18.dp, vertical = 18.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Txt("记忆", Page.ink, 15.sp, Modifier.weight(1f))
-                    Txt(if (Memory.enabled) "记得 ${Memory.items.size} 件事" else "全局记忆已关", Page.muted, 13.sp, maxLines = 1)
-                    Spacer(Modifier.width(6.dp))
-                    SvgIcon(MineIcons.next, Page.muted, 18.dp)
+        }
+        Spacer(Modifier.height(8.dp))
+    }
+}
+
+/** 分段标签：底下一块色块，跟着手指在标签之间滑。 */
+@Composable
+private fun SegTabs(tabs: List<String>, pager: androidx.compose.foundation.pager.PagerState, blur: Dp, onPick: (Int) -> Unit) {
+    var w by remember { mutableStateOf(0f) }
+    Box(
+        Modifier.fillMaxWidth().padding(bottom = 16.dp)
+            .glass(RoundedCornerShape(16.dp), blur, fill = glassFill)
+            .padding(4.dp)
+            .onSizeChanged { w = it.width.toFloat() },
+    ) {
+        val d = LocalDensity.current
+        val pos = (pager.currentPage + pager.currentPageOffsetFraction).coerceIn(0f, tabs.lastIndex.toFloat())
+        val tw = w / tabs.size
+        Box(
+            Modifier.graphicsLayer { translationX = pos * tw }
+                .width(with(d) { tw.toDp() }).height(38.dp)
+                .background(rgba(255, 255, 255, .10f), RoundedCornerShape(12.dp)),
+        )
+        Row(Modifier.fillMaxWidth()) {
+            tabs.forEachIndexed { i, t ->
+                val near = (1f - kotlin.math.abs(pos - i)).coerceIn(0f, 1f)
+                Pressable({ onPick(i) }, Modifier.weight(1f), label = t) { _ ->
+                    Box(Modifier.fillMaxWidth().height(38.dp), contentAlignment = Alignment.Center) {
+                        Txt(t, androidx.compose.ui.graphics.lerp(Page.muted, Page.ink, near), 14.sp, maxLines = 1)
+                    }
                 }
             }
         }
     }
 }
 
-/* ---------- 记忆（方案 4：相识摘要） ---------- */
+@Composable
+private fun ColumnScope.PersonaScreen(store: AssistantStore, p: Persona, compact: Boolean, blur: Dp, nav: MineNav) {
+    Title(p.name.ifBlank { "未命名" }, compact, onBack = { nav.back() })
+    val pager = androidx.compose.foundation.pager.rememberPagerState(initialPage = nav.tab) { 3 }
+    val scope = rememberCoroutineScope()
+    LaunchedEffect(pager.currentPage) { nav.tab = pager.currentPage }
+    SegTabs(listOf("基础", "提示词", "记忆"), pager, blur) { scope.launch { pager.animateScrollToPage(it) } }
+    var adding by remember { mutableStateOf(false) }
+    var undo by remember { mutableStateOf<Pair<Mem, Int>?>(null) }
+    LaunchedEffect(undo) { if (undo != null) { kotlinx.coroutines.delay(4000); undo = null } }
+    Box(Modifier.weight(1f).fillMaxWidth()) {
+        androidx.compose.foundation.pager.HorizontalPager(
+            pager, Modifier.fillMaxSize(),
+            verticalAlignment = Alignment.Top,
+            beyondViewportPageCount = 1,
+            pageSpacing = 16.dp,
+        ) { page ->
+            Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(bottom = 24.dp)) {
+                when (page) {
+                    0 -> BasicTab(store, p, blur, nav)
+                    1 -> PromptTab(p, blur)
+                    else -> MemoryTab(p, blur, onAdd = { adding = true }, onDeleted = { m, i -> undo = m to i })
+                }
+            }
+        }
+        // 删除后几秒内可以撤销
+        androidx.compose.animation.AnimatedVisibility(
+            undo != null,
+            Modifier.align(Alignment.BottomCenter).padding(bottom = 8.dp),
+            enter = androidx.compose.animation.slideInVertically { it } + androidx.compose.animation.fadeIn(),
+            exit = androidx.compose.animation.slideOutVertically { it } + androidx.compose.animation.fadeOut(),
+        ) {
+            Row(
+                Modifier.widthIn(max = 520.dp).fillMaxWidth().background(rgba(47, 49, 54, .97f), RoundedCornerShape(16.dp))
+                    .padding(start = 16.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Txt("已删除", Page.ink, 13.5.sp, Modifier.weight(1f))
+                Pressable({ undo?.let { (m, i) -> Memory.restore(p, m, i) }; undo = null }, label = "撤销") { pr ->
+                    Txt("撤销", warm, 13.5.sp, Modifier.background(if (pr) rgba(255, 255, 255, .06f) else Color.Transparent, RoundedCornerShape(12.dp)).padding(horizontal = 12.dp, vertical = 9.dp))
+                }
+            }
+        }
+        AddMemorySheet(adding, p) { adding = false }
+    }
+}
 
-private val warm = css("#e9b48e")
+/* 基础：名字、模型、让她陪你聊天、删除 */
+@Composable
+private fun ColumnScope.BasicTab(store: AssistantStore, p: Persona, blur: Dp, nav: MineNav) {
+    Column(Modifier.fillMaxWidth().glass(RoundedCornerShape(20.dp), blur, fill = glassFill)) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+            Txt("名称", Page.ink, 15.sp, Modifier.width(78.dp))
+            var draft by remember(p.id) { mutableStateOf(p.name) }
+            BasicTextField(
+                value = draft,
+                onValueChange = { draft = it.take(16); if (it.isNotBlank()) { p.name = it.take(16).trim(); Memory.save() } },
+                singleLine = true,
+                textStyle = TextStyle(color = Page.ink, fontSize = 15.sp, textAlign = androidx.compose.ui.text.style.TextAlign.End),
+                cursorBrush = SolidColor(Page.accent),
+                modifier = Modifier.weight(1f).padding(vertical = 6.dp),
+            )
+        }
+        Divider()
+        Pressable({ nav.screen = "providers" }, Modifier.fillMaxWidth(), label = "模型与供应商") { pressed ->
+            Row(
+                Modifier.fillMaxWidth().background(if (pressed) rgba(255, 255, 255, .04f) else Color.Transparent).padding(horizontal = 18.dp, vertical = 18.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Txt("模型与供应商", Page.ink, 15.sp, Modifier.weight(1f))
+                Txt("${provider(store.activeProvider).name} · ${store.activeModel}", Page.muted, 13.sp, maxLines = 1)
+                Spacer(Modifier.width(6.dp))
+                SvgIcon(MineIcons.next, Page.muted, 18.dp)
+            }
+        }
+    }
+    Spacer(Modifier.height(22.dp))
+    if (p.id == Memory.activeId) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(5.dp).background(warm, CircleShape))
+            Spacer(Modifier.width(8.dp))
+            Txt("${p.name} 正在陪你聊天", Page.muted, 13.sp)
+        }
+    } else {
+        PillButton("让 ${p.name} 陪你聊天", null, primary = true, modifier = Modifier.fillMaxWidth()) { Memory.use(p) }
+    }
+    if (Memory.all.size > 1) {
+        var armed by remember(p.id) { mutableStateOf(false) }
+        LaunchedEffect(armed) { if (armed) { kotlinx.coroutines.delay(3000); armed = false } }
+        Spacer(Modifier.height(18.dp))
+        Pressable({ if (armed) { Memory.delete(p); nav.back() } else armed = true }, Modifier.align(Alignment.CenterHorizontally), label = "删除这位助理") { pr ->
+            Txt(
+                if (armed) "再点一次，删除 ${p.name}" else "删除这位助理",
+                if (armed) css("#e8a29a") else Page.muted.copy(alpha = if (pr) .5f else .8f), 13.sp,
+                Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            )
+        }
+    }
+}
+
+/* 提示词：她是谁，写在这里的就是她自己 */
+@Composable
+private fun ColumnScope.PromptTab(p: Persona, blur: Dp) {
+    BasicTextField(
+        value = p.sys,
+        onValueChange = { p.sys = it; Memory.save() },
+        textStyle = TextStyle(color = Page.ink, fontSize = 14.5.sp, lineHeight = 24.sp),
+        cursorBrush = SolidColor(Page.accent),
+        modifier = Modifier.fillMaxWidth(),
+        decorationBox = { inner ->
+            Box(Modifier.fillMaxWidth().heightIn(min = 280.dp).glass(RoundedCornerShape(20.dp), blur, fill = glassFill).padding(18.dp)) {
+                if (p.sys.isEmpty()) Txt("写下 ${p.name} 是谁、怎么说话。留空就用默认的样子。", Page.muted.copy(alpha = .6f), 14.5.sp, lineHeight = 24.sp)
+                inner()
+            }
+        },
+    )
+    Row(Modifier.fillMaxWidth().padding(start = 6.dp, end = 2.dp, top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+        Txt("写在这里的，就是她自己。记得的事会自然接在后面。", Page.muted, 12.5.sp, Modifier.weight(1f), lineHeight = 20.sp)
+        if (p.sys.trim() != Memory.DEFAULT_SYS) {
+            Pressable({ p.sys = Memory.DEFAULT_SYS; Memory.save() }, label = "恢复默认") { pr ->
+                Txt("恢复默认", warm, 12.5.sp, Modifier.background(rgba(233, 180, 142, if (pr) .24f else .12f), RoundedCornerShape(50)).padding(horizontal = 12.dp, vertical = 6.dp))
+            }
+        }
+    }
+}
 
 @Composable
 private fun SectionLabel(text: String, trailing: @Composable () -> Unit = {}) {
@@ -365,88 +532,49 @@ private fun ago(t: Long): String {
     return if (days <= 1) "昨天" else java.text.SimpleDateFormat("M 月 d 日", java.util.Locale.CHINA).format(java.util.Date(t))
 }
 
+/* 记忆：相识摘要 + 全局记忆（关着只剩一行） */
 @Composable
-private fun ColumnScope.MemoryScreen(store: AssistantStore, compact: Boolean, blur: Dp, nav: MineNav) {
-    Title("记忆", compact, onBack = { nav.back() })
-    var adding by remember { mutableStateOf(false) }
-    var undo by remember { mutableStateOf<Pair<Mem, Int>?>(null) }
-    LaunchedEffect(undo) { if (undo != null) { kotlinx.coroutines.delay(4000); undo = null } }
-    Box(Modifier.weight(1f).fillMaxWidth()) {
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(bottom = 24.dp)) {
-        // 系统提示词：最上面，点开原地编辑
-        var sysOpen by remember { mutableStateOf(false) }
-        Column(Modifier.fillMaxWidth().glass(RoundedCornerShape(20.dp), blur, fill = glassFill).animateContentSize()) {
-            Pressable({ sysOpen = !sysOpen }, Modifier.fillMaxWidth(), label = "系统提示词") { p ->
-                Row(
-                    Modifier.fillMaxWidth().background(if (p) rgba(255, 255, 255, .04f) else Color.Transparent).padding(horizontal = 18.dp, vertical = 18.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Txt("系统提示词", Page.ink, 15.sp, Modifier.weight(1f))
-                    Txt(if (Memory.systemPrompt.isBlank()) "未设置" else "已设置", Page.muted, 13.sp)
-                    Spacer(Modifier.width(6.dp))
-                    SvgIcon(MineIcons.next, Page.muted, 18.dp, modifier = Modifier.graphicsLayer { rotationZ = if (sysOpen) 90f else 0f })
+private fun ColumnScope.MemoryTab(p: Persona, blur: Dp, onAdd: () -> Unit, onDeleted: (Mem, Int) -> Unit) {
+    val days = if (p.firstAt <= 0) 0 else ((System.currentTimeMillis() - p.firstAt) / 86_400_000L).toInt() + 1
+    Txt(if (days == 0) "${p.name} 还在认识你" else "${p.name} 认识你 $days 天了", Page.ink, 19.sp, Modifier.padding(start = 4.dp, top = 2.dp), family = Serif, lineHeight = 30.sp)
+    Spacer(Modifier.height(4.dp))
+    Txt(
+        listOfNotNull("聊过 ${p.chats} 次", "记得 ${p.items.size} 件事", ago(p.lastAt).takeIf { it.isNotEmpty() }?.let { "上次是$it" }).joinToString(" · "),
+        Page.muted, 12.5.sp, Modifier.padding(start = 4.dp),
+    )
+    SectionLabel("她记得")
+    var open by remember { mutableStateOf<String?>(null) }
+    var all by remember { mutableStateOf(false) }
+    Column(Modifier.fillMaxWidth().glass(RoundedCornerShape(20.dp), blur, fill = glassFill).animateContentSize()) {
+        Row(Modifier.fillMaxWidth().padding(start = 18.dp, end = 16.dp, top = 14.dp, bottom = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Txt("全局记忆", Page.ink, 15.sp)
+                Spacer(Modifier.height(3.dp))
+                Txt(if (p.memOn) "记得 ${p.items.size} 件事，会自动记新的" else "关着，不记也不用", Page.muted, 12.5.sp)
+            }
+            if (p.memOn) {
+                Pressable(onAdd, Modifier.padding(end = 12.dp), label = "添加记忆") { pr ->
+                    Box(Modifier.size(32.dp).background(rgba(233, 180, 142, if (pr) .28f else .16f), CircleShape), contentAlignment = Alignment.Center) {
+                        SvgIcon(Ic("M12 6v12M6 12h12"), warm, 16.dp, stroke = 1.7f)
+                    }
                 }
             }
-            if (sysOpen) {
-                BasicTextField(
-                    value = Memory.systemPrompt,
-                    onValueChange = { Memory.systemPrompt = it; Memory.save() },
-                    textStyle = TextStyle(color = Page.ink, fontSize = 14.sp, lineHeight = 22.sp),
-                    cursorBrush = SolidColor(Page.accent),
-                    modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
-                    decorationBox = { inner ->
-                        Box(Modifier.fillMaxWidth().heightIn(min = 96.dp).background(rgba(0, 0, 0, .2f), RoundedCornerShape(14.dp)).padding(14.dp)) {
-                            if (Memory.systemPrompt.isEmpty()) Txt("写下你希望 ${store.name} 一直遵守的规则…", Page.muted.copy(alpha = .6f), 14.sp)
-                            inner()
-                        }
-                    },
-                )
-            }
+            Switch(p.memOn, "全局记忆") { p.memOn = it; Memory.save() }
         }
-        Spacer(Modifier.height(22.dp))
-        // 相识摘要
-        val days = if (Memory.firstAt <= 0) 0 else ((System.currentTimeMillis() - Memory.firstAt) / 86_400_000L).toInt() + 1
-        Txt(if (days == 0) "${store.name} 还在认识你" else "${store.name} 认识你 $days 天了", Page.ink, 19.sp, Modifier.padding(start = 4.dp, top = 2.dp), family = Serif, lineHeight = 30.sp)
-        Spacer(Modifier.height(4.dp))
-        Txt(
-            listOfNotNull("聊过 ${Memory.chats} 次", "记得 ${Memory.items.size} 件事", ago(Memory.lastAt).takeIf { it.isNotEmpty() }?.let { "上次是$it" }).joinToString(" · "),
-            Page.muted, 12.5.sp, Modifier.padding(start = 4.dp),
-        )
-
-        // 它记得：开关在色块里；关着只剩这一行，打开后往下展开记忆
-        SectionLabel("它记得")
-        var open by remember { mutableStateOf<String?>(null) }
-        var all by remember { mutableStateOf(false) }
-        Column(Modifier.fillMaxWidth().glass(RoundedCornerShape(20.dp), blur, fill = glassFill).animateContentSize()) {
-            Row(Modifier.fillMaxWidth().padding(start = 18.dp, end = 16.dp, top = 14.dp, bottom = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Txt("全局记忆", Page.ink, 15.sp)
-                    Spacer(Modifier.height(3.dp))
-                    Txt(if (Memory.enabled) "记得 ${Memory.items.size} 件事，会自动记新的" else "关着，不记也不用", Page.muted, 12.5.sp)
+        if (p.memOn) {
+            Divider()
+            Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 12.dp)) {
+                if (p.items.isEmpty()) {
+                    Txt("还没有记住什么。聊得多了，值得记住的事会出现在这里。", Page.muted, 13.sp, Modifier.padding(bottom = 4.dp), lineHeight = 21.sp)
                 }
-                if (Memory.enabled) {
-                    Pressable({ adding = true }, Modifier.padding(end = 12.dp), label = "添加记忆") { p ->
-                        Box(Modifier.size(32.dp).background(rgba(233, 180, 142, if (p) .28f else .16f), CircleShape), contentAlignment = Alignment.Center) {
-                            SvgIcon(Ic("M12 6v12M6 12h12"), warm, 16.dp, stroke = 1.7f)
-                        }
-                    }
-                }
-                Switch(Memory.enabled, "全局记忆") { Memory.enabled = it; Memory.save() }
-            }
-            if (Memory.enabled) {
-                Divider()
-                Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 12.dp)) {
-                    if (Memory.items.isEmpty()) {
-                        Txt("还没有记住什么。聊得多了，值得记住的事会出现在这里。", Page.muted, 13.sp, Modifier.padding(bottom = 4.dp), lineHeight = 21.sp)
-                    }
-                    val shown = if (all) Memory.items.toList() else Memory.items.take(5)
-                    shown.forEachIndexed { k, m ->
-                        val isOpen = open == m.id
-                        SwipeToDelete(m.id, onDelete = {
-                            val idx = Memory.items.indexOf(m)
-                            Memory.remove(m); open = null
-                            undo = m to idx
-                        }) {
+                val shown = if (all) p.items.toList() else p.items.take(5)
+                shown.forEachIndexed { k, m ->
+                    val isOpen = open == m.id
+                    SwipeToDelete(m.id, onDelete = {
+                        val idx = p.items.indexOf(m)
+                        Memory.remove(p, m); open = null
+                        onDeleted(m, idx)
+                    }) {
                         Pressable({ open = if (isOpen) null else m.id }, Modifier.fillMaxWidth(), label = m.text) { _ ->
                             Row(Modifier.fillMaxWidth().height(androidx.compose.foundation.layout.IntrinsicSize.Min)) {
                                 // 时间线：竖线 + 节点，最新一条是杏色
@@ -471,56 +599,15 @@ private fun ColumnScope.MemoryScreen(store: AssistantStore, compact: Boolean, bl
                                 }
                             }
                         }
-                        }
                     }
-                    if (Memory.items.size > 5) {
-                        Pressable({ all = !all }, label = "全部") { p ->
-                            Txt(if (all) "收起" else "全部 ${Memory.items.size} 件 ›", if (p) Page.ink else Page.muted, 13.sp, Modifier.padding(top = 2.dp, bottom = 4.dp))
-                        }
+                }
+                if (p.items.size > 5) {
+                    Pressable({ all = !all }, label = "全部") { pr ->
+                        Txt(if (all) "收起" else "全部 ${p.items.size} 件 ›", if (pr) Page.ink else Page.muted, 13.sp, Modifier.padding(top = 2.dp, bottom = 4.dp))
                     }
                 }
             }
         }
-
-        // 你喜欢
-        SectionLabel("你喜欢")
-        ChipEditor(Memory.likes, "比如：回答简洁", onAdd = { Memory.addLike(it) }, onRemove = { Memory.likes.remove(it); Memory.save() })
-
-        // 它的样子
-        SectionLabel("它的样子")
-        Column(Modifier.fillMaxWidth().glass(RoundedCornerShape(20.dp), blur, fill = glassFill).padding(horizontal = 16.dp, vertical = 16.dp)) {
-            ToneSlider("温柔", "直率", Memory.gentle) { Memory.gentle = it }
-            Spacer(Modifier.height(18.dp))
-            ToneSlider("平静", "活泼", Memory.lively) { Memory.lively = it }
-            Spacer(Modifier.height(16.dp))
-            ChipEditor(Memory.amor, "比如：叫我「你」，不用「您」", onAdd = { Memory.addAmor(it) }, onRemove = { Memory.amor.remove(it); Memory.save() })
-        }
-
-        // 更多
-        SectionLabel("更多")
-        Box(Modifier.fillMaxWidth().glass(RoundedCornerShape(20.dp), blur, fill = glassFill)) {
-            Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 18.dp).alpha(.38f)) { Txt("待开放", Page.ink, 15.sp) }
-        }
-    }
-        // 删除后几秒内可以撤销
-        androidx.compose.animation.AnimatedVisibility(
-            undo != null,
-            Modifier.align(Alignment.BottomCenter).padding(bottom = 8.dp),
-            enter = androidx.compose.animation.slideInVertically { it } + androidx.compose.animation.fadeIn(),
-            exit = androidx.compose.animation.slideOutVertically { it } + androidx.compose.animation.fadeOut(),
-        ) {
-            Row(
-                Modifier.widthIn(max = 520.dp).fillMaxWidth().background(rgba(47, 49, 54, .97f), RoundedCornerShape(16.dp))
-                    .padding(start = 16.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Txt("已删除", Page.ink, 13.5.sp, Modifier.weight(1f))
-                Pressable({ undo?.let { (m, i) -> Memory.restore(m, i) }; undo = null }, label = "撤销") { p ->
-                    Txt("撤销", warm, 13.5.sp, Modifier.background(if (p) rgba(255, 255, 255, .06f) else Color.Transparent, RoundedCornerShape(12.dp)).padding(horizontal = 12.dp, vertical = 9.dp))
-                }
-            }
-        }
-        AddMemorySheet(adding, store.name) { adding = false }
     }
 }
 
@@ -561,7 +648,8 @@ private fun SwipeToDelete(key: String, onDelete: () -> Unit, content: @Composabl
 
 /** 添加记忆：从底部升起的抽屉（和选择模型同款）；点暗处或返回键收起。 */
 @Composable
-private fun AddMemorySheet(open: Boolean, name: String, onClose: () -> Unit) {
+private fun AddMemorySheet(open: Boolean, persona: Persona, onClose: () -> Unit) {
+    val name = persona.name
     val shown by androidx.compose.animation.core.animateFloatAsState(
         if (open) 1f else 0f, tween(if (open) 320 else 220, easing = androidx.compose.animation.core.CubicBezierEasing(.2f, .8f, .2f, 1f)), label = "addMem",
     )
@@ -610,99 +698,11 @@ private fun AddMemorySheet(open: Boolean, name: String, onClose: () -> Unit) {
                 },
             )
             Spacer(Modifier.height(16.dp))
-            Pressable({ if (title.isNotBlank() || body.isNotBlank()) { Memory.add(title, body); onClose() } else runCatching { focus.requestFocus() } }, Modifier.fillMaxWidth(), label = "记住") { p ->
+            Pressable({ if (title.isNotBlank() || body.isNotBlank()) { Memory.add(persona, title, body); onClose() } else runCatching { focus.requestFocus() } }, Modifier.fillMaxWidth(), label = "记住") { p ->
                 Box(Modifier.fillMaxWidth().background(rgba(233, 180, 142, if (p) .75f else .92f), RoundedCornerShape(50)).padding(vertical = 13.dp), contentAlignment = Alignment.Center) {
                     Txt("记住", css("#2a211b"), 15.sp)
                 }
             }
-        }
-    }
-}
-
-/** 一排小标签 + 「+ 添加」：点标签出现 ×，点 × 删掉；点添加原地变成输入框。 */
-@Composable
-private fun ChipEditor(list: List<String>, hint: String, onAdd: (String) -> Unit, onRemove: (String) -> Unit) {
-    var picked by remember { mutableStateOf<String?>(null) }
-    var adding by remember { mutableStateOf(false) }
-    var draft by remember { mutableStateOf("") }
-    androidx.compose.foundation.layout.FlowRow(
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        list.forEach { t ->
-            val sel = picked == t
-            Pressable({ picked = if (sel) null else t }, label = t) { _ ->
-                Row(
-                    Modifier.background(rgba(255, 255, 255, if (sel) .13f else .08f), RoundedCornerShape(50)).padding(start = 14.dp, end = if (sel) 6.dp else 14.dp, top = 8.dp, bottom = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Txt(t, Page.ink, 13.sp, maxLines = 1)
-                    if (sel) Pressable({ onRemove(t); picked = null }, Modifier.padding(start = 4.dp), label = "删除") { _ ->
-                        SvgIcon(Icons.close, Page.muted, 14.dp)
-                    }
-                }
-            }
-        }
-        if (adding) {
-            val focus = remember { androidx.compose.ui.focus.FocusRequester() }
-            LaunchedEffect(Unit) { focus.requestFocus() }
-            BasicTextField(
-                value = draft,
-                onValueChange = { draft = it.take(30) },
-                singleLine = true,
-                textStyle = TextStyle(color = Page.ink, fontSize = 13.sp),
-                cursorBrush = SolidColor(warm),
-                keyboardOptions = KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Done),
-                keyboardActions = androidx.compose.foundation.text.KeyboardActions(onDone = {
-                    if (draft.isNotBlank()) onAdd(draft); draft = ""; adding = false
-                }),
-                modifier = Modifier.focusRequester(focus).onFocusChanged { if (!it.isFocused && adding && draft.isBlank()) adding = false }
-                    .widthIn(min = 120.dp, max = 260.dp),
-                decorationBox = { inner ->
-                    Box(Modifier.background(rgba(233, 180, 142, .12f), RoundedCornerShape(50)).padding(horizontal = 14.dp, vertical = 8.dp)) {
-                        if (draft.isEmpty()) Txt(hint, Page.muted, 13.sp, maxLines = 1)
-                        inner()
-                    }
-                },
-            )
-        } else {
-            Pressable({ adding = true; picked = null }, label = "添加") { p ->
-                Txt("+ 添加", warm, 13.sp, Modifier.background(rgba(233, 180, 142, if (p) .24f else .14f), RoundedCornerShape(50)).padding(horizontal = 14.dp, vertical = 8.dp))
-            }
-        }
-    }
-}
-
-/** 两端文字的滑杆：按住拖动，点一下也能跳过去；松手后保存。 */
-@Composable
-private fun ToneSlider(left: String, right: String, value: Float, onChange: (Float) -> Unit) {
-    Column {
-        Row(Modifier.fillMaxWidth()) {
-            Txt(left, if (value < .5f) Page.ink else Page.muted, 12.5.sp, Modifier.weight(1f))
-            Txt(right, if (value >= .5f) Page.ink else Page.muted, 12.5.sp)
-        }
-        Spacer(Modifier.height(6.dp))
-        var w by remember { mutableStateOf(1f) }
-        Box(
-            Modifier.fillMaxWidth().height(28.dp)
-                .onSizeChanged { w = it.width.toFloat().coerceAtLeast(1f) }
-                .pointerInput(Unit) {
-                    detectTapGestures { onChange((it.x / w).coerceIn(0f, 1f)); Memory.save() }
-                }
-                .pointerInput(Unit) {
-                    detectHorizontalDragGestures(onDragEnd = { Memory.save() }) { ch, _ ->
-                        ch.consume(); onChange((ch.position.x / w).coerceIn(0f, 1f))
-                    }
-                },
-            contentAlignment = Alignment.CenterStart,
-        ) {
-            Box(Modifier.fillMaxWidth().height(4.dp).background(rgba(255, 255, 255, .1f), RoundedCornerShape(2.dp)))
-            Box(Modifier.fillMaxWidth(value.coerceIn(.001f, 1f)).height(4.dp).background(warm, RoundedCornerShape(2.dp)))
-            val d = LocalDensity.current
-            Box(
-                Modifier.graphicsLayer { translationX = value * w - with(d) { 9.dp.toPx() } }
-                    .size(18.dp).background(Page.ink, CircleShape),
-            )
         }
     }
 }
@@ -869,7 +869,7 @@ private fun ModelsTab(store: AssistantStore, p: Provider, blur: Dp) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         c.models.forEach { m ->
             val inUse = store.activeProvider == p.id && store.activeModel == m
-            Pressable({ store.use(p.id, m) }, Modifier.fillMaxWidth(), label = "让 ${store.name} 用 $m") { pressed ->
+            Pressable({ store.use(p.id, m) }, Modifier.fillMaxWidth(), label = "让 ${Memory.active.name} 用 $m") { pressed ->
                 Row(
                     Modifier.fillMaxWidth()
                         .glass(RoundedCornerShape(20.dp), blur, fill = if (pressed) rgba(255, 255, 255, .08f) else glassFill, border = if (inUse) rose.copy(alpha = .7f) else Page.glassBorder)
@@ -882,7 +882,7 @@ private fun ModelsTab(store: AssistantStore, p: Provider, blur: Dp) {
                         Txt(m, Page.ink, 16.sp, weight = FontWeight.Medium, maxLines = 1)
                         Spacer(Modifier.height(8.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                            if (inUse) Chip("${store.name} 在用", fill = rose.copy(alpha = .75f), ink = Page.ink)
+                            if (inUse) Chip("${Memory.active.name} 在用", fill = rose.copy(alpha = .75f), ink = Page.ink)
                             Chip("聊天")
                             Chip("文本 → 文本")
                         }
@@ -909,7 +909,7 @@ private fun ModelsTab(store: AssistantStore, p: Provider, blur: Dp) {
         }
         if (c.models.isEmpty()) Txt("还没有模型。点“获取模型”从供应商拉取，或手动添加。", Page.muted, 13.sp, Modifier.padding(4.dp), lineHeight = 22.sp)
         status?.let { (ok, msg) -> Txt(msg, if (ok) Page.accent else rose, 13.sp, Modifier.padding(start = 4.dp)) }
-        Txt("点一个模型，${store.name} 就用它聊天。", Page.muted, 13.sp, Modifier.fillMaxWidth().padding(top = 6.dp), align = androidx.compose.ui.text.style.TextAlign.Center)
+        Txt("点一个模型，${Memory.active.name} 就用它聊天。", Page.muted, 13.sp, Modifier.fillMaxWidth().padding(top = 6.dp), align = androidx.compose.ui.text.style.TextAlign.Center)
         if (adding) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.weight(1f)) { Field(newModel, { newModel = it.trim() }, "模型名，例如 deepseek-flash") }

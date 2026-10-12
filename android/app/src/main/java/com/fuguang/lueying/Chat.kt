@@ -185,7 +185,7 @@ class ChatState(val history: ConvStore) {
         busy = true; thinking = false; thinkText = ""; partial = ""; shown = 0f; streamDone = false
         pendingImgs.clear()
         val history = messages.toList()
-        val name = store.name
+        val who = Memory.active
         job = scope.launch {
             try {
                 // 连接了羽：给模型两个查笔记的工具
@@ -193,7 +193,7 @@ class ChatState(val history: ConvStore) {
                 val yu = Yu.connected
                 val question = history.lastOrNull { it.role == "user" }?.text.orEmpty()
                 ChatApi.stream(
-                    p, c, store.activeModel, Memory.prompt(name) + (if (yu) "\n\n— 以下是你能用的工具 —\n" + Yu.system() else ""), history, store.deepThink,
+                    p, c, store.activeModel, Memory.prompt(who) + (if (yu) "\n\n— 以下是你能用的工具 —\n" + Yu.system() else ""), history, store.deepThink,
                     onThink = { thinkText += it; thinking = true },
                     tools = if (yu) Tools(Yu.tools, { n, a -> Yu.run(n, a, Yu.vision(p.id)) { refs -> refs.forEach { r -> if (r !in pendingImgs) pendingImgs.add(r) } } }, { toolNote = if (it == "list_todos") "正在查看羽的待办…" else "正在查阅羽的笔记…" }) else null,
                     fallback = if (yu) ({ Yu.context(question) }) else null,
@@ -207,7 +207,7 @@ class ChatState(val history: ConvStore) {
                     val reply = partial.trim()
                     val cid = convId.orEmpty()
                     val title = this@ChatState.history.get(convId)?.title ?: firstSentence(question, 18)
-                    scope.launch { Memory.learn(name, p, c, store.activeModel, question, reply, cid, title) }
+                    scope.launch { Memory.learn(who, p, c, store.activeModel, question, reply, cid, title) }
                 } else error = "没有收到回复，换个模型再试"
             } catch (e: kotlinx.coroutines.CancellationException) {
                 if (partial.isNotBlank()) messages.add(ChatMsg("assistant", partial.take(ceil(shown).toInt()).trim(), thinkText, pendingImgs.toList()))
@@ -255,8 +255,8 @@ fun ChatPage(
 ) {
     val side = if (compact) (if (tiny) 18.dp else 24.dp) else (width * .052f)
     val scope = rememberCoroutineScope()
-    val title = store.name
-    val subtitle = "${store.name} · ${store.config(store.activeProvider).name} · ${store.activeModel}"
+    val title = Memory.active.name
+    val subtitle = "${Memory.active.name} · ${store.config(store.activeProvider).name} · ${store.activeModel}"
 
     // 书写节奏：有积压时每帧推进
     LaunchedEffect(chat) {
