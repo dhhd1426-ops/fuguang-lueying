@@ -61,6 +61,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
+import androidx.compose.ui.draw.drawBehind
 
 private object MineIcons {
     val back = Ic("M14.5 6l-6 6 6 6")
@@ -509,23 +510,12 @@ private fun ColumnScope.PersonaScreen(store: AssistantStore, p: Persona, compact
     }
 }
 
-/* 基础：名字、模型、让她陪你聊天、删除 */
+/* 基础（方案一）：名片（助理名称 / 用户名称，自动保存）、模型、回答的手感 */
 @Composable
 private fun ColumnScope.BasicTab(store: AssistantStore, p: Persona, blur: Dp, nav: MineNav) {
-    Column(Modifier.fillMaxWidth().glass(RoundedCornerShape(20.dp), blur, fill = glassFill)) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-            Txt("名称", Page.ink, 15.sp, Modifier.width(78.dp))
-            var draft by remember(p.id) { mutableStateOf(p.name) }
-            BasicTextField(
-                value = draft,
-                onValueChange = { draft = it.take(16); if (it.isNotBlank()) { p.name = it.take(16).trim(); Memory.save() } },
-                singleLine = true,
-                textStyle = TextStyle(color = Page.ink, fontSize = 15.sp, textAlign = androidx.compose.ui.text.style.TextAlign.End),
-                cursorBrush = SolidColor(Page.accent),
-                modifier = Modifier.weight(1f).padding(vertical = 6.dp),
-            )
-        }
-        Divider()
+    NameCard(p, blur)
+    Spacer(Modifier.height(10.dp))
+    Box(Modifier.fillMaxWidth().glass(RoundedCornerShape(20.dp), blur, fill = glassFill)) {
         Pressable({ nav.screen = "providers" }, Modifier.fillMaxWidth(), label = "模型与供应商") { pressed ->
             Row(
                 Modifier.fillMaxWidth().background(if (pressed) rgba(255, 255, 255, .04f) else Color.Transparent).padding(horizontal = 18.dp, vertical = 18.dp),
@@ -538,6 +528,54 @@ private fun ColumnScope.BasicTab(store: AssistantStore, p: Persona, blur: Dp, na
             }
         }
     }
+    Txt("回 答 的 手 感", Page.muted, 11.sp, Modifier.padding(start = 4.dp, top = 24.dp, bottom = 10.dp), spacing = ls(1f, 11f))
+    Column(Modifier.fillMaxWidth().glass(RoundedCornerShape(20.dp), blur, fill = glassFill)) {
+        // 温度
+        Column(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 16.dp)) {
+            Row(verticalAlignment = Alignment.Bottom) {
+                Txt("温度", Page.ink, 15.sp, Modifier.weight(1f))
+                Txt(String.format(java.util.Locale.US, "%.2f", p.temp), warm, 18.sp, family = Serif)
+            }
+            Spacer(Modifier.height(8.dp))
+            FeelSlider(p.temp, 0f, 2f, .05f, onDone = { Memory.save() }) { p.temp = it }
+            Ends("稳重、可预期", "随性、跳脱")
+        }
+        Divider()
+        // Top P
+        Column(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 16.dp).animateContentSize()) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Txt("Top P", Page.ink, 15.sp, Modifier.weight(1f))
+                ChoiceChip("用供应商默认", !p.topOn) { p.topOn = false; Memory.save() }
+                Spacer(Modifier.width(8.dp))
+                ChoiceChip("自己设", p.topOn) { p.topOn = true; Memory.save() }
+            }
+            if (p.topOn) {
+                Spacer(Modifier.height(12.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.weight(1f)) { FeelSlider(p.top, .1f, 1f, .05f, onDone = { Memory.save() }) { p.top = it } }
+                    Spacer(Modifier.width(12.dp))
+                    Txt(String.format(java.util.Locale.US, "%.2f", p.top), warm, 18.sp, Modifier.widthIn(min = 44.dp), family = Serif, align = androidx.compose.ui.text.style.TextAlign.End)
+                }
+                Ends("只挑最稳的词", "放开挑")
+            }
+        }
+        Divider()
+        // 带上最近几轮对话：1–30 轮，最右边是「不限」
+        Column(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 16.dp)) {
+            val v = if (p.rounds <= 0) 31f else p.rounds.toFloat()
+            Row(verticalAlignment = Alignment.Bottom) {
+                Column(Modifier.weight(1f)) {
+                    Txt("带上最近几轮对话", Page.ink, 15.sp)
+                    Spacer(Modifier.height(3.dp))
+                    Txt("一轮 = 你说一句、${p.name} 回一句", Page.muted, 12.sp)
+                }
+                Txt(if (p.rounds <= 0) "不限" else "${p.rounds} 轮", warm, 18.sp, family = Serif)
+            }
+            Spacer(Modifier.height(8.dp))
+            FeelSlider(v, 1f, 31f, 1f, ticks = 7, onDone = { Memory.save() }) { p.rounds = if (it >= 31f) 0 else it.toInt() }
+            Ends("省一点", "聊得越久越连贯")
+        }
+    }
     Spacer(Modifier.height(22.dp))
     if (p.id == Memory.activeId) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
@@ -547,6 +585,128 @@ private fun ColumnScope.BasicTab(store: AssistantStore, p: Persona, blur: Dp, na
         }
     } else {
         PillButton("让 ${p.name} 陪你聊天", null, primary = true, modifier = Modifier.fillMaxWidth()) { Memory.use(p) }
+    }
+}
+
+/** 名片：助理名称、用户名称并排，宋体大字直接改；停手半秒自动保存，一道杏色细线从左划到右，右上角淡出「已保存」。 */
+@Composable
+private fun NameCard(p: Persona, blur: Dp) {
+    var a by remember(p.id) { mutableStateOf(p.name) }
+    var u by remember { mutableStateOf(Memory.userName) }
+    val sweep = remember { androidx.compose.animation.core.Animatable(0f) }
+    val tag = remember { androidx.compose.animation.core.Animatable(0f) }
+    var first by remember(p.id) { mutableStateOf(true) }
+    LaunchedEffect(a, u) {
+        if (first) { first = false; return@LaunchedEffect }
+        kotlinx.coroutines.delay(600)
+        if (a.isNotBlank()) p.name = a.trim().take(16)
+        Memory.userName = u.trim().take(16)
+        Memory.save()
+        kotlinx.coroutines.coroutineScope {
+            launch { sweep.snapTo(0f); sweep.animateTo(1f, tween(620, easing = androidx.compose.animation.core.CubicBezierEasing(.3f, .8f, .3f, 1f))); sweep.animateTo(2f, tween(280)) }
+            launch { tag.snapTo(0f); tag.animateTo(1f, tween(240)); kotlinx.coroutines.delay(900); tag.animateTo(0f, tween(400)) }
+        }
+    }
+    Box(Modifier.fillMaxWidth().glass(RoundedCornerShape(20.dp), blur, fill = glassFill).height(androidx.compose.foundation.layout.IntrinsicSize.Min)) {
+        Row(Modifier.fillMaxWidth()) {
+            NameField("助理名称", a, "Amor", Modifier.weight(1f)) { a = it.take(16) }
+            Box(Modifier.padding(vertical = 18.dp).width(1.dp).fillMaxHeight().background(rgba(255, 255, 255, .08f)))
+            NameField("用户名称", u, "你希望她怎么叫你", Modifier.weight(1f)) { u = it.take(16) }
+        }
+        // 保存：杏色细线从左划到右，然后淡掉
+        Box(
+            Modifier.align(Alignment.BottomStart).fillMaxWidth().height(2.dp)
+                .graphicsLayer {
+                    val s = sweep.value
+                    scaleX = s.coerceIn(0f, 1f); transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, .5f)
+                    alpha = if (s <= 0f) 0f else if (s <= 1f) 1f else (2f - s).coerceIn(0f, 1f)
+                }
+                .background(warm),
+        )
+        Txt("已保存", warm, 11.sp, Modifier.align(Alignment.TopEnd).padding(top = 10.dp, end = 14.dp).graphicsLayer { alpha = tag.value; translationY = (1f - tag.value) * 6f })
+    }
+}
+
+@Composable
+private fun NameField(label: String, value: String, hint: String, modifier: Modifier, onChange: (String) -> Unit) {
+    Column(modifier.padding(horizontal = 18.dp, vertical = 16.dp)) {
+        Txt(label, Page.muted, 11.5.sp, spacing = ls(1.5f, 11.5f))
+        Spacer(Modifier.height(6.dp))
+        BasicTextField(
+            value = value, onValueChange = onChange, singleLine = true,
+            textStyle = TextStyle(color = Page.ink, fontSize = 22.sp, fontFamily = Serif, letterSpacing = 1.sp),
+            cursorBrush = SolidColor(warm),
+            modifier = Modifier.fillMaxWidth(),
+            decorationBox = { inner ->
+                Box {
+                    if (value.isEmpty()) Txt(hint, Page.muted.copy(alpha = .5f), if (hint.length > 6) 14.sp else 22.sp, family = Serif, maxLines = 1)
+                    inner()
+                }
+            },
+        )
+    }
+}
+
+@Composable
+private fun Ends(left: String, right: String) {
+    Row(Modifier.fillMaxWidth().padding(top = 4.dp)) {
+        Txt(left, Page.muted, 11.5.sp, Modifier.weight(1f))
+        Txt(right, Page.muted, 11.5.sp)
+    }
+}
+
+@Composable
+private fun ChoiceChip(text: String, on: Boolean, onClick: () -> Unit) {
+    Pressable(onClick, label = text) { pr ->
+        Txt(
+            text, if (on) warm else Page.muted, 12.sp,
+            Modifier.background(if (on) rgba(233, 180, 142, .16f) else rgba(255, 255, 255, if (pr) .1f else .06f), RoundedCornerShape(50)).padding(horizontal = 11.dp, vertical = 6.dp),
+            maxLines = 1,
+        )
+    }
+}
+
+/** 滑杆：杏色走过的那段，白色圆钮带一圈淡杏色光晕；按住拖、点一下都行，按步长吸附。 */
+@Composable
+private fun FeelSlider(value: Float, min: Float, max: Float, step: Float, ticks: Int = 0, onDone: () -> Unit, onChange: (Float) -> Unit) {
+    var w by remember { mutableStateOf(1f) }
+    fun at(x: Float): Float {
+        val raw = min + (x / w).coerceIn(0f, 1f) * (max - min)
+        return (Math.round((raw - min) / step) * step + min).coerceIn(min, max)
+    }
+    val frac = ((value - min) / (max - min)).coerceIn(0f, 1f)
+    var dragging by remember { mutableStateOf(false) }
+    val glow by androidx.compose.animation.core.animateFloatAsState(if (dragging) 1f else 0f, tween(180), label = "glow")
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
+    Box(
+        Modifier.fillMaxWidth().height(30.dp)
+            .onSizeChanged { w = it.width.toFloat().coerceAtLeast(1f) }
+            .pointerInput(min, max, step) { detectTapGestures { onChange(at(it.x)); onDone() } }
+            .pointerInput(min, max, step) {
+                detectHorizontalDragGestures(
+                    onDragStart = { dragging = true },
+                    onDragEnd = { dragging = false; onDone() },
+                    onDragCancel = { dragging = false },
+                ) { ch, _ ->
+                    ch.consume()
+                    val nv = at(ch.position.x)
+                    if (nv != value) { onChange(nv); if (step >= 1f) haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove) }
+                }
+            },
+        contentAlignment = Alignment.CenterStart,
+    ) {
+        Box(Modifier.fillMaxWidth().height(3.dp).background(rgba(255, 255, 255, .1f), RoundedCornerShape(2.dp)))
+        if (ticks > 1) Row(Modifier.fillMaxWidth().padding(top = 16.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+            repeat(ticks) { Box(Modifier.width(1.dp).height(5.dp).background(rgba(255, 255, 255, .16f))) }
+        }
+        Box(Modifier.fillMaxWidth(frac.coerceAtLeast(.001f)).height(3.dp).background(warm, RoundedCornerShape(2.dp)))
+        val d = LocalDensity.current
+        Box(
+            Modifier.graphicsLayer { translationX = frac * w - with(d) { 9.dp.toPx() } }
+                .size(18.dp)
+                .drawBehind { drawCircle(warm.copy(alpha = .18f + .17f * glow), radius = size.minDimension / 2 + (4f + 4f * glow).dp.toPx()) }
+                .background(Page.ink, CircleShape),
+        )
     }
 }
 

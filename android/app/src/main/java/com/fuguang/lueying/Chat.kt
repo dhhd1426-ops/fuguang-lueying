@@ -191,8 +191,16 @@ class ChatState(val history: ConvStore) {
         }
         busy = true; thinking = false; thinkText = ""; partial = ""; shown = 0f; streamDone = false
         pendingImgs.clear()
-        val history = messages.toList()
         val who = Memory.active
+        // 只带最近几轮（一轮 = 你说一句 + 她回一句）；0 = 不限
+        val history = messages.toList().let { all ->
+            if (who.rounds <= 0) all else {
+                val users = all.indices.filter { all[it].role == "user" }
+                if (users.size <= who.rounds) all else all.drop(users[users.size - who.rounds])
+            }
+        }
+        ChatApi.temperature = who.temp
+        ChatApi.topP = if (who.topOn) who.top else null
         job = scope.launch {
             try {
                 // 连接了羽：给模型查笔记的工具；开着跨聊天回忆：再给一个翻以前聊天的工具
@@ -202,9 +210,11 @@ class ChatState(val history: ConvStore) {
                 val store0 = this@ChatState.history
                 val cur = convId
                 val question = history.lastOrNull { it.role == "user" }?.text.orEmpty()
-                val specs = (if (yu) Yu.tools else emptyList()) + (if (recall) listOf(Recall.spec) else emptyList())
+                val specs = Memory.toolSpecs + (if (yu) Yu.tools else emptyList()) + (if (recall) listOf(Recall.spec) else emptyList())
+                val convTitle0 = store0.get(cur)?.title ?: firstSentence(question, 18)
                 val extra = buildString {
-                    if (yu || recall) append("\n\n你手边还有这些东西，需要时再用，不需要就不用：")
+                    append("\n\n你手边还有这些东西，需要时再用，不需要就不用：")
+                    append("\n").append(Memory.toolRule())
                     if (recall) append("\n").append(Recall.system())
                     if (yu) append("\n").append(Yu.system())
                 }
@@ -214,10 +224,11 @@ class ChatState(val history: ConvStore) {
                     tools = if (specs.isNotEmpty()) Tools(
                         specs,
                         { n, a ->
-                            if (n == Recall.TOOL) Recall.run(store0, cur, a.optString("query"))
+                            if (n == Memory.REMEMBER || n == Memory.FORGET) Memory.runTool(who, n, a, cur.orEmpty(), convTitle0)
+                            else if (n == Recall.TOOL) Recall.run(store0, cur, a.optString("query"))
                             else Yu.run(n, a, Yu.vision(p.id)) { refs -> refs.forEach { r -> if (r !in pendingImgs) pendingImgs.add(r) } }
                         },
-                        { toolNote = when (it) { Recall.TOOL -> "正在翻看以前的聊天…"; "list_todos" -> "正在查看羽的待办…"; else -> "正在查阅羽的笔记…" } },
+                        { toolNote = when (it) { Memory.REMEMBER -> "正在记下…"; Memory.FORGET -> "正在忘掉…"; Recall.TOOL -> "正在翻看以前的聊天…"; "list_todos" -> "正在查看羽的待办…"; else -> "正在查阅羽的笔记…" } },
                     ) else null,
                     fallback = if (specs.isNotEmpty()) ({
                         listOfNotNull(

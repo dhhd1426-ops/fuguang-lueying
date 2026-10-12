@@ -273,6 +273,10 @@ object ChatApi {
     /** 一次请求的结果。 */
     private class Round(val text: String, val reasoning: String, val calls: List<Call>, val blocks: JSONArray)
 
+    /** 这一轮聊天用的温度和 Top P；null = 不带，交给供应商默认。 */
+    @Volatile var temperature: Float? = null
+    @Volatile var topP: Float? = null
+
     suspend fun stream(
         p: Provider,
         c: ProviderConfig,
@@ -432,6 +436,11 @@ object ChatApi {
 
             val body = JSONObject().put("model", model).put("messages", msgs).put("stream", true)
             if (anthropic) body.put("system", system).put("max_tokens", 4096)
+            // 回答的手感：温度、Top P（Anthropic 开着思考时不能带）
+            if (!(anthropic && think)) {
+                temperature?.let { body.put("temperature", it.toDouble()) }
+                topP?.let { body.put("top_p", it.toDouble()) }
+            }
             if (think) {
                 if (anthropic) body.put("thinking", JSONObject().put("type", "enabled").put("budget_tokens", 4000)).put("max_tokens", 8192)
                 else body.put("reasoning_effort", "high")
