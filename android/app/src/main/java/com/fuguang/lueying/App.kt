@@ -53,6 +53,9 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
+import kotlinx.coroutines.launch
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalContext
@@ -165,7 +168,7 @@ fun FuguangApp(prefs: Prefs, fullscreen: Boolean, setFullscreen: (Boolean) -> Un
                     paused = paused,
                     fullscreen = fullscreen,
                     blur = blur.dp,
-                    modifier = Modifier.alpha(pageAlpha),
+                    modifier = Modifier.pageIn(pageAlpha),
                     onOpen = { modal = it },
                     newLuoying = store.newLuoying,
                     newLetters = store.newLetters,
@@ -190,7 +193,7 @@ fun FuguangApp(prefs: Prefs, fullscreen: Boolean, setFullscreen: (Boolean) -> Un
         CompositionLocalProvider(LocalHaze provides haze) {
             val chatAlpha = appear(chatOpen && !zen, 260)
             if (chatAlpha > 0f) {
-                Box(Modifier.fillMaxSize().alpha(chatAlpha)) {
+                Box(Modifier.fillMaxSize().pageIn(chatAlpha)) {
                     ChatPage(
                         compact = compact,
                         tiny = tiny,
@@ -209,7 +212,7 @@ fun FuguangApp(prefs: Prefs, fullscreen: Boolean, setFullscreen: (Boolean) -> Un
             }
             val mineAlpha = appear(mineOpen && !zen, 260)
             if (mineAlpha > 0f) {
-                Box(Modifier.fillMaxSize().alpha(mineAlpha)) {
+                Box(Modifier.fillMaxSize().pageIn(mineAlpha)) {
                     MinePage(
                         compact = compact,
                         tiny = tiny,
@@ -489,24 +492,68 @@ private fun ShichenClock(now: Date, compact: Boolean, modifier: Modifier) {
     }
 }
 
-/** 底部导航：无框纯文字，和顶部导航同一种宋体，选中项下面一个暖色小点。
- *  四项平分宽度，任何屏宽都排得下；展开的折叠屏、平板上限制总宽并居中，免得字隔得太开。 */
+/** 底部导航（方案二·潮线刻度）：没有框和分隔线，底下一层渐暗托住；
+ *  选中项上方一道杏色短线，换页时从上一个标签像潮水一样涌过去（先拉长再收回）。 */
+private object NavTick { var last = 0 }
+private val NAV = listOf("主页", "聊天", "手记", "我的")
+
 @Composable
 fun BottomNav(compact: Boolean, active: String, onHome: () -> Unit, onChat: () -> Unit, onMine: () -> Unit, onOpen: (ModalKind) -> Unit) {
+    val idx = NAV.indexOf(active).coerceAtLeast(0)
+    val pos = remember { androidx.compose.animation.core.Animatable(NavTick.last.toFloat()) }
+    val stretch = remember { androidx.compose.animation.core.Animatable(0f) }
+    LaunchedEffect(idx) {
+        if (pos.value != idx.toFloat()) {
+            launch {
+                stretch.animateTo(1f, androidx.compose.animation.core.tween(220))
+                stretch.animateTo(0f, androidx.compose.animation.core.tween(320))
+            }
+            pos.animateTo(idx.toFloat(), androidx.compose.animation.core.spring(dampingRatio = .74f, stiffness = 300f))
+        }
+        NavTick.last = idx
+    }
     Box(
         Modifier
             .fillMaxWidth()
-            .padding(top = if (compact) 16.dp else 22.dp)
-            .topLine(Page.line)
-            .padding(top = if (compact) 4.dp else 8.dp),
+            .padding(top = if (compact) 14.dp else 20.dp)
+            // 渐暗托底：比自己大一圈，往上淡出，没有边
+            .drawBehind {
+                val ext = 400.dp.toPx()
+                drawRect(
+                    androidx.compose.ui.graphics.Brush.verticalGradient(
+                        0f to Color.Transparent, .55f to rgba(6, 8, 12, .38f), 1f to rgba(6, 8, 12, .55f),
+                        startY = -70.dp.toPx(), endY = size.height + 60.dp.toPx(),
+                    ),
+                    topLeft = Offset(-ext, -70.dp.toPx()),
+                    size = androidx.compose.ui.geometry.Size(size.width + 2 * ext, size.height + 130.dp.toPx()),
+                )
+            },
         contentAlignment = Alignment.Center,
     ) {
-        Row(Modifier.widthIn(max = 560.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            val item = Modifier.weight(1f)
-            BottomNavItem("主页", active == "主页", compact, item, onHome)
-            BottomNavItem("聊天", active == "聊天", compact, item, onChat)
-            BottomNavItem("手记", active == "手记", compact, item) { onOpen(ModalKind.Journal) }
-            BottomNavItem("我的", active == "我的", compact, item, onMine)
+        var rowW by remember { mutableStateOf(0f) }
+        Box(Modifier.widthIn(max = 560.dp).fillMaxWidth().onSizeChanged { rowW = it.width.toFloat() }) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                val item = Modifier.weight(1f)
+                BottomNavItem("主页", idx == 0, compact, item, onHome)
+                BottomNavItem("聊天", idx == 1, compact, item, onChat)
+                BottomNavItem("手记", idx == 2, compact, item) { onOpen(ModalKind.Journal) }
+                BottomNavItem("我的", idx == 3, compact, item, onMine)
+            }
+            // 杏色潮线
+            val d = LocalDensity.current
+            Box(
+                Modifier
+                    .graphicsLayer {
+                        val itemW = rowW / NAV.size
+                        val w = with(d) { (18.dp + 30.dp * stretch.value).toPx() }
+                        translationX = (pos.value + .5f) * itemW - w / 2
+                        scaleX = w / with(d) { 18.dp.toPx() }
+                        transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, .5f)
+                    }
+                    .padding(top = 8.dp)
+                    .width(18.dp).height(2.dp)
+                    .background(Page.accent, RoundedCornerShape(1.dp)),
+            )
         }
     }
 }
@@ -514,14 +561,17 @@ fun BottomNav(compact: Boolean, active: String, onHome: () -> Unit, onChat: () -
 @Composable
 private fun BottomNavItem(label: String, active: Boolean, compact: Boolean, modifier: Modifier, onClick: () -> Unit) {
     Pressable(onClick, modifier, label = label) { pressed ->
-        Column(Modifier.fillMaxWidth().padding(vertical = 10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Column(Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            // 没选中的：上方一颗很淡的小点，像刻度
+            Box(Modifier.size(3.dp).background(if (active) Color.Transparent else rgba(255, 255, 255, .18f), CircleShape))
+            Spacer(Modifier.height(if (compact) 12.dp else 14.dp))
             val fs = if (compact) 13f else 14f
+            val k by androidx.compose.animation.core.animateFloatAsState(if (active) 1f else 0f, androidx.compose.animation.core.tween(300), label = "navInk")
             Txt(
-                label, if (active || pressed) Page.ink else Page.muted, fs.sp,
+                label, androidx.compose.ui.graphics.lerp(Page.muted, Page.ink, if (pressed) 1f else k), fs.sp,
+                Modifier.graphicsLayer { val sc = 1f + .08f * k; scaleX = sc; scaleY = sc },
                 spacing = ls(if (compact) 3f else 4f, fs), family = Serif, maxLines = 1,
             )
-            Spacer(Modifier.height(7.dp))
-            Box(Modifier.size(4.dp).background(if (active) Page.accent else Color.Transparent, CircleShape))
         }
     }
 }
@@ -560,3 +610,10 @@ private fun VerticalLabel(text: String, modifier: Modifier) {
 
 @Suppress("unused")
 private fun Modifier.debugDot(): Modifier = drawBehind { drawCircle(Page.accent, 2f, Offset.Zero) }
+
+/** 换页：淡入时从稍大一点收回原位，像镜头推近；淡出时反过来。 */
+private fun Modifier.pageIn(a: Float): Modifier = graphicsLayer {
+    alpha = a
+    val sc = 1f + (1f - a) * .035f
+    scaleX = sc; scaleY = sc
+}

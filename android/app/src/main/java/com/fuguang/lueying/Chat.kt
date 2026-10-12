@@ -188,15 +188,36 @@ class ChatState(val history: ConvStore) {
         val who = Memory.active
         job = scope.launch {
             try {
-                // 连接了羽：给模型两个查笔记的工具
+                // 连接了羽：给模型查笔记的工具；开着跨聊天回忆：再给一个翻以前聊天的工具
                 Yu.refresh()
                 val yu = Yu.connected
+                val recall = who.memOn
+                val store0 = this@ChatState.history
+                val cur = convId
                 val question = history.lastOrNull { it.role == "user" }?.text.orEmpty()
+                val specs = (if (yu) Yu.tools else emptyList()) + (if (recall) listOf(Recall.spec) else emptyList())
+                val extra = buildString {
+                    if (yu || recall) append("\n\n— 以下是你能用的工具 —")
+                    if (recall) append("\n").append(Recall.system())
+                    if (yu) append("\n").append(Yu.system())
+                }
                 ChatApi.stream(
-                    p, c, store.activeModel, Memory.prompt(who) + (if (yu) "\n\n— 以下是你能用的工具 —\n" + Yu.system() else ""), history, store.deepThink,
+                    p, c, store.activeModel, Memory.prompt(who) + extra, history, store.deepThink,
                     onThink = { thinkText += it; thinking = true },
-                    tools = if (yu) Tools(Yu.tools, { n, a -> Yu.run(n, a, Yu.vision(p.id)) { refs -> refs.forEach { r -> if (r !in pendingImgs) pendingImgs.add(r) } } }, { toolNote = if (it == "list_todos") "正在查看羽的待办…" else "正在查阅羽的笔记…" }) else null,
-                    fallback = if (yu) ({ Yu.context(question) }) else null,
+                    tools = if (specs.isNotEmpty()) Tools(
+                        specs,
+                        { n, a ->
+                            if (n == Recall.TOOL) Recall.run(store0, cur, a.optString("query"))
+                            else Yu.run(n, a, Yu.vision(p.id)) { refs -> refs.forEach { r -> if (r !in pendingImgs) pendingImgs.add(r) } }
+                        },
+                        { toolNote = when (it) { Recall.TOOL -> "正在翻看以前的聊天…"; "list_todos" -> "正在查看羽的待办…"; else -> "正在查阅羽的笔记…" } },
+                    ) else null,
+                    fallback = if (specs.isNotEmpty()) ({
+                        listOfNotNull(
+                            if (recall) Recall.context(store0, cur).takeIf { it.isNotEmpty() } else null,
+                            if (yu) Yu.context(question) else null,
+                        ).joinToString("\n\n")
+                    }) else null,
                 ) { partial += it; thinking = false; toolNote = "" }
                 streamDone = true
                 // 等书写追上再收尾

@@ -39,6 +39,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -130,8 +131,6 @@ fun MinePage(
             }
             if (screen == "mine") BottomNav(compact, active = "我的", onHome = onHome, onChat = onChat, onMine = {}, onOpen = onOpen)
         }
-        // 添加记忆的卡片：画在整页最上层
-        MemoryCardHost()
     }
 }
 
@@ -661,107 +660,192 @@ private fun ago(t: Long): String {
 }
 
 /* 记忆：相识摘要 + 全局记忆（关着只剩一行） */
+/* ---------- 记忆（方案 2）：相识摘要里放「跨聊天回忆」，下面三本记录用分段条切换 ---------- */
+
+private class Book(val key: String, val zh: String, val en: String, val desc: (String) -> String, val hint: String)
+
+private val BOOKS = listOf(
+    Book("diary", "她的记忆", "Her Diary", { "$it 自己记下的：你们聊过的事、她答应过你的、她对你的了解。" }, "例如：答应周末陪他看完那部片"),
+    Book("about", "关于你", "About You", { "你的基本情况，每次聊天都会带上。比如住在哪、做什么、身边的人。" }, "例如：我在济南，是工程师"),
+    Book("pref", "你的偏好", "Preferences", { "你喜欢 $it 怎么和你说话、你的喜好和习惯。" }, "例如：回答简短一点，别用太多表情"),
+)
+
+/** 记忆页里的分段条：和顶部「基础 / 提示词 / 记忆」同款，底下的色块弹着滑过去。 */
 @Composable
-private fun ColumnScope.MemoryTab(p: Persona, blur: Dp, onDeleted: (Mem, Int) -> Unit) {
-    val days = if (p.firstAt <= 0) 0 else ((System.currentTimeMillis() - p.firstAt) / 86_400_000L).toInt() + 1
-    Txt(if (days == 0) "${p.name} 还在认识你" else "${p.name} 认识你 $days 天了", Page.ink, 19.sp, Modifier.padding(start = 4.dp, top = 2.dp), family = Serif, lineHeight = 30.sp)
-    Spacer(Modifier.height(4.dp))
-    Txt(
-        listOfNotNull("聊过 ${p.chats} 次", "记得 ${p.items.size} 件事", ago(p.lastAt).takeIf { it.isNotEmpty() }?.let { "上次是$it" }).joinToString(" · "),
-        Page.muted, 12.5.sp, Modifier.padding(start = 4.dp),
+private fun SegPicker(labels: List<String>, counts: List<Int>, selected: Int, blur: Dp, onPick: (Int) -> Unit) {
+    var w by remember { mutableStateOf(0f) }
+    val pos by androidx.compose.animation.core.animateFloatAsState(
+        selected.toFloat(), androidx.compose.animation.core.spring(dampingRatio = .72f, stiffness = 420f), label = "segPos",
     )
-    SectionLabel("她记得")
-    Txt("${p.name} 自己记下的：你们聊过的事、她答应过你的、她对你的了解。", Page.muted, 12.5.sp, Modifier.padding(start = 4.dp, end = 4.dp, bottom = 12.dp), lineHeight = 20.sp)
-    var open by remember { mutableStateOf<String?>(null) }
-    var all by remember { mutableStateOf(false) }
-    Column(Modifier.fillMaxWidth().glass(RoundedCornerShape(20.dp), blur, fill = glassFill).animateContentSize()) {
-        Row(Modifier.fillMaxWidth().padding(start = 18.dp, end = 16.dp, top = 14.dp, bottom = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Txt("全局记忆", Page.ink, 15.sp)
-                Spacer(Modifier.height(3.dp))
-                Txt(if (p.memOn) "记得 ${p.items.size} 件事，会自动记新的" else "关着，不记也不用", Page.muted, 12.5.sp)
-            }
-            if (p.memOn) {
-                // 卡片从这颗「＋」里长出来，也收回到这里；收回时轻轻跳一下
-                var at by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
-                val bump = remember { androidx.compose.animation.core.Animatable(1f) }
-                LaunchedEffect(MemoryCard.landed) {
-                    if (MemoryCard.landed > 0) { bump.snapTo(1.28f); bump.animateTo(1f, androidx.compose.animation.core.spring(dampingRatio = .45f, stiffness = 500f)) }
-                }
-                val hidden = MemoryCard.open && MemoryCard.persona?.id == p.id
-                Pressable({ MemoryCard.show(p, at) }, Modifier.padding(end = 12.dp), label = "添加记忆") { pr ->
-                    Box(
-                        Modifier.size(32.dp)
-                            .onGloballyPositioned { at = it.boundsInWindow().center }
-                            .graphicsLayer { val k = bump.value * if (hidden) .7f else 1f; scaleX = k; scaleY = k; alpha = if (hidden) .35f else 1f }
-                            .background(rgba(233, 180, 142, if (pr) .28f else .16f), CircleShape),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        SvgIcon(Ic("M12 6v12M6 12h12"), warm, 16.dp, stroke = 1.7f)
-                    }
-                }
-            }
-            Switch(p.memOn, "全局记忆") { p.memOn = it; Memory.save() }
-        }
-        if (p.memOn) {
-            Divider()
-            Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 12.dp)) {
-                if (p.items.isEmpty()) {
-                    Txt("还没有记住什么。聊得多了，值得记住的事会出现在这里。", Page.muted, 13.sp, Modifier.padding(bottom = 4.dp), lineHeight = 21.sp)
-                }
-                val shown = if (all) p.items.toList() else p.items.take(5)
-                shown.forEachIndexed { k, m ->
-                    val isOpen = open == m.id
-                    val drop = remember(m.id) { androidx.compose.animation.core.Animatable(if (m.id == MemoryCard.justAdded) 0f else 1f) }
-                    LaunchedEffect(m.id) {
-                        if (drop.value < 1f) {
-                            kotlinx.coroutines.delay(300)
-                            drop.animateTo(1f, androidx.compose.animation.core.spring(dampingRatio = .55f, stiffness = 420f))
-                            MemoryCard.justAdded = ""
-                        }
-                    }
-                    Box(Modifier.graphicsLayer { alpha = drop.value.coerceIn(0f, 1f); translationY = (1f - drop.value) * -16.dp.toPx() }) {
-                    SwipeToDelete(m.id, onDelete = {
-                        val idx = p.items.indexOf(m)
-                        Memory.remove(p, m); open = null
-                        onDeleted(m, idx)
-                    }) {
-                        Pressable({ open = if (isOpen) null else m.id }, Modifier.fillMaxWidth(), label = m.text) { _ ->
-                            Row(Modifier.fillMaxWidth().height(androidx.compose.foundation.layout.IntrinsicSize.Min)) {
-                                // 时间线：竖线 + 节点，最新一条是杏色
-                                Box(Modifier.width(16.dp).fillMaxHeight()) {
-                                    if (k < shown.lastIndex) Box(Modifier.padding(top = 14.dp).align(Alignment.TopCenter).width(1.dp).fillMaxHeight().background(rgba(255, 255, 255, .12f)))
-                                    Box(Modifier.padding(top = 8.dp).align(Alignment.TopCenter).size(6.dp).background(if (k == 0) warm else rgba(255, 255, 255, .35f), CircleShape))
-                                }
-                                Column(Modifier.weight(1f).padding(start = 8.dp, bottom = 14.dp)) {
-                                    Txt(m.text, Page.ink, 14.5.sp, lineHeight = 22.sp, maxLines = if (isOpen) Int.MAX_VALUE else 1)
-                                    Spacer(Modifier.height(2.dp))
-                                    Txt(ago(m.at), Page.muted, 12.sp)
-                                    if (isOpen) {
-                                        if (m.detail.isNotBlank()) {
-                                            Spacer(Modifier.height(10.dp))
-                                            Txt(m.detail, Page.ink.copy(alpha = .78f), 13.5.sp, lineHeight = 22.sp)
-                                        }
-                                        if (m.convTitle.isNotBlank()) {
-                                            Spacer(Modifier.height(8.dp))
-                                            Txt("来自「${m.convTitle}」", Page.muted, 12.sp, maxLines = 1)
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    }
-                }
-                if (p.items.size > 5) {
-                    Pressable({ all = !all }, label = "全部") { pr ->
-                        Txt(if (all) "收起" else "全部 ${p.items.size} 件 ›", if (pr) Page.ink else Page.muted, 13.sp, Modifier.padding(top = 2.dp, bottom = 4.dp))
+    Box(
+        Modifier.fillMaxWidth().glass(RoundedCornerShape(16.dp), blur, fill = glassFill).padding(4.dp)
+            .onSizeChanged { w = it.width.toFloat() },
+    ) {
+        val d = LocalDensity.current
+        val tw = w / labels.size
+        Box(
+            Modifier.graphicsLayer { translationX = pos * tw }
+                .width(with(d) { tw.toDp() }).height(36.dp)
+                .background(rgba(255, 255, 255, .10f), RoundedCornerShape(12.dp)),
+        )
+        Row(Modifier.fillMaxWidth()) {
+            labels.forEachIndexed { i, t ->
+                val near = (1f - kotlin.math.abs(pos - i)).coerceIn(0f, 1f)
+                Pressable({ onPick(i) }, Modifier.weight(1f), label = t) { _ ->
+                    Row(Modifier.fillMaxWidth().height(36.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+                        Txt(t, androidx.compose.ui.graphics.lerp(Page.muted, Page.ink, near), 13.5.sp, maxLines = 1)
+                        Spacer(Modifier.width(4.dp))
+                        Txt("${counts[i]}", Page.muted.copy(alpha = .8f), 11.sp, maxLines = 1)
                     }
                 }
             }
         }
     }
 }
+
+@Composable
+private fun ColumnScope.MemoryTab(p: Persona, blur: Dp, onDeleted: (Mem, Int) -> Unit) {
+    val days = if (p.firstAt <= 0) 0 else ((System.currentTimeMillis() - p.firstAt) / 86_400_000L).toInt() + 1
+    Txt(if (days == 0) "${p.name} 还在认识你" else "${p.name} 认识你 $days 天了", Page.ink, 19.sp, Modifier.padding(start = 4.dp, top = 2.dp), family = Serif, lineHeight = 30.sp)
+    // 摘要这一行的右边：跨聊天回忆（不管记录，只管她能不能翻以前的聊天）
+    Row(Modifier.fillMaxWidth().padding(start = 4.dp, top = 6.dp, bottom = 18.dp), verticalAlignment = Alignment.CenterVertically) {
+        Txt(
+            listOfNotNull("聊过 ${p.chats} 次", ago(p.lastAt).takeIf { it.isNotEmpty() }?.let { "上次是$it" }).joinToString(" · "),
+            Page.muted, 12.5.sp, Modifier.weight(1f), maxLines = 1,
+        )
+        Txt("跨聊天回忆", if (p.memOn) Page.ink.copy(alpha = .85f) else Page.muted, 12.5.sp, maxLines = 1)
+        Spacer(Modifier.width(8.dp))
+        Box(Modifier.graphicsLayer { scaleX = .82f; scaleY = .82f }) {
+            Switch(p.memOn, "跨聊天回忆") { p.memOn = it; Memory.save() }
+        }
+    }
+    var book by remember(p.id) { mutableStateOf(0) }
+    val counts = BOOKS.map { b -> p.items.count { it.book == b.key } }
+    SegPicker(BOOKS.map { it.zh }, counts, book, blur) { book = it }
+    Spacer(Modifier.height(16.dp))
+    // 换一本：新的从点的方向滑进来，旧的往反方向淡出
+    androidx.compose.animation.AnimatedContent(
+        book,
+        transitionSpec = {
+            val dir = if (targetState > initialState) 1 else -1
+            (androidx.compose.animation.slideInHorizontally(tween(320, easing = androidx.compose.animation.core.CubicBezierEasing(.2f, .8f, .2f, 1f))) { it / 6 * dir } +
+                androidx.compose.animation.fadeIn(tween(260, delayMillis = 60)))
+                .togetherWith(
+                    androidx.compose.animation.slideOutHorizontally(tween(220)) { -it / 8 * dir } + androidx.compose.animation.fadeOut(tween(160)),
+                )
+                .using(androidx.compose.animation.SizeTransform(clip = false) { _, _ -> androidx.compose.animation.core.spring(dampingRatio = .9f, stiffness = 380f) })
+        },
+        label = "book",
+    ) { bi ->
+        Column { BookPage(p, BOOKS[bi], blur, onDeleted) }
+    }
+}
+
+@Composable
+private fun BookPage(p: Persona, b: Book, blur: Dp, onDeleted: (Mem, Int) -> Unit) {
+    val list = p.items.filter { it.book == b.key }
+    Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.Bottom) {
+        Txt(b.zh, Page.ink, 15.sp)
+        Spacer(Modifier.width(10.dp))
+        Txt(b.en, css("#c98f7e"), 15.sp, family = Serif, weight = FontWeight.Light)
+        Spacer(Modifier.weight(1f))
+        Txt("${list.size}", Page.muted, 13.sp)
+    }
+    Spacer(Modifier.height(6.dp))
+    Txt(b.desc(p.name), Page.muted, 12.5.sp, Modifier.padding(horizontal = 4.dp), lineHeight = 20.sp)
+    Spacer(Modifier.height(12.dp))
+    var all by remember(b.key) { mutableStateOf(false) }
+    var open by remember { mutableStateOf<String?>(null) }
+    Column(Modifier.fillMaxWidth().glass(RoundedCornerShape(20.dp), blur, fill = glassFill).animateContentSize().padding(start = 18.dp, end = 10.dp, top = 6.dp, bottom = 14.dp)) {
+        if (list.isEmpty()) Txt("还没有。聊得多了会慢慢记下，也可以自己在下面写。", Page.muted, 13.sp, Modifier.padding(top = 12.dp, bottom = 4.dp, end = 8.dp), lineHeight = 21.sp)
+        val shown = if (all) list else list.take(6)
+        shown.forEachIndexed { k, m ->
+            // 刚添加的那条：从上面轻轻落下来
+            val drop = remember(m.id) { androidx.compose.animation.core.Animatable(if (m.id == JustAdded.id) 0f else 1f) }
+            LaunchedEffect(m.id) {
+                if (drop.value < 1f) {
+                    drop.animateTo(1f, androidx.compose.animation.core.spring(dampingRatio = .55f, stiffness = 420f))
+                    JustAdded.id = ""
+                }
+            }
+            Box(Modifier.graphicsLayer { alpha = drop.value.coerceIn(0f, 1f); translationY = (1f - drop.value) * -14.dp.toPx() }) {
+                Column {
+                    if (k > 0) Box(Modifier.fillMaxWidth().padding(end = 8.dp).height(1.dp).background(rgba(255, 255, 255, .07f)))
+                    val isOpen = open == m.id
+                    Row(Modifier.fillMaxWidth().padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Pressable({ open = if (isOpen) null else m.id }, Modifier.weight(1f), label = m.text) { _ ->
+                            Column {
+                                Txt(m.text, Page.ink, 14.5.sp, lineHeight = 22.sp, maxLines = if (isOpen) Int.MAX_VALUE else 2)
+                                if (isOpen && m.detail.isNotBlank()) {
+                                    Spacer(Modifier.height(6.dp))
+                                    Txt(m.detail, Page.ink.copy(alpha = .78f), 13.5.sp, lineHeight = 22.sp)
+                                }
+                                Spacer(Modifier.height(3.dp))
+                                Txt(
+                                    (if (m.by == "you") "你写的" else "${p.name} 记下的") + " · " + ago(m.at) +
+                                        (if (isOpen && m.convTitle.isNotBlank()) " · 来自「${m.convTitle}」" else ""),
+                                    Page.muted, 12.sp, maxLines = 1,
+                                )
+                            }
+                        }
+                        Pressable({
+                            val idx = p.items.indexOf(m)
+                            Memory.remove(p, m); onDeleted(m, idx)
+                        }, label = "删除") { pr ->
+                            Box(Modifier.size(40.dp), contentAlignment = Alignment.Center) { SvgIcon(Icons.close, if (pr) Page.ink else Page.muted, 16.dp) }
+                        }
+                    }
+                }
+            }
+        }
+        if (list.size > 6) {
+            Pressable({ all = !all }, label = "展开全部") { pr ->
+                Txt(
+                    if (all) "收起" else "展开全部 ${list.size} 条", if (pr) Page.ink else Page.ink.copy(alpha = .8f), 13.sp,
+                    Modifier.padding(top = 6.dp, bottom = 4.dp).background(rgba(255, 255, 255, if (pr) .1f else .05f), RoundedCornerShape(50)).padding(horizontal = 16.dp, vertical = 9.dp),
+                )
+            }
+        }
+        // 写一条：输入框 + 添加
+        var draft by remember(b.key) { mutableStateOf("") }
+        val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
+        val add = {
+            if (draft.isNotBlank()) {
+                Memory.add(p, b.key, draft)?.let { JustAdded.id = it.id }
+                draft = ""
+                haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
+            }
+        }
+        Spacer(Modifier.height(12.dp))
+        Row(Modifier.fillMaxWidth().padding(end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            BasicTextField(
+                value = draft, onValueChange = { draft = it.take(200) },
+                textStyle = TextStyle(color = Page.ink, fontSize = 14.sp, lineHeight = 21.sp),
+                cursorBrush = SolidColor(warm),
+                keyboardOptions = KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Done),
+                keyboardActions = androidx.compose.foundation.text.KeyboardActions(onDone = { add() }),
+                modifier = Modifier.weight(1f),
+                decorationBox = { inner ->
+                    Box(Modifier.fillMaxWidth().background(rgba(0, 0, 0, .2f), RoundedCornerShape(14.dp)).padding(horizontal = 14.dp, vertical = 12.dp)) {
+                        if (draft.isEmpty()) Txt(b.hint, Page.muted.copy(alpha = .6f), 13.5.sp, maxLines = 1)
+                        inner()
+                    }
+                },
+            )
+            Spacer(Modifier.width(8.dp))
+            Pressable({ add() }, label = "添加") { pr ->
+                Txt(
+                    "＋ 添加", if (draft.isBlank()) warm.copy(alpha = .55f) else warm, 13.sp,
+                    Modifier.background(rgba(233, 180, 142, if (pr) .26f else if (draft.isBlank()) .08f else .16f), RoundedCornerShape(14.dp)).padding(horizontal = 14.dp, vertical = 12.dp),
+                    maxLines = 1,
+                )
+            }
+        }
+    }
+}
+
+/** 刚添加的那条，用来让它落下来。 */
+private object JustAdded { var id by mutableStateOf("") }
 
 /** 往左滑：底下露出「删除」，滑过一半松手就删；没过一半就弹回。 */
 @Composable
