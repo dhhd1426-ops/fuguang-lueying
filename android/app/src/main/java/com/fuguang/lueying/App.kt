@@ -46,6 +46,8 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -283,8 +285,12 @@ private fun HomePage(
             if (!compact) {
                 VerticalLabel("LIGHT / WIND / A QUIET MOMENT", Modifier.align(Alignment.CenterEnd))
             }
+            // 时间：不用卡片，竖排宋体直接写在画面上（方案二·一：子正二刻）
+            ShichenClock(
+                now, compact,
+                Modifier.align(Alignment.BottomEnd).padding(end = if (compact) 0.dp else 40.dp, bottom = if (compact) 4.dp else 10.dp),
+            )
         }
-        BottomBar(compact, now, paused, blur, onOpen)
         BottomNav(compact, active = "主页", onHome = onHome, onChat = onChat, onMine = onMine, onOpen = onOpen)
     }
 }
@@ -417,85 +423,87 @@ private fun Hero(compact: Boolean, tiny: Boolean, width: Dp, onEnter: () -> Unit
     }
 }
 
+/* ---------- 主页时间：竖排时辰（方案二·一） ---------- */
+
+private val BRANCH = "子丑寅卯辰巳午未申酉戌亥"
+private val STEM = "甲乙丙丁戊己庚辛壬癸"
+private val CN_DIGIT = "〇一二三四五六七八九"
+
+/** 1–31 写成中文：十、十二、二十、三十一。 */
+private fun cnNum(n: Int): String = when {
+    n < 10 -> CN_DIGIT[n].toString()
+    n == 10 -> "十"
+    n < 20 -> "十" + CN_DIGIT[n % 10]
+    else -> CN_DIGIT[n / 10] + "十" + (if (n % 10 == 0) "" else CN_DIGIT[n % 10].toString())
+}
+
+/** 古时报时：子正二刻。时辰两小时一个，前一小时为「初」，后一小时为「正」；一刻十五分钟。 */
+private fun shichen(h: Int, m: Int): Pair<String, String> {
+    val branch = BRANCH[((h + 1) / 2) % 12]
+    val half = if (h % 2 == 1) "初" else "正"
+    val ke = listOf("初刻", "一刻", "二刻", "三刻")[m / 15]
+    return "$branch$half" to ke
+}
+
+/** 干支纪年：以立春（约 2 月 4 日）为界。 */
+private fun ganzhiYear(y: Int, mon: Int, d: Int): String {
+    val yy = if (mon < 2 || (mon == 2 && d < 4)) y - 1 else y
+    return "" + STEM[((yy - 4) % 10 + 10) % 10] + BRANCH[((yy - 4) % 12 + 12) % 12] + "年"
+}
+
+/** 一列竖排的字。 */
 @Composable
-private fun BottomBar(
-    compact: Boolean,
-    now: Date,
-    paused: Boolean,
-    blur: Dp,
-    onOpen: (ModalKind) -> Unit,
-) {
-    val shape = RoundedCornerShape(16.dp)
-    val clock = SimpleDateFormat("HH:mm", Locale.CHINA).format(now)
-    val weekday = SimpleDateFormat("M月d日EEEE", Locale.CHINA).format(now)
-
-    @Composable
-    fun SceneCard(mod: Modifier) {
-        Pressable({ onOpen(ModalKind.Scene) }, mod, label = "查看当前动态背景") { pressed ->
-            Row(
-                Modifier
-                    .then(if (compact) Modifier.fillMaxSize() else Modifier.fillMaxHeight())
-                    .glass(shape, blur, fill = rgba(225, 229, 233, if (pressed) .12f else .065f))
-                    .padding(if (compact) 16.dp else 22.dp, if (compact) 16.dp else 22.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                val poster = rememberPoster()
-                if (poster != null) {
-                    Image(
-                        poster, "夕光场景缩略图",
-                        Modifier.size(if (compact) 43.dp else 56.dp, if (compact) 48.dp else 56.dp).clip(RoundedCornerShape(9.dp)),
-                        contentScale = ContentScale.Crop,
-                        alignment = androidx.compose.ui.BiasAlignment(.24f, 0f),
-                    )
-                }
-                Spacer(Modifier.width(if (compact) 12.dp else 20.dp))
-                Column {
-                    val ov = if (compact) 7f else 8f
-                    Txt("NOW PLAYING · 01", Page.muted, ov.sp, spacing = ls(if (compact) 2f else 3f, ov), maxLines = 1)
-                    Spacer(Modifier.height(9.dp))
-                    val ts = if (compact) 12f else 14f
-                    Txt("晚风与浮光", Page.ink, ts.sp, spacing = ls(2f, ts), maxLines = 1)
-                    Spacer(Modifier.height(8.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(Modifier.size(4.dp).background(Page.dot, CircleShape))
-                        Spacer(Modifier.width(6.dp))
-                        Txt(if (paused) "动态背景 · 已暂停" else "动态背景 · 循环播放", Page.muted, 9.sp, maxLines = 1)
-                    }
-                }
-            }
-        }
-    }
-
-    @Composable
-    fun TimeCard(mod: Modifier) {
-        Column(
-            mod.glass(shape, blur).padding(horizontal = if (compact) 13.dp else 24.dp, vertical = if (compact) 18.dp else 19.dp),
-            horizontalAlignment = Alignment.End,
-        ) {
-            val cs = if (compact) 23f else 30f
-            Txt(clock, Page.ink, cs.sp, spacing = ls(if (compact) 1f else 3f, cs), weight = FontWeight.Light)
-            Spacer(Modifier.height(8.dp))
-            val ws = if (compact) 8f else 9f
-            Txt(weekday, Page.muted, ws.sp, spacing = ls(if (compact) 0f else 2f, ws), maxLines = 1)
-        }
-    }
-
-    if (compact) {
-        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                SceneCard(Modifier.weight(1f).fillMaxHeight())
-                TimeCard(Modifier.widthIn(min = 100.dp).fillMaxHeight())
-            }
-        }
-    } else {
-        Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            SceneCard(Modifier.widthIn(min = 300.dp).fillMaxHeight())
-            Spacer(Modifier.weight(1f))
-            TimeCard(Modifier.widthIn(min = 158.dp).fillMaxHeight())
+private fun VColumn(text: String, color: Color, size: Float, step: Dp, gap: Dp = 0.dp) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        text.forEach { ch ->
+            if (ch == ' ') Spacer(Modifier.height(gap))
+            else Box(Modifier.height(step), contentAlignment = Alignment.Center) { Txt(ch.toString(), color, size.sp, family = Serif, maxLines = 1) }
         }
     }
 }
 
+@Composable
+private fun ShichenClock(now: Date, compact: Boolean, modifier: Modifier) {
+    val c = java.util.Calendar.getInstance().apply { time = now }
+    val (big, ke) = shichen(c.get(java.util.Calendar.HOUR_OF_DAY), c.get(java.util.Calendar.MINUTE))
+    val mon = c.get(java.util.Calendar.MONTH) + 1
+    val day = c.get(java.util.Calendar.DAY_OF_MONTH)
+    val week = "星期" + "日一二三四五六"[c.get(java.util.Calendar.DAY_OF_WEEK) - 1]
+    val date = ganzhiYear(c.get(java.util.Calendar.YEAR), mon, day) + " " + cnNum(mon) + "月" + cnNum(day) + "日 " + week
+    val bigSz = if (compact) 40f else 58f
+    val bigStep = if (compact) 52.dp else 74.dp
+    val keSz = if (compact) 22f else 30f
+    val keStep = if (compact) 30.dp else 40.dp
+    val dateSz = if (compact) 11f else 13f
+    val dateStep = if (compact) 16.dp else 19.dp
+    Row(
+        modifier
+            // 字背后一层没有边的淡暗，亮处也看得清
+            .drawBehind {
+                drawRect(
+                    androidx.compose.ui.graphics.Brush.radialGradient(
+                        listOf(rgba(8, 10, 14, .42f), Color.Transparent),
+                        center = Offset(size.width * .6f, size.height * .5f),
+                        radius = size.maxDimension * .9f,
+                    ),
+                    topLeft = Offset(-size.width, -size.height * .3f),
+                    size = androidx.compose.ui.geometry.Size(size.width * 3f, size.height * 1.6f),
+                )
+            }
+            .semantics(mergeDescendants = true) { contentDescription = "$big$ke，$date" },
+        verticalAlignment = Alignment.Top,
+    ) {
+        VColumn(date, rgba(236, 226, 214, .62f), dateSz, dateStep, gap = if (compact) 8.dp else 10.dp)
+        Spacer(Modifier.width(if (compact) 14.dp else 22.dp))
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            VColumn(big, Page.ink, bigSz, bigStep)
+            Spacer(Modifier.height(if (compact) 8.dp else 12.dp))
+            Box(Modifier.width(1.dp).height(if (compact) 22.dp else 30.dp).background(css("#e9b48e").copy(alpha = .85f)))
+            Spacer(Modifier.height(if (compact) 8.dp else 12.dp))
+            VColumn(ke, rgba(242, 236, 230, .92f), keSz, keStep)
+        }
+    }
+}
 
 /** 底部导航：无框纯文字，和顶部导航同一种宋体，选中项下面一个暖色小点。
  *  四项平分宽度，任何屏宽都排得下；展开的折叠屏、平板上限制总宽并居中，免得字隔得太开。 */
