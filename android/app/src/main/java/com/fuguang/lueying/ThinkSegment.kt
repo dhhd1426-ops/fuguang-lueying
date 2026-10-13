@@ -2,6 +2,8 @@ package com.fuguang.lueying
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
@@ -33,31 +35,39 @@ import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.drawscope.DrawScope
-import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.util.VelocityTracker
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.contentDescription
@@ -70,7 +80,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.launch
+import kotlin.math.abs
 import kotlin.math.floor
 import kotlin.math.max
 import kotlin.math.min
@@ -83,25 +96,66 @@ private val OnApricot = Color(0xFF2A211B)
 private val Deep = Color(13, 16, 22)
 
 /**
- * 深度思考六档：粗进度条，点或拖都行，选到哪档就从左填到哪档。
- * 拉满到 max（照 dongxiaosheji/max-rainbow）：彩虹从左往右铺开，其他档位名依次淡出，只剩右端的 max 字样；
- * 彩虹和速度线画在进度条里的同一张画布上，被圆角裁住，不出框。离开 max 淡回杏色。
+ * 深度思考六档。
+ * 关闭到复杂：液体色块。点哪档去哪档，朝前那条边先到、后面那条边跟上，拉长时变细、圆角变大；
+ *   按住能拖，松手按手速吸到最近一档；字是两层，色块流过时一点点被染成深色。关闭时色块是灰的。
+ * max（照 dongxiaosheji/max-rainbow）：色块向两头流开铺满整条，彩虹从左往右铺开，其他档位名依次淡出，
+ *   只剩右端的 max 字样；彩虹和速度线画在色块里的同一张画布上，被圆角裁住，不出框。离开 max 淡回杏色。
  */
 @Composable
 fun ThinkSegment(level: Int, providerId: String, onChange: (Int) -> Unit) {
+    val density = LocalDensity.current
     val haptic = LocalHapticFeedback.current
-    var shown by remember { mutableIntStateOf(level) }
-    LaunchedEffect(level) { shown = level }
+    val scope = rememberCoroutineScope()
+    val pad = with(density) { 3.dp.toPx() }
+    var width by remember { mutableFloatStateOf(0f) }
+    val cw = if (width > 0f) (width - pad * 2) / 6f else 0f
     val saved by rememberUpdatedState(level)
     val change by rememberUpdatedState(onChange)
+
+    // 色块左右两条边，单位像素
+    val left = remember { Animatable(0f) }
+    val right = remember { Animatable(0f) }
+    var placed by remember { mutableStateOf(false) }
+    var dragging by remember { mutableStateOf(false) }
+    var pressed by remember { mutableStateOf(false) }
+    // 正在显示的档：拖动时随手指变，松手才真正保存
+    var shown by remember { mutableIntStateOf(level) }
+
+    // 每一档色块停稳的位置：max 铺满整条
+    fun spanOf(i: Int): Pair<Float, Float> = if (i == 5) pad to pad + 6 * cw else (pad + i * cw) to (pad + (i + 1) * cw)
+
+    suspend fun flowTo(i: Int) {
+        if (cw <= 0f) return
+        val (tl, tr) = spanOf(i)
+        // 往外走的边是前沿，弹得快；往里收的边是后沿，稍慢但不拖沓
+        val lead = spring<Float>(dampingRatio = .74f, stiffness = 620f)
+        val trail = spring<Float>(dampingRatio = .9f, stiffness = 300f)
+        coroutineScope {
+            launch { right.animateTo(tr, if (tr > right.value) lead else trail) }
+            launch { left.animateTo(tl, if (tl < left.value) lead else trail) }
+        }
+    }
+
+    // 外面换了档（或第一次量到宽度）
+    LaunchedEffect(level, cw) {
+        if (cw <= 0f) return@LaunchedEffect
+        if (!placed) {
+            val (a, b) = spanOf(level); left.snapTo(a); right.snapTo(b); placed = true
+        } else if (!dragging) { shown = level; flowTo(level) }
+    }
+    // 每换一档轻轻震一下
     LaunchedEffect(Unit) {
         snapshotFlow { shown }.drop(1).collect { haptic.performHapticFeedback(HapticFeedbackType.SegmentTick) }
     }
-    val isMax = shown == 5
 
-    // 杏色填充：伸到哪档，带一点过冲
-    val fill by animateFloatAsState((shown + 1) / 6f, tween(220, easing = CubicBezierEasing(.3f, 1.3f, .5f, 1f)), label = "fill")
-    // 画布：进 max 0.1 秒显出，离开 0.45 秒淡回杏色
+    val isMax = shown == 5 && !dragging
+    val off = shown == 0
+    val blockColor by animateColorAsState(if (off) rgba(255, 255, 255, .2f) else Apricot, tween(260), label = "blk")
+    val inkOn by animateColorAsState(if (off) Page.ink else OnApricot, tween(260), label = "ink")
+    val squeeze by animateFloatAsState(if (pressed && !dragging) .955f else 1f, spring(dampingRatio = .6f, stiffness = 900f), label = "press")
+
+    // 彩虹画布：进 max 0.1 秒显出，离开 0.45 秒淡回杏色
     val fxAlpha by animateFloatAsState(if (isMax) 1f else 0f, tween(if (isMax) 100 else 450), label = "fx")
     // 档位名：进 max 从左到右依次淡出（190ms 起，每个隔 70ms，各 250ms）；离开 200ms 恢复
     val labelAlpha = List(6) { j ->
@@ -118,7 +172,6 @@ fun ThinkSegment(level: Int, providerId: String, onChange: (Int) -> Unit) {
         if (isMax) tween(500, delayMillis = 550, easing = CubicBezierEasing(.15f, 1.3f, .4f, 1f)) else tween(500),
         label = "maxX",
     )
-
     val fx = remember { RainbowFx() }
     var frame by remember { mutableLongStateOf(0L) }
     LaunchedEffect(isMax) {
@@ -135,6 +188,24 @@ fun ThinkSegment(level: Int, providerId: String, onChange: (Int) -> Unit) {
         }
     }
 
+    // 色块此刻的形状：拉得越长越细、圆角越大；按下时微微收一点
+    fun DrawScope.block(): RoundRect {
+        val l = left.value
+        val r = right.value
+        val w = (r - l).coerceAtLeast(1f)
+        // 拉长是相对停稳时的宽度算的：铺满 max 时本来就宽，不算拉长；从 max 收回时才变细
+        val rest = if (shown == 5 && !dragging) cw * 6 else cw
+        val stretch = if (rest > 0f) (w / rest - 1f).coerceAtLeast(0f) else 0f
+        val thin = min(stretch * 2.2.dp.toPx(), 2.6.dp.toPx())
+        val h0 = size.height - pad * 2 - thin * 2
+        val cx = (l + r) / 2
+        val cy = size.height / 2
+        val bw = w * (1f - (1f - squeeze) * .6f)
+        val bh = h0 * squeeze
+        val rad = min(9.dp.toPx() + stretch * 9.dp.toPx(), bh / 2)
+        return RoundRect(cx - bw / 2, cy - bh / 2, cx + bw / 2, cy + bh / 2, CornerRadius(rad))
+    }
+
     Column(
         Modifier.fillMaxWidth()
             .background(rgba(255, 255, 255, .06f), RoundedCornerShape(14.dp))
@@ -142,6 +213,7 @@ fun ThinkSegment(level: Int, providerId: String, onChange: (Int) -> Unit) {
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Txt("深度思考", Page.ink, 15.sp, Modifier.weight(1f))
+            // 档名：往深处换向上翻，往浅处换向下翻；max 是流动的彩虹字
             AnimatedContent(
                 shown,
                 transitionSpec = {
@@ -157,58 +229,94 @@ fun ThinkSegment(level: Int, providerId: String, onChange: (Int) -> Unit) {
         Spacer(Modifier.height(12.dp))
         Box(
             Modifier.fillMaxWidth().height(44.dp)
-                .clip(RoundedCornerShape(12.dp))
-                .background(rgba(255, 255, 255, .05f))
+                .background(rgba(255, 255, 255, .05f), RoundedCornerShape(12.dp))
+                .onSizeChanged { width = it.width.toFloat() }
                 .semantics { contentDescription = "深度思考：" + THINK_LEVELS[shown] }
-                .pointerInput(Unit) {
-                    fun at(x: Float) = floor(x / size.width * 6).toInt().coerceIn(0, 5)
+                .pointerInput(cw) {
+                    if (cw <= 0f) return@pointerInput
+                    val lo = pad + cw / 2
+                    val hi = pad + cw * 5.5f
                     awaitEachGesture {
                         val down = awaitFirstDown(requireUnconsumed = false)
-                        shown = at(down.position.x)
-                        var moved = false
+                        pressed = true
+                        val vt = VelocityTracker()
+                        vt.addPosition(down.uptimeMillis, down.position)
+                        val x0 = down.position.x
+                        val mid0 = (left.value + right.value) / 2
+                        // 按在色块上就“抓住”它，抓的位置不跳；按在别处拖（或 max 铺满时），色块先流到手指下
+                        val single = right.value - left.value < cw * 1.5f
+                        val grab = if (single && x0 in left.value..right.value) x0 - mid0 else 0f
+                        var drag = false
+                        var lastX = x0
                         while (true) {
                             val ev = awaitPointerEvent()
                             val ch = ev.changes.firstOrNull { it.id == down.id } ?: break
                             if (!ch.pressed) break
-                            if (!moved && kotlin.math.abs(ch.position.x - down.position.x) > viewConfiguration.touchSlop) moved = true
-                            if (moved) { ch.consume(); shown = at(ch.position.x) }
+                            vt.addPosition(ch.uptimeMillis, ch.position)
+                            if (!drag && abs(ch.position.x - x0) > viewConfiguration.touchSlop) { drag = true; dragging = true }
+                            if (drag) {
+                                ch.consume()
+                                val raw = ch.position.x - grab
+                                // 拖出两头：只走三成，像被橡皮筋拽着
+                                val cx = when { raw < lo -> lo + (raw - lo) * .3f; raw > hi -> hi + (raw - hi) * .3f; else -> raw }
+                                val toRight = ch.position.x >= lastX
+                                lastX = ch.position.x
+                                val fast = spring<Float>(dampingRatio = 1f, stiffness = 1500f)
+                                val slow = spring<Float>(dampingRatio = 1f, stiffness = 420f)
+                                scope.launch { right.animateTo(cx + cw / 2, if (toRight) fast else slow) }
+                                scope.launch { left.animateTo(cx - cw / 2, if (toRight) slow else fast) }
+                                shown = ((cx - pad) / cw).toInt().coerceIn(0, 5)
+                            }
                         }
-                        if (shown != saved) change(shown)
+                        pressed = false
+                        val i = if (drag) {
+                            // 松手时顺着手速往前送一点，再吸到最近一档
+                            val v = runCatching { vt.calculateVelocity().x }.getOrDefault(0f)
+                            val c = (left.value + right.value) / 2 + v * .06f
+                            ((c - pad) / cw).toInt().coerceIn(0, 5)
+                        } else ((x0 - pad) / cw).toInt().coerceIn(0, 5)
+                        dragging = false
+                        shown = i
+                        scope.launch { flowTo(i) }
+                        if (i != saved) change(i)
                     }
                 },
         ) {
-            // 杏色填充
-            Box(Modifier.fillMaxSize().drawWithContent {
-                drawRoundRect(Apricot, size = Size(size.width * fill, size.height), cornerRadius = androidx.compose.ui.geometry.CornerRadius(12.dp.toPx()))
-            })
-            // 彩虹 + 速度线，同一张画布，只画在填充里
-            Canvas(
-                Modifier.fillMaxSize().graphicsLayer { alpha = fxAlpha; compositingStrategy = CompositingStrategy.Offscreen },
-            ) {
-                if (fxAlpha <= 0f) return@Canvas
+            // 色块
+            Box(
+                Modifier.fillMaxSize().drawBehind {
+                    if (!placed) return@drawBehind
+                    val b = block()
+                    drawRoundRect(blockColor, Offset(b.left, b.top), Size(b.width, b.height), CornerRadius(b.topLeftCornerRadius.x))
+                },
+            )
+            // 彩虹 + 速度线：同一张画布，裁在色块里
+            Canvas(Modifier.fillMaxSize().graphicsLayer { alpha = fxAlpha; compositingStrategy = CompositingStrategy.Offscreen }) {
+                if (fxAlpha <= 0f || !placed) return@Canvas
                 frame // 每帧重画
-                clipRect(right = size.width * fill) { fx.draw(this) }
+                clipPath(Path().apply { addRoundRect(block()) }) { fx.draw(this) }
             }
-            // 档位名：灰字一层，填充盖住的部分是深色字
+            // 档位名：底层灰字；上层深色字只露出色块盖住的部分
             SegmentLabels(Page.muted, labelAlpha, Modifier.fillMaxSize())
             SegmentLabels(
-                OnApricot, labelAlpha,
+                inkOn, labelAlpha,
                 Modifier.fillMaxSize().drawWithContent {
-                    clipRect(right = size.width * fill) { this@drawWithContent.drawContent() }
+                    if (!placed) return@drawWithContent
+                    clipPath(Path().apply { addRoundRect(block()) }) { this@drawWithContent.drawContent() }
                 },
             )
             // max 字样
             if (maxIn > 0f) {
-                val d = LocalDensity.current
                 Box(
                     Modifier.fillMaxSize().padding(end = 18.dp).graphicsLayer {
-                        alpha = maxIn; translationX = -with(d) { 40.dp.toPx() } * maxSlide
+                        alpha = maxIn; translationX = -40.dp.toPx() * maxSlide
                     },
                     contentAlignment = Alignment.CenterEnd,
                 ) { MaxWord() }
             }
         }
         Spacer(Modifier.height(10.dp))
+        // 这一档实际发给模型的是什么
         AnimatedContent(
             shown,
             transitionSpec = {
@@ -223,10 +331,10 @@ fun ThinkSegment(level: Int, providerId: String, onChange: (Int) -> Unit) {
 
 @Composable
 private fun SegmentLabels(color: Color, alphas: List<Float>, modifier: Modifier) {
-    Row(modifier, verticalAlignment = Alignment.CenterVertically) {
+    Row(modifier.padding(horizontal = 3.dp), verticalAlignment = Alignment.CenterVertically) {
         THINK_LEVELS.forEachIndexed { j, l ->
             Box(Modifier.weight(1f).graphicsLayer { alpha = alphas[j] }, contentAlignment = Alignment.Center) {
-                Txt(l, color, 14.sp, weight = FontWeight.Medium, maxLines = 1)
+                Txt(l, color, 13.sp, weight = FontWeight.Medium, maxLines = 1)
             }
         }
     }
