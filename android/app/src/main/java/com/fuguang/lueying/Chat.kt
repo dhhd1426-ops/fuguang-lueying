@@ -706,16 +706,17 @@ private fun ChatInput(
         pulse.animateTo(1f, androidx.compose.animation.core.spring(dampingRatio = .42f, stiffness = 320f))
     }
     var pressed by remember { mutableStateOf(false) }
-    val ball = 42.dp
-    val inset = 12.dp
-    val sep = 54.dp
+    // 方案 1 收矮：发送球、留白都小一号
+    val ball = 36.dp
+    val inset = 9.dp
+    val sep = 46.dp
     Box(modifier.padding(top = 10.dp)) {
         Column(
             Modifier
                 .fillMaxWidth()
                 .padding(end = sep * t.coerceAtLeast(0f))
                 .glass(shape, blur, fill = rgba(30, 34, 42, .42f))
-                .padding(start = 16.dp, end = inset, top = 15.dp, bottom = inset),
+                .padding(start = 16.dp, end = inset, top = 12.dp, bottom = inset),
         ) {
             // 上下文消息限制到顶：输入框上方展开一行杏色提示，发送键变灰，提示里直接开新对话
             androidx.compose.animation.AnimatedVisibility(
@@ -770,14 +771,14 @@ private fun ChatInput(
                     }
                 },
             )
-            Spacer(Modifier.height(14.dp))
+            Spacer(Modifier.height(8.dp))
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 LiquidPlusButton(plus) { /* 照片、拍照、文件：功能后面接 */ }
                 Pressable(onPick, enabled = !chat.busy, label = "选择模型") { p ->
                     Row(
                         Modifier.widthIn(max = 240.dp)
                             .background(rgba(255, 255, 255, if (p) .13f else .07f), RoundedCornerShape(50))
-                            .padding(horizontal = 14.dp, vertical = 9.dp)
+                            .padding(horizontal = 13.dp, vertical = 8.dp)
                             .alpha(if (chat.busy) .45f else 1f),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
@@ -786,7 +787,6 @@ private fun ChatInput(
                     }
                 }
                 Spacer(Modifier.weight(1f))
-                SvgIcon(ChatIcons.mic, Page.ink.copy(alpha = .85f), 21.dp)
                 // 给球在框里留的位置：球拉出去后，这块空位也跟着收拢
                 Spacer(Modifier.width((ball - 10.dp) * (1f - t).coerceIn(0f, 1f)))
             }
@@ -802,7 +802,7 @@ private fun ChatInput(
         ) { p ->
             LaunchedEffect(p) { pressed = p }
             Box(Modifier.size(ball).graphicsLayer { scaleX = pulse.value; scaleY = pulse.value }, contentAlignment = Alignment.Center) {
-                SvgIcon(icon, css("#2a211b"), 20.dp, stroke = 1.6f)
+                SvgIcon(icon, css("#2a211b"), 18.dp, stroke = 1.6f)
             }
         }
     }
