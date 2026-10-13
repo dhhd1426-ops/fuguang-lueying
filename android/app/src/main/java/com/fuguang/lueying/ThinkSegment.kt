@@ -4,7 +4,7 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
@@ -43,6 +43,8 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.clipPath
@@ -59,6 +61,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.min
@@ -68,6 +71,7 @@ import kotlin.math.min
  * 点哪档去哪档：朝前那条边先到，后面那条边跟上，中间拉长时色块变细、圆角变大，像一滴液体流过去。
  * 按住色块能拖，色块跟着手指走，松手按手速吸到最近一档；拖出两头会被轻轻拽回。
  * 字是两层：底层灰字，上层深色字只露出色块盖住的那一截，色块流过时字是一点点被“染”过去的。
+ * max（方案 3）：色块向两头流开铺满整条，停稳后一道淡光从左扫到右，只扫一次。
  */
 @Composable
 fun ThinkSegment(level: Int, providerId: String, onChange: (Int) -> Unit) {
@@ -87,25 +91,38 @@ fun ThinkSegment(level: Int, providerId: String, onChange: (Int) -> Unit) {
     // 正在显示的档：拖动时随手指变，松手才真正保存
     var shown by remember { mutableIntStateOf(level) }
 
+    // 每一档色块停稳的位置：max 铺满整条
+    fun spanOf(i: Int): Pair<Float, Float> = if (i == 5) pad to pad + 6 * cw else (pad + i * cw) to (pad + (i + 1) * cw)
+
     suspend fun flowTo(i: Int) {
         if (cw <= 0f) return
-        val tl = pad + i * cw
-        val tr = tl + cw
-        val toRight = tl > left.value
+        val (tl, tr) = spanOf(i)
+        // 往外走的边是前沿，弹得快；往里收的边是后沿，稍慢但不拖沓
         val lead = spring<Float>(dampingRatio = .74f, stiffness = 620f)
-        val trail = spring<Float>(dampingRatio = .9f, stiffness = 210f)
+        val trail = spring<Float>(dampingRatio = .9f, stiffness = 300f)
         coroutineScope {
-            launch { right.animateTo(tr, if (toRight) lead else trail) }
-            launch { left.animateTo(tl, if (toRight) trail else lead) }
+            launch { right.animateTo(tr, if (tr > right.value) lead else trail) }
+            launch { left.animateTo(tl, if (tl < left.value) lead else trail) }
         }
     }
+    // max 铺满后的一道光：-1 = 不画，0→1 = 从左扫到右
+    val sweep = remember { Animatable(-1f) }
 
     // 外面换了档（或第一次量到宽度）
     LaunchedEffect(level, cw) {
         if (cw <= 0f) return@LaunchedEffect
         if (!placed) {
-            left.snapTo(pad + level * cw); right.snapTo(pad + (level + 1) * cw); placed = true
+            val (a, b) = spanOf(level); left.snapTo(a); right.snapTo(b); placed = true
         } else if (!dragging) { shown = level; flowTo(level) }
+    }
+    // 到 max 且色块停稳：扫一道光，只一次
+    LaunchedEffect(shown, dragging, placed) {
+        sweep.snapTo(-1f)
+        if (shown != 5 || dragging || !placed) return@LaunchedEffect
+        snapshotFlow { cw > 0f && right.value - left.value > cw * 5.9f && !left.isRunning && !right.isRunning }.first { it }
+        sweep.snapTo(0f)
+        sweep.animateTo(1f, tween(1100, easing = FastOutSlowInEasing))
+        sweep.snapTo(-1f)
     }
     // 每换一档轻轻震一下
     LaunchedEffect(Unit) {
@@ -122,7 +139,9 @@ fun ThinkSegment(level: Int, providerId: String, onChange: (Int) -> Unit) {
         val l = left.value
         val r = right.value
         val w = (r - l).coerceAtLeast(1f)
-        val stretch = if (cw > 0f) (w / cw - 1f).coerceAtLeast(0f) else 0f
+        // 拉长是相对停稳时的宽度算的：铺满 max 时本来就宽，不算拉长；从 max 收回时才变细
+        val rest = if (shown == 5 && !dragging) cw * 6 else cw
+        val stretch = if (rest > 0f) (w / rest - 1f).coerceAtLeast(0f) else 0f
         val thin = min(stretch * 2.2.dp.toPx(), 2.6.dp.toPx())
         val h0 = size.height - pad * 2 - thin * 2
         val cx = (l + r) / 2
@@ -170,8 +189,9 @@ fun ThinkSegment(level: Int, providerId: String, onChange: (Int) -> Unit) {
                         vt.addPosition(down.uptimeMillis, down.position)
                         val x0 = down.position.x
                         val mid0 = (left.value + right.value) / 2
-                        // 按在色块上就“抓住”它，抓的位置不跳；按在别处拖，色块先流到手指下
-                        val grab = if (x0 in left.value..right.value) x0 - mid0 else 0f
+                        // 按在色块上就“抓住”它，抓的位置不跳；按在别处拖（或 max 铺满时），色块先流到手指下
+                        val single = right.value - left.value < cw * 1.5f
+                        val grab = if (single && x0 in left.value..right.value) x0 - mid0 else 0f
                         var drag = false
                         var lastX = x0
                         while (true) {
@@ -209,7 +229,26 @@ fun ThinkSegment(level: Int, providerId: String, onChange: (Int) -> Unit) {
                 },
         ) {
             // 色块
-            Box(Modifier.fillMaxSize().drawBehind { if (placed) { val b = block(); drawRoundRect(blockColor, Offset(b.left, b.top), Size(b.width, b.height), CornerRadius(b.topLeftCornerRadius.x)) } })
+            Box(
+                Modifier.fillMaxSize().drawBehind {
+                    if (!placed) return@drawBehind
+                    val b = block()
+                    drawRoundRect(blockColor, Offset(b.left, b.top), Size(b.width, b.height), CornerRadius(b.topLeftCornerRadius.x))
+                    val p = sweep.value
+                    if (p in 0f..1f && p < 1f) {
+                        val half = 70.dp.toPx()
+                        val gx = -half + p * (size.width + half * 2)
+                        clipPath(Path().apply { addRoundRect(b) }) {
+                            drawRect(
+                                Brush.horizontalGradient(
+                                    listOf(Color(255, 250, 244, 0), Color(255, 250, 244, 107), Color(255, 250, 244, 0)),
+                                    startX = gx - half, endX = gx + half,
+                                ),
+                            )
+                        }
+                    }
+                },
+            )
             // 底层灰字
             SegmentLabels(Page.muted, Modifier.fillMaxSize())
             // 上层深色字，只露出色块盖住的部分
@@ -237,7 +276,7 @@ fun ThinkSegment(level: Int, providerId: String, onChange: (Int) -> Unit) {
 }
 
 @Composable
-private fun SegmentLabels(color: androidx.compose.ui.graphics.Color, modifier: Modifier) {
+private fun SegmentLabels(color: Color, modifier: Modifier) {
     Row(modifier.padding(horizontal = 3.dp), verticalAlignment = Alignment.CenterVertically) {
         THINK_LEVELS.forEach { l ->
             Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
