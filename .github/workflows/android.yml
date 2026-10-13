@@ -33,6 +33,9 @@ jobs:
           curl -fsSL -o cg.ttf "https://github.com/google/fonts/raw/main/ofl/cormorantgaramond/CormorantGaramond-Italic%5Bwght%5D.ttf"
           mkdir -p android/app/src/main/res/font
           fonttools varLib.instancer cg.ttf wght=300 -o android/app/src/main/res/font/cormorant_light_italic.ttf
+          # 深度思考 max 字样：Bodoni Moda 斜体 600（OFL），光学尺寸取 28
+          curl -fsSL -o bm.ttf "https://github.com/google/fonts/raw/main/ofl/bodonimoda/BodoniModa-Italic%5Bopsz%2Cwght%5D.ttf"
+          fonttools varLib.instancer bm.ttf wght=600 opsz=28 -o android/app/src/main/res/font/bodoni_moda_semibold_italic.ttf
           ls -la android/app/src/main/res/font
 
       - name: Build APK
