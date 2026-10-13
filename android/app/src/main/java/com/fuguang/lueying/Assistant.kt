@@ -62,8 +62,8 @@ class AssistantStore(private val prefs: Prefs) {
     var name by mutableStateOf("Amor")
     var activeProvider by mutableStateOf("deepseek")
     var activeModel by mutableStateOf("deepseek-flash")
-    /** 深度思考：开着时发送带思考参数；这家不认就自动去掉再发。 */
-    var deepThink by mutableStateOf(false)
+    /** 深度思考档位：0 关闭、1 自动、2 轻度、3 中度、4 复杂、5 max（见 THINK_LEVELS）。这家不认思考参数就自动去掉再发。 */
+    var thinkLevel by mutableStateOf(0)
     val configs = mutableStateMapOf<String, ProviderConfig>()
     /** 最近一次查到的余额，只在本次打开 App 期间显示。 */
     val balances = mutableStateMapOf<String, String>()
@@ -76,7 +76,7 @@ class AssistantStore(private val prefs: Prefs) {
             name = o.optString("name", "Amor").ifBlank { "Amor" }
             activeProvider = o.optString("provider", "deepseek")
             activeModel = o.optString("model", "deepseek-flash")
-            deepThink = o.optBoolean("think", false)
+            thinkLevel = if (o.has("level")) o.optInt("level", 0).coerceIn(0, 5) else if (o.optBoolean("think", false)) 3 else 0
             val cs = o.optJSONObject("configs") ?: JSONObject()
             PROVIDERS.forEach { p ->
                 val c = cs.optJSONObject(p.id) ?: return@forEach
@@ -107,7 +107,7 @@ class AssistantStore(private val prefs: Prefs) {
 
     fun rename(v: String) { name = v; save() }
 
-    fun setThink(on: Boolean) { deepThink = on; save() }
+    fun setThink(level: Int) { thinkLevel = level.coerceIn(0, 5); save() }
 
     /** 填了密钥的供应商，按列表顺序。 */
     fun ready(): List<Provider> = PROVIDERS.filter { config(it.id).configured }
@@ -121,7 +121,7 @@ class AssistantStore(private val prefs: Prefs) {
             })
         }
         prefs.putString(KEY, JSONObject().apply {
-            put("name", name); put("provider", activeProvider); put("model", activeModel); put("think", deepThink); put("configs", cs)
+            put("name", name); put("provider", activeProvider); put("model", activeModel); put("level", thinkLevel); put("configs", cs)
         }.toString())
     }
 
@@ -194,6 +194,7 @@ object AssistantApi {
             val payload = JSONObject().apply {
                 put("model", model)
                 put("max_tokens", 1)
+                if (p.id == "deepseek") put("thinking", JSONObject().put("type", "disabled"))
                 put("messages", JSONArray().put(JSONObject().put("role", "user").put("content", "hi")))
             }
             conn.outputStream.use { it.write(payload.toString().toByteArray()) }
@@ -283,20 +284,24 @@ object ChatApi {
         model: String,
         system: String,
         history: List<ChatMsg>,
-        think: Boolean,
+        /** 已经定好的档：0 关闭、2–5（“自动”在发出前就换成具体的档）。 */
+        level: Int,
         onThink: suspend (String) -> Unit,
         tools: Tools? = null,
         /** 模型不支持工具时，放进 system 提示的补充内容。 */
         fallback: (suspend () -> String)? = null,
         onText: suspend (String) -> Unit,
     ) {
-        // 先怀疑工具，再怀疑思考参数，逐个去掉再发
-        val tries = listOf(think to (tools != null), think to false, false to false).distinct()
-        tries.forEachIndexed { i, (th, useTools) ->
+        // 先怀疑工具，再怀疑思考参数，逐个去掉再发；-1 = 什么思考参数都不带
+        val hasTools = tools != null
+        val tries = listOf(level to hasTools, level to false, -1 to hasTools, -1 to false).distinct()
+        // 关闭时就算模型自己想了也不显示
+        val show: suspend (String) -> Unit = if (level == 0) ({ }) else onThink
+        tries.forEachIndexed { i, (lv, useTools) ->
             try {
                 val sys = if (tools != null && !useTools && fallback != null)
                     system + "\n\n" + runCatching { fallback() }.getOrDefault("") else system
-                conversation(p, c, model, sys, history, th, if (useTools) tools else null, onThink, onText)
+                conversation(p, c, model, sys, history, lv, if (useTools) tools else null, show, onText)
                 return
             } catch (e: Rejected) {
                 if (i == tries.lastIndex) throw IllegalStateException("出错了（400）")
@@ -306,15 +311,21 @@ object ChatApi {
 
     private suspend fun conversation(
         p: Provider, c: ProviderConfig, model: String, system: String, history: List<ChatMsg>,
-        think: Boolean, tools: Tools?, onThink: suspend (String) -> Unit, onText: suspend (String) -> Unit,
+        level: Int, tools: Tools?, onThink: suspend (String) -> Unit, onText: suspend (String) -> Unit,
     ) {
         val anthropic = p.kind == "anthropic"
         val msgs = JSONArray()
         if (!anthropic) msgs.put(JSONObject().put("role", "system").put("content", system))
-        history.forEach { msgs.put(JSONObject().put("role", it.role).put("content", it.text)) }
+        // DeepSeek 思考模式下带工具：以前每一轮的思考都要原样带回去，不然会 400
+        val echo = p.id == "deepseek" && tools != null && level != 0
+        history.forEach {
+            val m = JSONObject().put("role", it.role).put("content", it.text)
+            if (echo && it.role == "assistant" && it.think.isNotEmpty()) m.put("reasoning_content", it.think)
+            msgs.put(m)
+        }
         var round = 0
         while (true) {
-            val r = once(p, c, model, system, msgs, think, if (round < 5) tools else null, round == 0, onThink, onText)
+            val r = once(p, c, model, system, msgs, level, if (round < 5) tools else null, round == 0, onThink, onText)
             if (r.calls.isEmpty() || tools == null || round >= 5) return
             round++
             if (anthropic) {
@@ -385,6 +396,8 @@ object ChatApi {
             msgs.put(JSONObject().put("role", "user").put("content", user))
             val body = JSONObject().put("model", model).put("messages", msgs).put("stream", false)
             if (anthropic) body.put("system", system).put("max_tokens", 1024)
+            // 整理记忆不用想：DeepSeek 默认会思考，明确关掉
+            if (p.id == "deepseek") body.put("thinking", JSONObject().put("type", "disabled"))
             conn.outputStream.use { it.write(body.toString().toByteArray()) }
             if (conn.responseCode !in 200..299) throw IllegalStateException("记忆整理失败（${conn.responseCode}）")
             val o = JSONObject(conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() })
@@ -403,7 +416,7 @@ object ChatApi {
         model: String,
         system: String,
         msgs: JSONArray,
-        think: Boolean,
+        level: Int,
         tools: Tools?,
         canReject: Boolean,
         onThink: suspend (String) -> Unit,
@@ -436,14 +449,11 @@ object ChatApi {
 
             val body = JSONObject().put("model", model).put("messages", msgs).put("stream", true)
             if (anthropic) body.put("system", system).put("max_tokens", 4096)
+            val sentThink = ThinkParams.apply(p, level, body)
             // 回答的手感：温度、Top P（Anthropic 开着思考时不能带）
-            if (!(anthropic && think)) {
+            if (!(anthropic && level >= 2)) {
                 temperature?.let { body.put("temperature", it.toDouble()) }
                 topP?.let { body.put("top_p", it.toDouble()) }
-            }
-            if (think) {
-                if (anthropic) body.put("thinking", JSONObject().put("type", "enabled").put("budget_tokens", 4000)).put("max_tokens", 8192)
-                else body.put("reasoning_effort", "high")
             }
             if (tools != null) {
                 val arr = JSONArray()
@@ -460,7 +470,7 @@ object ChatApi {
             conn.outputStream.use { it.write(body.toString().toByteArray()) }
 
             val code = conn.responseCode
-            if (canReject && (think || tools != null) && (code == 400 || code == 422)) throw Rejected()
+            if (canReject && (sentThink || tools != null) && (code == 400 || code == 422)) throw Rejected()
             if (code !in 200..299) {
                 val err = conn.errorStream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() } ?: ""
                 val msg = runCatching { JSONObject(err).optJSONObject("error")?.optString("message") }.getOrNull()
@@ -562,5 +572,61 @@ object ChatApi {
             handle?.dispose()
             runCatching { conn.disconnect() }
         }
+    }
+}
+
+
+/* ---------------- 深度思考档位 ---------------- */
+
+val THINK_LEVELS = listOf("关闭", "自动", "轻度", "中度", "复杂", "max")
+
+/** 每一档真正发给模型的参数。返回有没有带思考参数（带了才有理由怀疑被拒）。 */
+object ThinkParams {
+    private val effort = listOf("", "", "low", "medium", "high", "high")
+    private val deepseek = listOf("", "", "low", "high", "high", "max")
+    private val budget = listOf(0, 0, 2048, 8000, 16000, 32000)
+
+    fun apply(p: Provider, level: Int, body: JSONObject): Boolean {
+        if (level < 0) return false
+        when {
+            p.kind == "anthropic" -> {
+                if (level < 2) return false
+                body.put("thinking", JSONObject().put("type", "enabled").put("budget_tokens", budget[level]))
+                body.put("max_tokens", budget[level] + 4096)
+            }
+            // DeepSeek 默认就开着思考：关闭一定要明说
+            p.id == "deepseek" -> if (level == 0) body.put("thinking", JSONObject().put("type", "disabled"))
+                else body.put("thinking", JSONObject().put("type", "enabled")).put("reasoning_effort", deepseek[level])
+            p.id == "siliconflow" -> if (level == 0) body.put("enable_thinking", false)
+                else body.put("enable_thinking", true).put("thinking_budget", budget[level])
+            else -> { if (level < 2) return false; body.put("reasoning_effort", effort[level]) }
+        }
+        return true
+    }
+}
+
+/** 档位下面那行说明：这一档会想多少、实际发的是什么。 */
+fun thinkNote(providerId: String, level: Int): String {
+    val head = listOf("不思考，直接回答", "闲聊不想，难题才想", "略想一下", "想得比较充分", "长链推理", "想到最深")[level]
+    if (level == 0) return head
+    if (level == 1) return "$head · 每条消息由 App 判断"
+    val k = when (provider(providerId).let { if (it.kind == "anthropic") "anthropic" else it.id }) {
+        "deepseek" -> "DeepSeek " + listOf("", "", "low", "high", "high（同中度）", "max")[level]
+        "anthropic", "siliconflow" -> "思考预算 " + listOf("", "", "2k", "8k", "16k", "32k")[level]
+        else -> "强度 " + listOf("", "", "low", "medium", "high", "high")[level]
+    }
+    return "$head · $k"
+}
+
+/** “自动”档：看这条消息决定想不想、想多少。闲聊不想；要推理、写代码、长问题多想。 */
+fun autoThinkLevel(text: String): Int {
+    val t = text.trim()
+    val hard = Regex("为什么|怎么|如何|分析|比较|推理|证明|计算|算一下|规划|计划|设计|方案|优缺点|区别|原理|代码|bug|报错|写一|翻译|总结|步骤|```|[=+×÷^]\\s*\\d", RegexOption.IGNORE_CASE)
+    return when {
+        t.length > 160 || t.contains("```") -> 3
+        hard.containsMatchIn(t) -> if (t.length > 50) 3 else 2
+        t.length <= 24 -> 0
+        t.contains('?') || t.contains('？') -> 2
+        else -> 0
     }
 }

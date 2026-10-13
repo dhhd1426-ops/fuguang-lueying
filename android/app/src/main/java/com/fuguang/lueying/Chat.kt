@@ -196,6 +196,8 @@ class ChatState(val history: ConvStore) {
         pendingImgs.clear()
         val who = Memory.active
         val history = messages.toList()
+        // “自动”：发出前按这条消息定一个具体的档
+        val level = store.thinkLevel.let { if (it == 1) autoThinkLevel(history.lastOrNull { m -> m.role == "user" }?.text.orEmpty()) else it }
         ChatApi.temperature = who.temp
         ChatApi.topP = if (who.topOn) who.top else null
         job = scope.launch {
@@ -216,7 +218,7 @@ class ChatState(val history: ConvStore) {
                     if (yu) append("\n").append(Yu.system())
                 }
                 ChatApi.stream(
-                    p, c, store.activeModel, Memory.prompt(who, store.activeModel) + extra, history, store.deepThink,
+                    p, c, store.activeModel, Memory.prompt(who, store.activeModel) + extra, history, level,
                     onThink = { thinkText += it; thinking = true },
                     tools = if (specs.isNotEmpty()) Tools(
                         specs,
@@ -352,7 +354,7 @@ fun ChatPage(
             }
             Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                 ChatInput(
-                    compact, blur, title, store.activeModel, store.deepThink, chat, plus, flight,
+                    compact, blur, title, store.activeModel, store.thinkLevel, chat, plus, flight,
                     onPick = { picker = true },
                     onSend = {
                         val n = chat.send(scope, store)
@@ -678,7 +680,7 @@ private fun ChatInput(
     blur: Dp,
     title: String,
     model: String,
-    think: Boolean,
+    think: Int,
     chat: ChatState,
     plus: LiquidPlusState,
     flight: SendFlight,
@@ -780,7 +782,7 @@ private fun ChatInput(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Txt(model.ifBlank { "选择模型" }, Page.ink, 12.sp, maxLines = 1)
-                        Txt(if (think) " · 深思" else " · 自动", if (think) Page.accent else Page.muted, 12.sp, maxLines = 1)
+                        Txt(" · " + (if (think == 0) "不思考" else THINK_LEVELS[think]), if (think >= 2) Page.accent else Page.muted, 12.sp, maxLines = 1)
                     }
                 }
                 Spacer(Modifier.weight(1f))
@@ -815,7 +817,6 @@ private fun ModelDrawer(open: Boolean, store: AssistantStore, compact: Boolean, 
         if (open) 1f else 0f, tween(if (open) 320 else 220, easing = androidx.compose.animation.core.CubicBezierEasing(.2f, .8f, .2f, 1f)), label = "drawer",
     )
     if (shown <= 0f) return
-    val warm = rgba(233, 180, 142, 1f)
     Box(Modifier.fillMaxSize()) {
         // 暗幕：点空白处收起
         Box(
@@ -858,21 +859,8 @@ private fun ModelDrawer(open: Boolean, store: AssistantStore, compact: Boolean, 
                     }
                 }
                 Spacer(Modifier.height(16.dp))
-                Row(
-                    Modifier.fillMaxWidth().background(rgba(255, 255, 255, .06f), RoundedCornerShape(14.dp))
-                        .padding(start = 16.dp, end = 14.dp, top = 12.dp, bottom = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Txt("深度思考", Page.ink, 15.sp, Modifier.weight(1f))
-                    Pressable({ store.setThink(!store.deepThink) }, label = "深度思考") { _ ->
-                        val on = store.deepThink
-                        Box(
-                            Modifier.width(46.dp).height(26.dp)
-                                .background(if (on) warm.copy(alpha = .85f) else rgba(255, 255, 255, .14f), RoundedCornerShape(50)).padding(3.dp),
-                            contentAlignment = if (on) Alignment.CenterEnd else Alignment.CenterStart,
-                        ) { Box(Modifier.size(20.dp).background(if (on) css("#2a211b") else Page.ink.copy(alpha = .7f), CircleShape)) }
-                    }
-                }
+                // 深度思考六档：液体色块，可点可拖
+                ThinkSegment(store.thinkLevel, store.activeProvider) { store.setThink(it) }
                 Spacer(Modifier.height(10.dp))
                 Pressable(onMore, Modifier.align(Alignment.CenterHorizontally), label = "更多模型") { pressed ->
                     Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
