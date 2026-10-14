@@ -209,13 +209,15 @@ class ChatState(val history: ConvStore) {
                 val store0 = this@ChatState.history
                 val cur = convId
                 val question = history.lastOrNull { it.role == "user" }?.text.orEmpty()
-                val specs = Memory.toolSpecs + (if (yu) Yu.tools else emptyList()) + (if (recall) listOf(Recall.spec) else emptyList())
+                val mcp = Mcp.specs
+                val specs = Memory.toolSpecs + (if (yu) Yu.tools else emptyList()) + (if (recall) listOf(Recall.spec) else emptyList()) + mcp
                 val convTitle0 = store0.get(cur)?.title ?: firstSentence(question, 18)
                 val extra = buildString {
                     append("\n\n你手边还有这些东西，需要时再用，不需要就不用：")
                     append("\n").append(Memory.toolRule())
                     if (recall) append("\n").append(Recall.system())
                     if (yu) append("\n").append(Yu.system())
+                    if (mcp.isNotEmpty()) append("\n").append(Mcp.system())
                 }
                 ChatApi.stream(
                     p, c, store.activeModel, Memory.prompt(who, store.activeModel) + extra, history, level,
@@ -225,9 +227,10 @@ class ChatState(val history: ConvStore) {
                         { n, a ->
                             if (n == Memory.REMEMBER || n == Memory.FORGET) Memory.runTool(who, n, a, cur.orEmpty(), convTitle0)
                             else if (n == Recall.TOOL) Recall.run(store0, cur, a.optString("query"))
+                            else if (Mcp.owns(n)) Mcp.run(n, a)
                             else Yu.run(n, a, Yu.vision(p.id)) { refs -> refs.forEach { r -> if (r !in pendingImgs) pendingImgs.add(r) } }
                         },
-                        { toolNote = when (it) { Memory.REMEMBER -> "正在记下…"; Memory.FORGET -> "正在忘掉…"; Recall.TOOL -> "正在翻看以前的聊天…"; "list_todos" -> "正在查看羽的待办…"; else -> "正在查阅羽的笔记…" } },
+                        { toolNote = when (it) { Memory.REMEMBER -> "正在记下…"; Memory.FORGET -> "正在忘掉…"; Recall.TOOL -> "正在翻看以前的聊天…"; "list_todos" -> "正在查看羽的待办…"; else -> if (Mcp.owns(it)) Mcp.note(it) else "正在查阅羽的笔记…" } },
                     ) else null,
                     fallback = if (specs.isNotEmpty()) ({
                         listOfNotNull(

@@ -41,6 +41,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -84,10 +85,14 @@ class MineNav {
     /** 正在看的那位助理，和她的哪个标签页。 */
     var persona by mutableStateOf("")
     var tab by mutableStateOf(0)
+    /** MCP 页停在哪个标签：0 市场、1 已连接。 */
+    var mcpTab by mutableStateOf(0)
     fun open(id: String, t: Int) { persona = id; tab = t; screen = "persona" }
     fun back(): Boolean {
         screen = when {
             screen.startsWith("provider/") -> "providers"
+            screen.startsWith("mcp/") -> "mcp"
+            screen == "mcp" -> "mine"
             screen == "providers" -> if (persona.isNotEmpty() && Memory.get(persona) != null) "persona" else "assistant"
             screen == "persona" -> { persona = ""; "assistant" }
             screen == "assistant" -> "mine"
@@ -126,6 +131,8 @@ fun MinePage(
                         screen == "persona" -> Memory.get(nav.persona)?.let { PersonaScreen(store, it, compact, blur, nav) } ?: AssistantScreen(compact, blur, nav)
                         screen == "providers" -> ProvidersScreen(store, compact, blur, nav)
                         screen.startsWith("provider/") -> ProviderScreen(store, provider(screen.removePrefix("provider/")), compact, blur, nav)
+                        screen == "mcp" -> McpScreen(compact, blur, nav)
+                        screen.startsWith("mcp/") -> McpServerScreen(screen.removePrefix("mcp/"), compact, blur, nav)
                         else -> MineRoot(store, compact, blur, nav)
                     }
                 }
@@ -244,14 +251,14 @@ private fun ColumnScope.MineRoot(store: AssistantStore, compact: Boolean, blur: 
                 SvgIcon(MineIcons.next, Page.muted, 18.dp)
             }
         }
-        ConnectorGroup(blur)
+        ConnectorGroup(blur, nav)
     }
 }
 
 /* ---------- 连接器（方案 2：宋体图标 + 一句说明，状态在右） ---------- */
 
 @Composable
-private fun ConnectorGroup(blur: Dp) {
+private fun ConnectorGroup(blur: Dp, nav: MineNav) {
     val scope = rememberCoroutineScope()
     // 进来、从别的 App 回来时都查一次：羽那边可能刚断开或刚装上
     androidx.lifecycle.compose.LifecycleResumeEffect(Unit) {
@@ -300,6 +307,40 @@ private fun ConnectorGroup(blur: Dp) {
                     Modifier.background(rgba(233, 180, 142, if (pressed) .75f else .92f), RoundedCornerShape(50)).padding(horizontal = 15.dp, vertical = 7.dp),
                 )
             }
+        }
+    }
+    // MCP 服务：和羽并列的一行
+    val n = Mcp.servers.size
+    val on = Mcp.enabled().size
+    Spacer(Modifier.height(10.dp))
+    Pressable({ nav.screen = "mcp" }, Modifier.fillMaxWidth(), label = "MCP 服务") { pressed ->
+        Row(
+            Modifier.fillMaxWidth()
+                .glass(RoundedCornerShape(20.dp), blur, fill = if (pressed) rgba(255, 255, 255, .08f) else glassFill)
+                .padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(Modifier.size(36.dp).background(rgba(233, 180, 142, .16f), RoundedCornerShape(11.dp)), contentAlignment = Alignment.Center) {
+                Txt("M", css("#e9b48e"), 17.sp, family = Serif)
+            }
+            Spacer(Modifier.width(13.dp))
+            Column(Modifier.weight(1f)) {
+                Txt("MCP 服务", Page.ink, 15.sp)
+                Spacer(Modifier.height(3.dp))
+                Txt(
+                    if (n == 0) "地图、车票、搜索……接上就能用"
+                    else Mcp.servers.filter { it.enabled }.joinToString("、") { it.name }.ifEmpty { "都关着" },
+                    Page.muted, 12.5.sp, maxLines = 1,
+                )
+            }
+            Spacer(Modifier.width(10.dp))
+            if (n > 0) Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(6.dp).background(if (on > 0) css("#e9b48e") else Page.muted.copy(alpha = .4f), CircleShape))
+                Spacer(Modifier.width(7.dp))
+                Txt("$on 个", Page.muted, 13.sp)
+            }
+            Spacer(Modifier.width(6.dp))
+            SvgIcon(MineIcons.next, Page.muted, 18.dp)
         }
     }
 }
@@ -1251,4 +1292,272 @@ private fun ModelsTab(store: AssistantStore, p: Provider, blur: Dp) {
             PillButton("添加新模型", MineIcons.plus, primary = true) { adding = !adding }
         }
     }
+}
+
+/* ---------- MCP 服务：左边市场，右边已连接 ---------- */
+
+private val mcpTints = listOf("#e9b48e", "#e8a1a1", "#b7c9a3", "#d9c58c", "#c9b9d9", "#a9c6d8", "#d8c3a5", "#e6b0a0")
+private fun mcpTint(id: String) = css(mcpTints[kotlin.math.abs(id.hashCode()) % mcpTints.size])
+
+@Composable
+private fun McpIcon(id: String, letter: String, size: Dp) {
+    Box(Modifier.size(size).background(mcpTint(id), RoundedCornerShape(size * .32f)), contentAlignment = Alignment.Center) {
+        Txt(letter, css("#2a211b"), (size.value * .43f).sp, family = Serif, weight = FontWeight.Medium)
+    }
+}
+
+@Composable
+private fun ColumnScope.McpScreen(compact: Boolean, blur: Dp, nav: MineNav) {
+    Title("MCP 服务", compact, onBack = { nav.back() })
+    LaunchedEffect(Unit) { Mcp.refreshCatalog() }
+    val pager = androidx.compose.foundation.pager.rememberPagerState(initialPage = nav.mcpTab) { 2 }
+    val scope = rememberCoroutineScope()
+    LaunchedEffect(pager.currentPage) { nav.mcpTab = pager.currentPage }
+    SegTabs(listOf("市场", "已连接"), pager, blur) { scope.launch { pager.animateScrollToPage(it) } }
+    Box(Modifier.weight(1f).fillMaxWidth()) {
+        androidx.compose.foundation.pager.HorizontalPager(
+            pager, Modifier.fillMaxSize(), verticalAlignment = Alignment.Top, beyondViewportPageCount = 1, pageSpacing = 16.dp,
+        ) { page ->
+            Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(bottom = 24.dp)) {
+                if (page == 0) McpMarketTab(blur, nav) else McpConnectedTab(blur, nav)
+            }
+        }
+    }
+}
+
+@Composable
+private fun ColumnScope.McpMarketTab(blur: Dp, nav: MineNav) {
+    var q by remember { mutableStateOf("") }
+    Field(q, { q = it }, "搜服务，或粘贴 MCP 地址", modifier = Modifier.padding(bottom = 12.dp))
+    val query = q.trim()
+    val isUrl = query.startsWith("http://") || query.startsWith("https://")
+    if (isUrl) {
+        Pressable({ nav.screen = "mcp/new?" + java.net.URLEncoder.encode(query, "UTF-8") }, Modifier.fillMaxWidth().padding(bottom = 10.dp), label = "连接这个地址") { pressed ->
+            Row(
+                Modifier.fillMaxWidth().glass(RoundedCornerShape(20.dp), blur, fill = if (pressed) rgba(255, 255, 255, .08f) else glassFill).padding(horizontal = 16.dp, vertical = 16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Txt("连接这个地址", Page.ink, 15.sp)
+                    Spacer(Modifier.height(3.dp))
+                    Txt(query, Page.muted, 12.5.sp, maxLines = 1)
+                }
+                SvgIcon(MineIcons.next, Page.muted, 18.dp)
+            }
+        }
+    }
+    val items = Mcp.catalog.filter { query.isEmpty() || isUrl || (it.name + it.desc + it.category).contains(query, ignoreCase = true) }
+    val cats = items.map { it.category }.distinct()
+    cats.forEach { cat ->
+        SectionLabel(cat)
+        Column(Modifier.fillMaxWidth().glass(RoundedCornerShape(20.dp), blur, fill = glassFill)) {
+            items.filter { it.category == cat }.forEachIndexed { i, item ->
+                if (i > 0) Divider()
+                val have = Mcp.byCatalog(item.id)
+                Pressable({ nav.screen = if (have != null) "mcp/${have.id}" else "mcp/new:${item.id}" }, Modifier.fillMaxWidth(), label = item.name) { pressed ->
+                    Row(
+                        Modifier.fillMaxWidth().background(if (pressed) rgba(255, 255, 255, .05f) else Color.Transparent).padding(horizontal = 16.dp, vertical = 13.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        McpIcon(item.id, item.name.take(1), 40.dp)
+                        Spacer(Modifier.width(13.dp))
+                        Column(Modifier.weight(1f)) {
+                            Txt(item.name, Page.ink, 15.sp, weight = FontWeight.Medium, maxLines = 1)
+                            Spacer(Modifier.height(2.dp))
+                            Txt(item.desc, Page.muted, 12.sp, maxLines = 2, lineHeight = 17.sp)
+                        }
+                        Spacer(Modifier.width(10.dp))
+                        if (have != null) Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(Modifier.size(6.dp).background(if (have.enabled) warm else Page.muted.copy(alpha = .4f), CircleShape))
+                            Spacer(Modifier.width(6.dp))
+                            Txt(if (have.enabled) "已连接" else "已关", Page.muted, 12.sp)
+                        } else Chip(
+                            when (item.auth) { "key" -> "填 key"; "paste" -> "贴地址"; "bearer" -> "填 token"; else -> "连接" },
+                            fill = rgba(233, 180, 142, .92f), ink = css("#2a211b"),
+                        )
+                    }
+                }
+            }
+        }
+    }
+    if (items.isEmpty() && !isUrl) Txt("没有找到。有地址的话直接粘贴进来。", Page.muted, 13.sp, Modifier.padding(top = 30.dp).align(Alignment.CenterHorizontally))
+    Spacer(Modifier.height(20.dp))
+    Txt("都是服务商自己托管的，地址和 key 只存在这台手机上。魔搭 MCP 广场里还有几千个，复制地址粘贴进来就能用。", Page.muted.copy(alpha = .7f), 12.sp, Modifier.padding(horizontal = 6.dp), lineHeight = 18.sp)
+}
+
+@Composable
+private fun ColumnScope.McpConnectedTab(blur: Dp, nav: MineNav) {
+    val list = Mcp.servers
+    if (list.isEmpty()) {
+        Column(Modifier.fillMaxWidth().padding(top = 60.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Txt("还没有连接任何服务", Page.ink, 15.sp, family = Serif)
+            Spacer(Modifier.height(8.dp))
+            Txt("往左翻，市场里挑一个", Page.muted, 13.sp)
+        }
+        return
+    }
+    Column(Modifier.fillMaxWidth().glass(RoundedCornerShape(20.dp), blur, fill = glassFill)) {
+        list.forEachIndexed { i, s ->
+            if (i > 0) Divider()
+            Pressable({ nav.screen = "mcp/${s.id}" }, Modifier.fillMaxWidth(), label = s.name) { pressed ->
+                Row(
+                    Modifier.fillMaxWidth().background(if (pressed) rgba(255, 255, 255, .05f) else Color.Transparent).padding(start = 16.dp, end = 12.dp, top = 12.dp, bottom = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    McpIcon(s.catalog.ifEmpty { s.id }, s.initial, 40.dp)
+                    Spacer(Modifier.width(13.dp))
+                    Column(Modifier.weight(1f)) {
+                        Txt(s.name, Page.ink, 15.sp, weight = FontWeight.Medium, maxLines = 1)
+                        Spacer(Modifier.height(2.dp))
+                        Txt(
+                            if (s.tools.isEmpty()) "还没拿到工具列表" else if (s.off.isEmpty()) "${s.tools.size} 个工具" else "${s.tools.size} 个工具 · 开了 ${s.onTools.size} 个",
+                            Page.muted, 12.sp, maxLines = 1,
+                        )
+                    }
+                    Spacer(Modifier.width(10.dp))
+                    Switch(s.enabled, "启用") { s.enabled = it; Mcp.save() }
+                }
+            }
+        }
+    }
+    Spacer(Modifier.height(14.dp))
+    Txt("开着的服务，她聊天时随手能用；关掉就从她手边拿走，设置还留着。", Page.muted.copy(alpha = .7f), 12.sp, Modifier.padding(horizontal = 6.dp), lineHeight = 18.sp)
+}
+
+/** 某个服务：新建（new:精选id / new?地址）或已有（服务 id）。 */
+@Composable
+private fun ColumnScope.McpServerScreen(key: String, compact: Boolean, blur: Dp, nav: MineNav) {
+    val scope = rememberCoroutineScope()
+    val existing = Mcp.get(key)
+    val item = when {
+        key.startsWith("new:") -> Mcp.catalog.firstOrNull { it.id == key.removePrefix("new:") }
+        existing != null && existing.catalog.isNotEmpty() -> Mcp.catalog.firstOrNull { it.id == existing.catalog }
+        else -> null
+    }
+    val pasted = if (key.startsWith("new?")) java.net.URLDecoder.decode(key.removePrefix("new?"), "UTF-8") else ""
+    val auth = item?.auth ?: "bearer"
+    val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
+
+    var name by remember(key) { mutableStateOf(existing?.name ?: item?.name ?: "") }
+    // key 型：用户只填 key，地址由模板拼；其他：填地址
+    var keyText by remember(key) { mutableStateOf(existing?.let { e -> item?.url?.let { t -> extractKey(t, e.url) } } ?: "") }
+    var url by remember(key) { mutableStateOf(existing?.url ?: pasted.ifEmpty { if (auth == "bearer") item?.url.orEmpty() else "" }) }
+    var token by remember(key) { mutableStateOf(existing?.token ?: "") }
+    var tools by remember(key) { mutableStateOf(existing?.tools ?: emptyList()) }
+    var off by remember(key) { mutableStateOf(existing?.off ?: emptySet()) }
+    var busy by remember { mutableStateOf(false) }
+    var fail by remember { mutableStateOf("") }
+    var okMsg by remember { mutableStateOf("") }
+
+    val finalUrl = if (auth == "key" && item != null) item.url.replace("{key}", keyText.trim()) else url.trim()
+    val canConnect = finalUrl.startsWith("http") && (auth != "key" || keyText.isNotBlank()) && !busy
+
+    Title(name.ifBlank { item?.name ?: "新服务" }, compact, onBack = { nav.back() })
+    Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()).padding(bottom = 24.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            McpIcon(item?.id ?: existing?.id ?: "new", (name.ifBlank { item?.name ?: "M" }).take(1), 56.dp)
+            Spacer(Modifier.width(14.dp))
+            Column(Modifier.weight(1f)) {
+                if (item != null) Txt(item.desc, Page.muted, 13.sp, lineHeight = 19.sp)
+                else Txt("自己粘贴地址的服务。连上后会拿到它的名字和工具。", Page.muted, 13.sp, lineHeight = 19.sp)
+            }
+        }
+
+        SectionLabel(when (auth) { "key" -> "KEY"; "paste" -> "地址"; else -> "地址与 TOKEN" })
+        when (auth) {
+            "key" -> Field(keyText, { keyText = it }, "粘贴 key", secret = true)
+            "paste" -> Field(url, { url = it }, "粘贴你的 MCP 地址")
+            else -> {
+                Field(url, { url = it }, "https://…")
+                Spacer(Modifier.height(8.dp))
+                Field(token, { token = it }, if (auth == "bearer") "token（有的话）" else "token，没有就留空", secret = true)
+            }
+        }
+        if (item != null && item.help.isNotEmpty()) {
+            Spacer(Modifier.height(10.dp))
+            Pressable({ runCatching { uriHandler.openUri(item.helpUrl) } }, label = "怎么拿") { pressed ->
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 4.dp)) {
+                    Txt(item.help, if (pressed) warm.copy(alpha = .7f) else warm, 12.5.sp, Modifier.weight(1f), lineHeight = 18.sp)
+                    Spacer(Modifier.width(6.dp))
+                    SvgIcon(MineIcons.next, warm, 16.dp)
+                }
+            }
+        }
+        if (existing != null) {
+            SectionLabel("名字")
+            Field(name, { name = it }, "给她看的名字")
+        }
+
+        Spacer(Modifier.height(18.dp))
+        PillButton(
+            when { busy -> "正在连接…"; existing == null -> "连接"; else -> "重新连接" },
+            null, primary = true, enabled = canConnect, modifier = Modifier.fillMaxWidth(),
+        ) {
+            busy = true; fail = ""; okMsg = ""
+            scope.launch {
+                runCatching { Mcp.probe(finalUrl, token.trim()) }
+                    .onSuccess { (serverName, list) ->
+                        tools = list
+                        if (name.isBlank()) name = item?.name ?: serverName.ifBlank { "MCP 服务" }
+                        // 精选单说了默认只开哪几个，就照它的；别的全开
+                        if (existing == null && item != null && item.defaultTools.isNotEmpty()) off = list.map { it.name }.filter { it !in item.defaultTools }.toSet()
+                        val s = existing ?: McpServer(Mcp.newId(), name, finalUrl, token.trim(), list, off, true, item?.id.orEmpty())
+                        s.name = name; s.url = finalUrl; s.token = token.trim(); s.tools = list; s.off = off; s.enabled = true
+                        if (existing == null) Mcp.add(s) else Mcp.save()
+                        okMsg = "连上了，${list.size} 个工具"
+                        if (existing == null) nav.screen = "mcp/${s.id}"
+                    }
+                    .onFailure { fail = it.message ?: "连不上" }
+                busy = false
+            }
+        }
+        if (fail.isNotEmpty()) { Spacer(Modifier.height(10.dp)); Txt(fail, rose, 12.5.sp, Modifier.padding(horizontal = 6.dp), lineHeight = 18.sp) }
+        if (okMsg.isNotEmpty()) { Spacer(Modifier.height(10.dp)); Txt(okMsg, warm, 12.5.sp, Modifier.padding(horizontal = 6.dp)) }
+
+        if (tools.isNotEmpty()) {
+            SectionLabel("她会多这些工具") {
+                val allOn = off.isEmpty()
+                Pressable({ off = if (allOn) tools.map { it.name }.toSet() else emptySet(); existing?.let { it.off = off; Mcp.save() } }, label = "全开或全关") { _ ->
+                    Txt(if (allOn) "全关" else "全开", warm, 12.sp)
+                }
+            }
+            Column(Modifier.fillMaxWidth().glass(RoundedCornerShape(18.dp), blur, fill = glassFill)) {
+                tools.forEachIndexed { i, t ->
+                    if (i > 0) Divider()
+                    val on = t.name !in off
+                    Pressable({ off = if (on) off + t.name else off - t.name; existing?.let { it.off = off; Mcp.save() } }, Modifier.fillMaxWidth(), label = t.name) { pressed ->
+                        Row(Modifier.fillMaxWidth().background(if (pressed) rgba(255, 255, 255, .05f) else Color.Transparent).padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                Modifier.size(20.dp).background(if (on) rgba(233, 180, 142, .9f) else rgba(255, 255, 255, .1f), RoundedCornerShape(6.dp)),
+                                contentAlignment = Alignment.Center,
+                            ) { if (on) SvgIcon(Ic("M6 12.5l4 4 8-9"), css("#2a211b"), 14.dp, stroke = 2.2f) }
+                            Spacer(Modifier.width(12.dp))
+                            Column(Modifier.weight(1f)) {
+                                Txt(t.name, if (on) Page.ink else Page.muted, 13.sp, family = androidx.compose.ui.text.font.FontFamily.Monospace, maxLines = 1)
+                                if (t.description.isNotEmpty()) { Spacer(Modifier.height(2.dp)); Txt(firstSentence(t.description, 60), Page.muted, 12.sp, maxLines = 2, lineHeight = 17.sp) }
+                            }
+                        }
+                    }
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            Txt("开太多工具会让她每次都读一长串说明，常用的开几个就够。", Page.muted.copy(alpha = .7f), 12.sp, Modifier.padding(horizontal = 6.dp), lineHeight = 18.sp)
+        }
+
+        if (existing != null) {
+            Spacer(Modifier.height(26.dp))
+            Pressable({ Mcp.remove(existing.id); nav.back() }, Modifier.fillMaxWidth(), label = "删除") { pressed ->
+                Txt("删除这个服务", if (pressed) rose.copy(alpha = .7f) else rose, 14.sp, Modifier.fillMaxWidth().padding(vertical = 12.dp), align = androidx.compose.ui.text.style.TextAlign.Center)
+            }
+        }
+    }
+}
+
+/** 从模板 "https://x/mcp?key={key}" 和实际地址里把 key 抠出来；对不上返回 null。 */
+private fun extractKey(template: String, actual: String): String? {
+    val i = template.indexOf("{key}")
+    if (i < 0) return null
+    val head = template.substring(0, i); val tail = template.substring(i + 5)
+    if (!actual.startsWith(head) || !actual.endsWith(tail) || actual.length < head.length + tail.length) return null
+    return actual.substring(head.length, actual.length - tail.length)
 }
