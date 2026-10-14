@@ -263,7 +263,7 @@ class YuProvider : android.content.ContentProvider() {
             "{\"root\":\"中心主题\",\"items\":[{\"t\":\"一级主题\",\"c\":[{\"t\":\"二级主题\",\"c\":[]}]}]}"
         val raw = try {
             kotlinx.coroutines.runBlocking {
-                kotlinx.coroutines.withTimeout(60_000) { AssistantApi.complete(p, c, store.activeModel, system, text, maxTokens = 4096) }
+                kotlinx.coroutines.withTimeout(60_000) { ChatApi.complete(p, c, store.activeModel, system, text, maxTokens = 4096) }
             }
         } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
             return JSONObject().put("error", "failed").put("message", "整理超时了，再试一次")
