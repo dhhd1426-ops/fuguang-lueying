@@ -57,6 +57,7 @@
 - `ContentStore.kt`：在线内容、缓存、兜底、小红点
 - `Theme.kt`：颜色全部取自网站 CSS，深浅两套
 - `Prefs.kt`：本机存储，键名和网站 localStorage 一致
+- `YuConnector.kt` 里的 `YuProvider`：连接器 api 3（第 88 版加）。羽反过来请助理整理导图：`ContentResolver.call(content://com.fuguang.lueying.yu, "outline", 文字, extras{hint})`，返回 `json`。两道门：调用方签名是羽的、羽的 status 仍 connected；不新建连接，开关在羽那边。
 - `Mcp.kt`：MCP 服务（第 87 版加）。远程两种传输：Streamable HTTP（POST，回 JSON 或 SSE，会话在 `Mcp-Session-Id` 头）和旧式 SSE（GET 拿 endpoint 再 POST）。`probe()` 连一次拿服务名和工具列表；`specs` / `system()` / `run()` 把开着的服务工具挂给模型，工具名是 `服务id__工具名`。精选单 `BUILTIN` 内置一份，和公开仓库 `mcp/catalog.json` 同一份，仓库里的会覆盖。
 - `Mine.kt` 里的 `McpScreen`（左右两页：市场 / 已连接）和 `McpServerScreen`（填 key / 地址 / token，连接后勾工具，改名，删除）。入口在「我的 → 连接器 → MCP 服务」。服务和 token 只存本机（`mcp-servers`）。
 
