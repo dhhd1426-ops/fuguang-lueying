@@ -1441,7 +1441,7 @@ private fun ColumnScope.McpServerScreen(key: String, compact: Boolean, blur: Dp,
     var name by remember(key) { mutableStateOf(existing?.name ?: item?.name ?: "") }
     // key 型：用户只填 key，地址由模板拼；其他：填地址
     var keyText by remember(key) { mutableStateOf(existing?.let { e -> item?.url?.let { t -> extractKey(t, e.url) } } ?: "") }
-    var url by remember(key) { mutableStateOf(existing?.url ?: pasted.ifEmpty { if (auth == "bearer") item?.url.orEmpty() else "" }) }
+    var url by remember(key) { mutableStateOf(existing?.url ?: pasted.ifEmpty { if (auth == "bearer" || auth == "none") item?.url.orEmpty() else "" }) }
     var token by remember(key) { mutableStateOf(existing?.token ?: "") }
     var tools by remember(key) { mutableStateOf(existing?.tools ?: emptyList()) }
     var off by remember(key) { mutableStateOf(existing?.off ?: emptySet()) }

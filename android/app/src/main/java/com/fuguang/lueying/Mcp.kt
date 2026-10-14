@@ -304,32 +304,56 @@ object Mcp {
 
     private const val KEY = "mcp-servers"
 
-    /** 内置精选单。地址都是服务商官方给的；魔搭托管的每个人不一样，要自己复制。 */
+    /** 内置精选单，和公开仓库 mcp/catalog.json 同一份；仓库里的更新了就以它为准。 */
     val BUILTIN = listOf(
-        McpCatalogItem(
-            "amap", "高德地图", "查天气、找地方、路线规划、周边吃喝。她问“附近有什么好吃的”“去机场怎么走”都靠它。", "生活", "key",
+        McpCatalogItem("amap", "高德地图", "查天气、找地方、路线规划、周边吃喝。她问“附近有什么好吃的”“去机场怎么走”都靠它。", "生活", "key",
             "https://mcp.amap.com/mcp?key={key}", "去高德开放平台申请一个 Web 服务 key（免费）", "https://lbs.amap.com/api/mcp-server/summary",
             listOf("maps_weather", "maps_text_search", "maps_around_search", "maps_direction_transit_integrated", "maps_direction_driving", "maps_geo", "maps_regeocode"),
         ),
-        McpCatalogItem(
-            "baidu-map", "百度地图", "和高德差不多：地点、路线、天气、周边。用哪个看你习惯。", "生活", "key",
+        McpCatalogItem("baidu-map", "百度地图", "和高德差不多：地点、路线、天气、周边。用哪个看你习惯。", "生活", "key",
             "https://mcp.map.baidu.com/sse?ak={key}", "去百度地图开放平台申请一个服务端 AK（免费）", "https://lbsyun.baidu.com/faq/api?title=mcpserver/base",
         ),
-        McpCatalogItem(
-            "12306", "12306 车票", "查车次、余票、经停站。出门前问她一句就行。", "出行", "paste",
-            "", "在魔搭 MCP 广场打开「12306-mcp」，点托管，复制你的地址粘贴进来", "https://modelscope.cn/mcp/servers/@Joooook/12306-mcp",
+        McpCatalogItem("weather", "天气", "单独的天气服务，不想接地图的话用这个。实时、逐小时、七天预报。", "生活", "paste",
+            "", "在魔搭 MCP 广场搜“天气”，挑一个点托管，复制你的地址粘贴进来", "https://modelscope.cn/mcp?search=%E5%A4%A9%E6%B0%94",
         ),
-        McpCatalogItem(
-            "bing", "Bing 搜索", "让她能上网查最新的事。中文结果，免费托管。", "搜索", "paste",
-            "", "在魔搭 MCP 广场打开「bing-cn-mcp-server」，点托管，复制你的地址粘贴进来", "https://modelscope.cn/mcp/servers/@yan5236/bing-cn-mcp-server",
+        McpCatalogItem("12306", "12306 车票", "查车次、余票、经停站。出门前问她一句就行。", "出行", "paste",
+            "", "在魔搭 MCP 广场搜“12306”，点托管，复制你的地址粘贴进来", "https://modelscope.cn/mcp?search=12306",
         ),
-        McpCatalogItem(
-            "fetch", "网页抓取", "贴一个链接给她，她能读全文、讲重点。", "搜索", "paste",
-            "", "在魔搭 MCP 广场打开「fetch」，点托管，复制你的地址粘贴进来", "https://modelscope.cn/mcp/servers/@modelcontextprotocol/fetch",
+        McpCatalogItem("bing", "Bing 搜索", "让她能上网查最新的事。中文结果，魔搭免费托管。", "搜索", "paste",
+            "", "在魔搭 MCP 广场搜“bing”，点托管，复制你的地址粘贴进来", "https://modelscope.cn/mcp?search=bing",
         ),
-        McpCatalogItem(
-            "github", "GitHub", "看仓库、issue、PR。写代码的人用。", "开发", "bearer",
+        McpCatalogItem("fetch", "网页抓取", "贴一个链接给她，她能读全文、讲重点。", "搜索", "paste",
+            "", "在魔搭 MCP 广场搜“fetch”，点托管，复制你的地址粘贴进来", "https://modelscope.cn/mcp?search=fetch",
+        ),
+        McpCatalogItem("tavily", "Tavily 搜索", "给 AI 用的搜索，英文和外网内容好。每月一千次免费。", "搜索", "key",
+            "https://mcp.tavily.com/mcp/?tavilyApiKey={key}", "去 Tavily 注册拿一个 API key", "https://app.tavily.com/",
+        ),
+        McpCatalogItem("exa", "Exa 搜索", "语义搜索，找论文、找人、找公司准。英文为主。", "搜索", "key",
+            "https://mcp.exa.ai/mcp?exaApiKey={key}", "去 Exa 注册拿一个 API key", "https://dashboard.exa.ai/",
+        ),
+        McpCatalogItem("bilibili", "B 站", "搜视频、看简介和热评。“讲得最清楚的那个视频”她能帮你找。", "内容", "paste",
+            "", "在魔搭 MCP 广场搜“bilibili”，点托管，复制你的地址粘贴进来", "https://modelscope.cn/mcp?search=bilibili",
+        ),
+        McpCatalogItem("weibo", "微博热搜", "此刻大家在聊什么。早上问她“今天有什么事”能说个大概。", "内容", "paste",
+            "", "在魔搭 MCP 广场搜“热搜”，点托管，复制你的地址粘贴进来", "https://modelscope.cn/mcp?search=%E7%83%AD%E6%90%9C",
+        ),
+        McpCatalogItem("arxiv", "arXiv 论文", "搜最新论文、读摘要。做研究的人用。", "内容", "paste",
+            "", "在魔搭 MCP 广场搜“arxiv”，点托管，复制你的地址粘贴进来", "https://modelscope.cn/mcp?search=arxiv",
+        ),
+        McpCatalogItem("time", "时间与时区", "现在几点、东京几点、离某天还有几天。她算日期不会再错。", "工具", "paste",
+            "", "在魔搭 MCP 广场搜“time”，点托管，复制你的地址粘贴进来", "https://modelscope.cn/mcp?search=time",
+        ),
+        McpCatalogItem("fx", "汇率", "两千美元是多少人民币，直接给数。", "工具", "paste",
+            "", "在魔搭 MCP 广场搜“汇率”，点托管，复制你的地址粘贴进来", "https://modelscope.cn/mcp?search=%E6%B1%87%E7%8E%87",
+        ),
+        McpCatalogItem("github", "GitHub", "看仓库、issue、PR。写代码的人用。", "开发", "bearer",
             "https://api.githubcopilot.com/mcp/", "在 GitHub 设置里生成一个 Personal access token 填进来", "https://github.com/settings/tokens",
+        ),
+        McpCatalogItem("deepwiki", "DeepWiki", "问任何开源仓库是怎么回事，它读过代码给你讲。不用 key。", "开发", "none",
+            "https://mcp.deepwiki.com/mcp", "", "",
+        ),
+        McpCatalogItem("context7", "Context7 文档", "查各种库的最新文档和用法，她写代码时少编 API。", "开发", "bearer",
+            "https://mcp.context7.com/mcp", "去 Context7 注册拿一个 API key（免费额度够用）", "https://context7.com/dashboard",
         ),
     )
 }
