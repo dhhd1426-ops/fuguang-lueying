@@ -376,7 +376,7 @@ object ChatApi {
     }
 
     /** 不流式、不思考的一次问答（整理记忆用），返回正文。 */
-    suspend fun complete(p: Provider, c: ProviderConfig, model: String, system: String, user: String): String = withContext(Dispatchers.IO) {
+    suspend fun complete(p: Provider, c: ProviderConfig, model: String, system: String, user: String, maxTokens: Int = 1024): String = withContext(Dispatchers.IO) {
         val anthropic = p.kind == "anthropic"
         val url = if (anthropic) trim(c.base) + "/messages"
         else trim(c.base) + c.path.trim().let { if (it.startsWith("/")) it else "/$it" }
@@ -395,7 +395,7 @@ object ChatApi {
             if (!anthropic) msgs.put(JSONObject().put("role", "system").put("content", system))
             msgs.put(JSONObject().put("role", "user").put("content", user))
             val body = JSONObject().put("model", model).put("messages", msgs).put("stream", false)
-            if (anthropic) body.put("system", system).put("max_tokens", 1024)
+            if (anthropic) body.put("system", system).put("max_tokens", maxTokens)
             // 整理记忆不用想：DeepSeek 默认会思考，明确关掉
             if (p.id == "deepseek") body.put("thinking", JSONObject().put("type", "disabled"))
             conn.outputStream.use { it.write(body.toString().toByteArray()) }

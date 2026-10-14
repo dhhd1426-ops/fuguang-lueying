@@ -27,6 +27,12 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- 连接器 api 3：羽反过来请助理把一段文字整理成导图（见 YuConnector.kt 的 YuProvider） -->
+        <provider
+            android:name=".YuProvider"
+            android:authorities="com.fuguang.lueying.yu"
+            android:exported="true" />
     </application>
 
 </manifest>

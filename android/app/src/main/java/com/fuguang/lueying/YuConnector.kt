@@ -56,6 +56,9 @@ object Yu {
 
     private suspend fun set(st: String, n: Int) = withContext(Dispatchers.Main) { state = st; notes = n }
 
+    /** 此刻还连着吗（同步问一次羽的 status）。羽反向请求时用来把关。 */
+    fun connectedNow(): Boolean = call("status", null)?.optBoolean("connected") == true
+
     /** 出错时给模型看的话；not_connected 时顺便把状态改成未连接。 */
     private suspend fun error(o: JSONObject?): String? {
         if (o == null) return "暂时读不到羽的笔记。"
@@ -201,3 +204,110 @@ object Yu {
 
 /** 给模型的一个工具：名字、说明、参数的 JSON Schema。 */
 class ToolSpec(val name: String, val description: String, val schema: JSONObject)
+
+/* ---------- 连接器 api 3：羽 → 浮光掠影 ---------- */
+
+/**
+ * 羽请助理把一段文字整理成思维导图。同一条连接的反方向：不新建连接、不弹授权，
+ * 开关还是羽「设置 › 连接器」里那一个。每次先问羽「我们还连着吗」，断了就拒绝。
+ *
+ * 羽在后台线程调：ContentResolver.call(content://com.fuguang.lueying.yu, "outline", 文字, extras{"hint"})
+ * 返回 Bundle 的 "json"：
+ *   {"api":3,"root":"…","items":[{"t":"…","c":[…]}]}
+ *   {"error":"not_connected"} / {"error":"no_model"} / {"error":"failed","message":"…"}
+ */
+class YuProvider : android.content.ContentProvider() {
+    override fun onCreate(): Boolean = true
+
+    override fun call(method: String, arg: String?, extras: Bundle?): Bundle {
+        val ctx = context ?: return reply(JSONObject().put("error", "failed").put("message", "浮光掠影还没准备好"))
+        if (method != "outline") return reply(JSONObject().put("error", "failed").put("message", "没有这个接口：$method"))
+        Yu.init(ctx) // 浮光掠影可能还没打开过，进程是被羽拉起来的
+        // 两道门：是羽本尊，而且羽那边还连着
+        if (!callerIsYu(ctx) || !Yu.connectedNow()) return reply(JSONObject().put("error", "not_connected"))
+        val text = arg.orEmpty().trim().take(20_000)
+        if (text.isEmpty()) return reply(JSONObject().put("error", "failed").put("message", "没有内容可以整理"))
+        val hint = extras?.getString("hint").orEmpty().trim()
+        return reply(outline(ctx, text, hint))
+    }
+
+    private fun reply(o: JSONObject) = Bundle().apply { putString("json", o.toString()) }
+
+    /** 调用方的 uid 对应包名是 com.yu.notes，且签名是羽的。 */
+    private fun callerIsYu(ctx: Context): Boolean {
+        val uid = android.os.Binder.getCallingUid()
+        val pm = ctx.packageManager
+        val pkgs = pm.getPackagesForUid(uid) ?: return false
+        if (Yu.PKG !in pkgs) return false
+        return runCatching {
+            val info = pm.getPackageInfo(Yu.PKG, android.content.pm.PackageManager.GET_SIGNING_CERTIFICATES)
+            val signers = info.signingInfo?.let { if (it.hasMultipleSigners()) it.apkContentsSigners else it.signingCertificateHistory } ?: return false
+            val md = java.security.MessageDigest.getInstance("SHA-256")
+            signers.any { s -> md.digest(s.toByteArray()).joinToString("") { "%02x".format(it) } == YU_SHA256 }
+        }.getOrDefault(false)
+    }
+
+    /** 用用户当前选的模型整理；同步等，最多 60 秒。 */
+    private fun outline(ctx: Context, text: String, hint: String): JSONObject {
+        val store = AssistantStore(Prefs(ctx))
+        val p = provider(store.activeProvider)
+        val c = store.config(p.id)
+        if (!c.configured || store.activeModel.isBlank()) return JSONObject().put("error", "no_model")
+        val system = "把用户给的文字整理成思维导图。要求：\n" +
+            "- 提炼层级清楚的要点，用自己的话概括，不照抄原句\n" +
+            "- 每个主题不超过 20 个字，像标题，不要句号\n" +
+            "- 最多 4 层（中心主题不算），总共不超过 60 个主题\n" +
+            "- 同一层按原文的顺序或逻辑顺序排列\n" +
+            (if (hint.isNotEmpty()) "- 中心主题用：$hint\n" else "- 中心主题由你根据内容起，不超过 12 个字\n") +
+            "只输出 JSON，不要任何别的文字、不要代码围栏。格式：\n" +
+            "{\"root\":\"中心主题\",\"items\":[{\"t\":\"一级主题\",\"c\":[{\"t\":\"二级主题\",\"c\":[]}]}]}"
+        val raw = try {
+            kotlinx.coroutines.runBlocking {
+                kotlinx.coroutines.withTimeout(60_000) { AssistantApi.complete(p, c, store.activeModel, system, text, maxTokens = 4096) }
+            }
+        } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
+            return JSONObject().put("error", "failed").put("message", "整理超时了，再试一次")
+        } catch (e: Exception) {
+            return JSONObject().put("error", "failed").put("message", e.message?.takeIf { it.isNotBlank() } ?: "模型没有回应")
+        }
+        val o = parse(raw) ?: return JSONObject().put("error", "failed").put("message", "模型给的结果读不懂，再试一次")
+        return o
+    }
+
+    /** 从模型输出里抠出 JSON，并按上限整理：层数、数量、字数。 */
+    private fun parse(raw: String): JSONObject? {
+        var s = raw.trim()
+        if (s.startsWith("```")) s = s.removePrefix("```json").removePrefix("```").trim().removeSuffix("```").trim()
+        val start = s.indexOf('{'); val end = s.lastIndexOf('}')
+        if (start < 0 || end <= start) return null
+        val o = runCatching { JSONObject(s.substring(start, end + 1)) }.getOrNull() ?: return null
+        val root = o.optString("root").trim().take(20).ifEmpty { return null }
+        var count = 0
+        fun clean(arr: JSONArray?, depth: Int): JSONArray {
+            val out = JSONArray()
+            if (arr == null || depth > 4) return out
+            for (i in 0 until arr.length()) {
+                val it = arr.optJSONObject(i) ?: continue
+                val t = it.optString("t").trim().trimEnd('。', '.', '，', ',').take(20)
+                if (t.isEmpty() || count >= 60) continue
+                count++
+                out.put(JSONObject().put("t", t).put("c", clean(it.optJSONArray("c"), depth + 1)))
+            }
+            return out
+        }
+        val items = clean(o.optJSONArray("items"), 1)
+        if (items.length() == 0) return null
+        return JSONObject().put("api", 3).put("root", root).put("items", items)
+    }
+
+    override fun query(uri: Uri, projection: Array<String>?, selection: String?, selectionArgs: Array<String>?, sortOrder: String?): android.database.Cursor? = null
+    override fun getType(uri: Uri): String? = null
+    override fun insert(uri: Uri, values: android.content.ContentValues?): Uri? = null
+    override fun delete(uri: Uri, selection: String?, selectionArgs: Array<String>?): Int = 0
+    override fun update(uri: Uri, values: android.content.ContentValues?, selection: String?, selectionArgs: Array<String>?): Int = 0
+
+    companion object {
+        /** 羽的签名 SHA-256（羽那边给的）。 */
+        const val YU_SHA256 = "57b66d03f6468058c784469c383e99e121af3b7f70d85902a65aa121ac6b08d9"
+    }
+}
