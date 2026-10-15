@@ -66,11 +66,16 @@ jobs:
             exit 1
           }
 
-      - uses: actions/upload-artifact@v4
+      - name: Push office samples
+        # 样例放到 office-samples 分支（每次覆盖），在别处用 git 取下来打开核对
         if: github.ref == 'refs/heads/check'
-        with:
-          name: office-samples
-          path: android/app/build/office-samples/
+        run: |
+          set -e
+          mkdir /tmp/os && cp -r android/app/build/office-samples/. /tmp/os/ && cd /tmp/os
+          git init -q && git checkout -q -b office-samples
+          git -c user.name=Claude -c user.email=noreply@anthropic.com add -A
+          git -c user.name=Claude -c user.email=noreply@anthropic.com commit -q -m "office samples ${{ github.sha }}"
+          git push -q -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" office-samples
 
       - name: Rename APK
         run: |
