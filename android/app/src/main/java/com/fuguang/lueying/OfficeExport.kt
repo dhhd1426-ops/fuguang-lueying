@@ -198,7 +198,8 @@ strong{color:var(--apricot);font-weight:600}
         val h = html.trim()
         if (h.contains("<html", true)) {
             if (h.contains("name=\"viewport\"", true) || h.contains("name='viewport'", true)) return h
-            return h.replaceFirst(Regex("<head[^>]*>", RegexOption.IGNORE_CASE)) { it.value + HEAD }.let { if (it == h) HEAD + h else it }
+            val m = Regex("<head[^>]*>", RegexOption.IGNORE_CASE).find(h) ?: return HEAD + h
+            return h.substring(0, m.range.last + 1) + HEAD + h.substring(m.range.last + 1)
         }
         return "<!doctype html><html lang=\"zh\"><head>$HEAD</head><body>$h</body></html>"
     }
