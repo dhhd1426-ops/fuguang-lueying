@@ -24,6 +24,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         val prefs = Prefs(this)
         Yu.init(this)
+        Works.init(this)
         Memory.init(prefs)
         Mcp.init(prefs)
         val controller = WindowCompat.getInsetsController(window, window.decorView)

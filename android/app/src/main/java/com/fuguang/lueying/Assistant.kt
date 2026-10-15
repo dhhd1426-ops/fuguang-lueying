@@ -218,8 +218,8 @@ object AssistantApi {
 }
 
 /** 一条聊天消息。role = "user" / "assistant"。 */
-/** imgs：这条回复里引用到的羽的笔记图片，每项是 "笔记id/图片id"。 */
-data class ChatMsg(val role: String, val text: String, val think: String = "", val imgs: List<String> = emptyList(), val at: Long = System.currentTimeMillis())
+/** imgs：这条回复里引用到的羽的笔记图片，每项是 "笔记id/图片id"。works：这条回复里做的作品 id。 */
+data class ChatMsg(val role: String, val text: String, val think: String = "", val imgs: List<String> = emptyList(), val at: Long = System.currentTimeMillis(), val works: List<String> = emptyList())
 
 /** 把思考原文切成段：按空行分；只有一段时按句号分成几小段。 */
 fun thinkSegments(raw: String): List<String> {
@@ -448,7 +448,8 @@ object ChatApi {
             } else conn.setRequestProperty("Authorization", "Bearer " + c.key.trim())
 
             val body = JSONObject().put("model", model).put("messages", msgs).put("stream", true)
-            if (anthropic) body.put("system", system).put("max_tokens", 4096)
+            // 做作品时一整张网页写在工具参数里，留足长度
+            if (anthropic) body.put("system", system).put("max_tokens", 16000)
             val sentThink = ThinkParams.apply(p, level, body)
             // 回答的手感：温度、Top P（Anthropic 开着思考时不能带）
             if (!(anthropic && level >= 2)) {
@@ -592,7 +593,7 @@ object ThinkParams {
             p.kind == "anthropic" -> {
                 if (level < 2) return false
                 body.put("thinking", JSONObject().put("type", "enabled").put("budget_tokens", budget[level]))
-                body.put("max_tokens", budget[level] + 4096)
+                body.put("max_tokens", budget[level] + 16000)
             }
             // DeepSeek 默认就开着思考：关闭一定要明说
             p.id == "deepseek" -> if (level == 0) body.put("thinking", JSONObject().put("type", "disabled"))

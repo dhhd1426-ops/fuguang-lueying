@@ -40,7 +40,8 @@ class ConvStore(private val prefs: Prefs) {
                     pinned = o.optBoolean("p"),
                     msgs = List(ms.length()) { k ->
                         val m = ms.getJSONObject(k)
-                        ChatMsg(m.optString("r"), m.optString("x"), m.optString("k"), m.optJSONArray("i")?.let { a -> List(a.length()) { a.optString(it) } } ?: emptyList(), m.optLong("t"))
+                        ChatMsg(m.optString("r"), m.optString("x"), m.optString("k"), m.optJSONArray("i")?.let { a -> List(a.length()) { a.optString(it) } } ?: emptyList(), m.optLong("t"),
+                            m.optJSONArray("w")?.let { a -> List(a.length()) { a.optString(it) } } ?: emptyList())
                     },
                 )
             }
@@ -78,7 +79,7 @@ class ConvStore(private val prefs: Prefs) {
         val arr = JSONArray()
         all.sortedByDescending { it.updated }.forEach { c ->
             val ms = JSONArray()
-            c.msgs.forEach { m -> ms.put(JSONObject().put("r", m.role).put("x", m.text).apply { if (m.think.isNotEmpty()) put("k", m.think); if (m.imgs.isNotEmpty()) put("i", JSONArray(m.imgs)); if (m.at > 0) put("t", m.at) }) }
+            c.msgs.forEach { m -> ms.put(JSONObject().put("r", m.role).put("x", m.text).apply { if (m.think.isNotEmpty()) put("k", m.think); if (m.imgs.isNotEmpty()) put("i", JSONArray(m.imgs)); if (m.works.isNotEmpty()) put("w", JSONArray(m.works)); if (m.at > 0) put("t", m.at) }) }
             arr.put(JSONObject().put("id", c.id).put("t", c.title).put("c", c.created).put("u", c.updated).put("p", c.pinned).put("m", ms))
         }
         prefs.putString(KEY, arr.toString())

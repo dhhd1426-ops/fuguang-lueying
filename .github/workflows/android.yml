@@ -54,6 +54,18 @@ jobs:
             echo "::error::${line}"
           done
 
+      - name: Office samples
+        # check 分支上顺便生成样例 PPT / Word，传上来核对导出
+        if: github.ref == 'refs/heads/check'
+        working-directory: android
+        run: ./gradlew :app:testReleaseUnitTest --tests "com.fuguang.lueying.OfficeSampleTest" --console=plain
+
+      - uses: actions/upload-artifact@v4
+        if: github.ref == 'refs/heads/check'
+        with:
+          name: office-samples
+          path: android/app/build/office-samples/
+
       - name: Rename APK
         run: |
           mkdir -p out

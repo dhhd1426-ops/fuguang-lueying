@@ -62,6 +62,8 @@ object Memory {
     /** 你的称呼：提示词里用它叫你；没填就叫「他」。 */
     var userName by mutableStateOf("")
     private val who: String get() = userName.trim().ifEmpty { "他" }
+    /** 提示词里怎么称呼用户。 */
+    val userCall: String get() = who
     var activeId by mutableStateOf("")
     val active: Persona get() = all.firstOrNull { it.id == activeId } ?: all.first()
 

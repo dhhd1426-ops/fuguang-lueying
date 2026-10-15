@@ -28,6 +28,17 @@
             </intent-filter>
         </activity>
 
+        <!-- 作品分享：导出的网页、PPT、Word 临时放在 cache/share，交给别的 App -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.files"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/share_paths" />
+        </provider>
+
         <!-- 连接器 api 3：羽反过来请助理把一段文字整理成导图（见 YuConnector.kt 的 YuProvider） -->
         <provider
             android:name=".YuProvider"

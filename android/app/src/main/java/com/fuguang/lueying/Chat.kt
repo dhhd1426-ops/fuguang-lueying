@@ -117,6 +117,8 @@ class ChatState(val history: ConvStore) {
     var toolNote by mutableStateOf("")
     /** 这轮回答里读到的羽的笔记图片。 */
     val pendingImgs = mutableStateListOf<String>()
+    /** 这次回复里做好的作品 id。 */
+    val pendingWorks = mutableStateListOf<String>()
     var error by mutableStateOf<String?>(null)
     var needsSetup by mutableStateOf(false)
     var draft by mutableStateOf("")
@@ -193,7 +195,7 @@ class ChatState(val history: ConvStore) {
             return
         }
         busy = true; thinking = false; thinkText = ""; partial = ""; shown = 0f; streamDone = false
-        pendingImgs.clear()
+        pendingImgs.clear(); pendingWorks.clear()
         val who = Memory.active
         val history = messages.toList()
         // “自动”：发出前按这条消息定一个具体的档
@@ -210,11 +212,12 @@ class ChatState(val history: ConvStore) {
                 val cur = convId
                 val question = history.lastOrNull { it.role == "user" }?.text.orEmpty()
                 val mcp = Mcp.specs
-                val specs = Memory.toolSpecs + (if (yu) Yu.tools else emptyList()) + (if (recall) listOf(Recall.spec) else emptyList()) + mcp
+                val specs = Memory.toolSpecs + Works.specs + (if (yu) Yu.tools else emptyList()) + (if (recall) listOf(Recall.spec) else emptyList()) + mcp
                 val convTitle0 = store0.get(cur)?.title ?: firstSentence(question, 18)
                 val extra = buildString {
                     append("\n\n你手边还有这些东西，需要时再用，不需要就不用：")
                     append("\n").append(Memory.toolRule())
+                    append("\n").append(Works.system(Memory.userCall, history))
                     if (recall) append("\n").append(Recall.system())
                     if (yu) append("\n").append(Yu.system())
                     if (mcp.isNotEmpty()) append("\n").append(Mcp.system())
@@ -227,10 +230,11 @@ class ChatState(val history: ConvStore) {
                         { n, a ->
                             if (n == Memory.REMEMBER || n == Memory.FORGET) Memory.runTool(who, n, a, cur.orEmpty(), convTitle0)
                             else if (n == Recall.TOOL) Recall.run(store0, cur, a.optString("query"))
+                            else if (n == Works.MAKE || n == Works.READ) Works.run(n, a) { id -> if (id !in pendingWorks) pendingWorks.add(id) }
                             else if (Mcp.owns(n)) Mcp.run(n, a)
                             else Yu.run(n, a, Yu.vision(p.id)) { refs -> refs.forEach { r -> if (r !in pendingImgs) pendingImgs.add(r) } }
                         },
-                        { toolNote = when (it) { Memory.REMEMBER -> "正在记下…"; Memory.FORGET -> "正在忘掉…"; Recall.TOOL -> "正在翻看以前的聊天…"; "list_todos" -> "正在查看羽的待办…"; else -> if (Mcp.owns(it)) Mcp.note(it) else "正在查阅羽的笔记…" } },
+                        { toolNote = when (it) { Memory.REMEMBER -> "正在记下…"; Memory.FORGET -> "正在忘掉…"; Recall.TOOL -> "正在翻看以前的聊天…"; Works.MAKE -> "正在动手做…"; Works.READ -> "正在看原稿…"; "list_todos" -> "正在查看羽的待办…"; else -> if (Mcp.owns(it)) Mcp.note(it) else "正在查阅羽的笔记…" } },
                     ) else null,
                     fallback = if (specs.isNotEmpty()) ({
                         listOfNotNull(
@@ -242,8 +246,8 @@ class ChatState(val history: ConvStore) {
                 streamDone = true
                 // 等书写追上再收尾
                 snapshotFlow { shown >= partial.length }.first { it }
-                if (partial.isNotBlank()) {
-                    messages.add(ChatMsg("assistant", partial.trim(), thinkText, pendingImgs.toList()))
+                if (partial.isNotBlank() || pendingWorks.isNotEmpty()) {
+                    messages.add(ChatMsg("assistant", partial.trim(), thinkText, pendingImgs.toList(), works = pendingWorks.toList()))
                     // 全局记忆：回答完后在后台整理一下值得记住的事
                     val reply = partial.trim()
                     val cid = convId.orEmpty()
@@ -251,13 +255,13 @@ class ChatState(val history: ConvStore) {
                     scope.launch { Memory.learn(who, p, c, store.activeModel, question, reply, cid, title) }
                 } else error = "没有收到回复，换个模型再试"
             } catch (e: kotlinx.coroutines.CancellationException) {
-                if (partial.isNotBlank()) messages.add(ChatMsg("assistant", partial.take(ceil(shown).toInt()).trim(), thinkText, pendingImgs.toList()))
+                if (partial.isNotBlank() || pendingWorks.isNotEmpty()) messages.add(ChatMsg("assistant", partial.take(ceil(shown).toInt()).trim(), thinkText, pendingImgs.toList(), works = pendingWorks.toList()))
                 throw e
             } catch (e: Exception) {
-                if (partial.isNotBlank()) messages.add(ChatMsg("assistant", partial.trim(), thinkText, pendingImgs.toList()))
+                if (partial.isNotBlank() || pendingWorks.isNotEmpty()) messages.add(ChatMsg("assistant", partial.trim(), thinkText, pendingImgs.toList(), works = pendingWorks.toList()))
                 error = e.message ?: "出错了"
             } finally {
-                partial = ""; shown = 0f; busy = false; thinking = false; thinkText = ""; toolNote = ""; pendingImgs.clear()
+                partial = ""; shown = 0f; busy = false; thinking = false; thinkText = ""; toolNote = ""; pendingImgs.clear(); pendingWorks.clear()
                 persist()
             }
         }
@@ -322,6 +326,8 @@ fun ChatPage(
     var thinkOf by remember { mutableIntStateOf(-1) }
     var thinkOpen by remember { mutableStateOf(false) }
     var viewing by remember { mutableStateOf<String?>(null) }
+    // 正在全屏看的作品
+    var workOpen by remember { mutableStateOf<String?>(null) }
     // 长按菜单、选择文字、小提示
     var press by remember { mutableStateOf<MsgPress?>(null) }
     var selectText by remember { mutableStateOf<String?>(null) }
@@ -352,7 +358,7 @@ fun ChatPage(
             ChatHeader(compact, title, subtitle, onMenu = { menu = true }) { chat.reset() }
             Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                 if (chat.messages.isEmpty() && !chat.busy) Hello(compact, hour)
-                else Conversation(chat, store, compact, flight, onSetup = onSetup, onRetry = { chat.retry(scope, store) }, onThink = { thinkOf = it; thinkOpen = true }, onImage = { viewing = it },
+                else Conversation(chat, store, compact, flight, onSetup = onSetup, onRetry = { chat.retry(scope, store) }, onThink = { thinkOf = it; thinkOpen = true }, onImage = { viewing = it }, onWork = { workOpen = it },
                     pressed = press?.index ?: -1, onLong = { if (!chat.busy || it.index < chat.messages.size) press = it })
             }
             Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
@@ -403,6 +409,7 @@ fun ChatPage(
             onClose = { thinkOpen = false },
         )
         NoteImageViewer(viewing) { viewing = null }
+        WorkViewer(workOpen) { workOpen = null }
         val pm = press?.let { chat.messages.getOrNull(it.index) }
         val pIdx = press?.index ?: -1
         val pBounds = press?.bounds
@@ -487,7 +494,7 @@ private fun Hello(compact: Boolean, hour: Int) {
 @Composable
 private fun Conversation(
     chat: ChatState, store: AssistantStore, compact: Boolean, flight: SendFlight, onSetup: () -> Unit, onRetry: () -> Unit,
-    onThink: (Int) -> Unit, onImage: (String) -> Unit, pressed: Int, onLong: (MsgPress) -> Unit,
+    onThink: (Int) -> Unit, onImage: (String) -> Unit, onWork: (String) -> Unit, pressed: Int, onLong: (MsgPress) -> Unit,
 ) {
     val scroll = rememberScrollState()
     val scope = rememberCoroutineScope()
@@ -533,6 +540,7 @@ private fun Conversation(
                         if (m.think.isNotBlank()) ThinkSummaryLine(thinkSummary(m.think)) { onThink(i) }
                         Box(Modifier.fillMaxWidth().longPressMsg(i, pressed == i, onLong)) { Reply(m.text, compact, fadeTail = false) }
                         NoteImageRow(m.imgs, onImage)
+                        WorkCards(m.works, onWork)
                     }
                     }
                 }
@@ -555,6 +563,7 @@ private fun Conversation(
                     }
                     if (chat.partial.isNotEmpty()) Reply(chat.partial.take(ceil(chat.shown).toInt()), compact, fadeTail = chat.shown < chat.partial.length + 1)
                     NoteImageRow(chat.pendingImgs.toList(), onImage)
+                    WorkCards(chat.pendingWorks.toList(), onWork)
                     if (chat.partial.isNotEmpty() && chat.toolNote.isNotEmpty()) ThinkingMotion(chat.toolNote, Modifier.padding(start = 2.dp, top = 8.dp))
                 }
                 chat.error?.let { err ->
