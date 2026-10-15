@@ -179,16 +179,16 @@ th,td{padding:9px 12px;text-align:left;line-height:1.6}th{background:var(--card)
         return """<!doctype html><html lang="zh"><head>$HEAD<title>${esc(title)}</title><style>$TOKENS
 .deck{display:flex;flex-direction:column;gap:18px;padding:20px max(14px,env(safe-area-inset-left)) 48px;align-items:center}
 .s{position:relative;width:100%;max-width:960px;aspect-ratio:16/9;background:linear-gradient(160deg,#20262c,#171b20);border-radius:12px;container-type:inline-size;overflow:hidden}
-.in{position:absolute;inset:8cqw 8cqw 7cqw}
+.in{position:absolute;inset:7cqw 7cqw 6cqw}
 .cover .in{display:flex;flex-direction:column;justify-content:center}
-h1{font-family:var(--serif);font-weight:600;font-size:6.2cqw;line-height:1.25;margin:0}
-h2{font-family:var(--serif);font-weight:600;font-size:4.2cqw;margin:0}
-.mark{width:5cqw;height:.35cqw;background:var(--apricot);margin:2.4cqw 0 3cqw}
-.cover p{font-size:2.3cqw;color:var(--muted);margin:.6cqw 0;line-height:1.6}
-ul{margin:0;padding-left:2.6cqw}li{font-size:2.35cqw;line-height:1.6;margin:0 0 1.3cqw;color:#e4ded7}
-li::marker{color:var(--apricot)}li.sub{margin-left:3cqw;font-size:2.05cqw;color:var(--muted);list-style:circle}
+h1{font-family:var(--serif);font-weight:600;font-size:7cqw;line-height:1.25;margin:0}
+h2{font-family:var(--serif);font-weight:600;font-size:5.2cqw;margin:0}
+.mark{width:5cqw;height:.4cqw;background:var(--apricot);margin:2.2cqw 0 2.8cqw}
+.cover p{font-size:3.2cqw;color:var(--muted);margin:.6cqw 0;line-height:1.6}
+ul{margin:0;padding-left:2.6cqw}li{font-size:3.4cqw;line-height:1.55;margin:0 0 1.4cqw;color:#e4ded7}
+li::marker{color:var(--apricot)}li.sub{margin-left:3cqw;font-size:2.9cqw;color:var(--muted);list-style:circle}
 strong{color:var(--apricot);font-weight:600}
-.no{position:absolute;right:3cqw;bottom:2.4cqw;font-size:1.4cqw;color:#ffffff55;font-variant-numeric:tabular-nums}
+.no{position:absolute;right:3cqw;bottom:2.4cqw;font-size:2cqw;color:#ffffff55;font-variant-numeric:tabular-nums}
 @media print{@page{size:landscape;margin:0}.deck{padding:0;gap:0}.s{border-radius:0;max-width:none;break-after:page}}
 </style></head><body><div class="deck">$body</div></body></html>"""
     }
