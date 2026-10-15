@@ -18,7 +18,7 @@
 - `public/reader.js`、`reader.css`：掠影阅读、目录、搜索、字号、收藏、阅读进度及网页内全屏。
 - `public/letters.js`、`letters.css`：单列留言，六段完整正文，点击悬浮卡片、前后切换。
 - `public/theme.js`、`theme.css`：留言右上角唯一主题开关；半月/太阳过渡、整页扩散、兼容降级和主题记忆。
-- `public/content/luoying.json`：39篇整理内容与80条原始对话。
+- `public/content/luoying.json`：63篇整理内容与80条原始对话（第40–63篇为2026-10-15追加的连续故事）。
 - `public/assets/scene.mp4`：线上背景视频；`poster.jpg`：背景静帧。
 - `build/password-gate.mjs`：现有服务器端密码验证及签名会话。
 - `original-wallpaper/2886288494.mpkg`：原始上传壁纸包，保留未修改。
