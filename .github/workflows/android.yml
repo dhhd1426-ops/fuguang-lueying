@@ -58,7 +58,13 @@ jobs:
         # check 分支上顺便生成样例 PPT / Word，传上来核对导出
         if: github.ref == 'refs/heads/check'
         working-directory: android
-        run: ./gradlew :app:testReleaseUnitTest --tests "com.fuguang.lueying.OfficeSampleTest" --console=plain
+        run: |
+          set -o pipefail
+          ./gradlew :app:testReleaseUnitTest --tests "com.fuguang.lueying.OfficeSampleTest" --console=plain 2>&1 | tee test.log || {
+            { grep -E "^e: |Exception|Error|FAILED|expected" test.log | head -n 30; grep -A 20 "What went wrong" test.log | head -n 20; } | while IFS= read -r line; do echo "::error::${line}"; done
+            find app/build/test-results -name "*.xml" -exec grep -h -A8 "<failure" {} \; 2>/dev/null | head -n 20 | while IFS= read -r line; do echo "::error::${line}"; done
+            exit 1
+          }
 
       - uses: actions/upload-artifact@v4
         if: github.ref == 'refs/heads/check'
