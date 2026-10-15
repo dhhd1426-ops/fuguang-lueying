@@ -82,7 +82,9 @@ object Yu {
             out.put(
                 JSONObject().put("id", n.optString("id")).put("title", n.optString("title"))
                     .put("snippet", n.optString("snippet")).put("folder", n.optString("folder"))
-                    .put("tags", n.optJSONArray("tags") ?: JSONArray()).put("updated", date(n.optLong("updated"))),
+                    .put("tags", n.optJSONArray("tags") ?: JSONArray()).put("updated", date(n.optLong("updated")))
+                    // 羽 1.6.4 起：note 笔记 / mindmap 思维导图 / graph 人物关系网
+                    .apply { n.optString("kind").takeIf { it.isNotEmpty() }?.let { put("kind", it).put("kindName", n.optString("kindName")) } },
             )
         }
         JSONObject().put("notes", out).toString()
@@ -155,6 +157,7 @@ object Yu {
     fun system(): String =
         "他的笔记 App「羽」连在你手边（就在这台手机上，已授权），里面有 $notes 篇笔记和他的待办。" +
             "search_notes 搜笔记，read_note 读一篇的全文和图片，list_todos 看待办。" +
+            "笔记分三种（结果里的 kind）：note 普通笔记、mindmap 思维导图、graph 人物关系网。他说「关系网 / 关系图 / 人物关系」时，搜这些词或找 kind=graph 的；说「导图」时找 kind=mindmap 的。" +
             "用不用、什么时候用，由你自己判断：他问到笔记里的东西、让你找什么、或者话题自然走到那里时，再去翻；" +
             "打招呼、闲聊、说心情的时候，就像平常一样回他，不用去翻。" +
             "翻的时候不用说“我去查一下”，看完自然地说就好，提到笔记时说出标题。他问起时，不要说你看不到他的笔记。"
@@ -162,7 +165,8 @@ object Yu {
     val tools = listOf(
         ToolSpec(
             "search_notes",
-            "在他的笔记 App「羽」里搜索笔记，返回标题、片段和 id。他问到自己的笔记、记录、笔记里的图片时使用。" +
+            "在他的笔记 App「羽」里搜索笔记，返回标题、片段、id 和种类 kind（note 笔记 / mindmap 思维导图 / graph 人物关系网）。他问到自己的笔记、记录、笔记里的图片时使用。" +
+                "要找人物关系网就搜「关系网」「人物关系」，要找导图就搜「导图」。" +
                 "关键词可以有多个，用空格分开；#标签 按标签筛选；空字符串返回最近的笔记。",
             JSONObject().put("type", "object")
                 .put("properties", JSONObject().put("query", JSONObject().put("type", "string").put("description", "搜索关键词")))
@@ -170,7 +174,8 @@ object Yu {
         ),
         ToolSpec(
             "read_note",
-            "读取「羽」里一篇笔记的全文。id 来自 search_notes 的结果。",
+            "读取「羽」里一篇笔记的全文。id 来自 search_notes 的结果。" +
+                "人物关系网的正文：第一行「【人物关系网 · N 人 · M 条关系】」，下面每人一行「- 名字（身份 · 职业）：备注」，「## 关系」下每条「- 甲 — 乙：关系」。",
             JSONObject().put("type", "object")
                 .put("properties", JSONObject().put("id", JSONObject().put("type", "string").put("description", "笔记 id")))
                 .put("required", JSONArray().put("id")),
