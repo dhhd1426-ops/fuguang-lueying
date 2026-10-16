@@ -206,8 +206,8 @@ fun FuguangApp(prefs: Prefs, fullscreen: Boolean, setFullscreen: (Boolean) -> Un
                         chat = chatState,
                         onHome = { chatOpen = false },
                         onMine = { MineCard.open = true },
-                        onSetup = { chatOpen = false; mineOpen = true; mineNav.screen = "provider/${assistant.activeProvider}" },
-                        onAssistants = { chatOpen = false; mineOpen = true; mineNav.screen = "assistant" },
+                        onSetup = { mineNav.screen = "provider/${assistant.activeProvider}"; MineCard.open = true },
+                        onAssistants = { mineNav.screen = "assistant"; MineCard.open = true },
                         onOpen = { modal = it },
                     )
                 }
@@ -231,7 +231,8 @@ fun FuguangApp(prefs: Prefs, fullscreen: Boolean, setFullscreen: (Boolean) -> Un
         }
 
         // 「我的」卡片：在页面之上、圆钮卡片之下
-        if (!zen) MineCardLayer(onGo = { s -> MineCard.go(); chatOpen = false; mineOpen = true; mineNav.screen = s })
+        if (!zen) MineCardLayer(assistant, mineNav)
+        if (!zen) WeatherCardLayer()
 
         if (!zen) CornerMenuLayer(
             active = when { chatOpen -> 1; mineOpen -> 3; else -> 0 },
@@ -311,6 +312,8 @@ private fun HomePage(
         // 双击画面空白处：进入沉浸，只看画面
         Box(Modifier.weight(1f).fillMaxWidth().pointerInput(Unit) { detectTapGestures(onDoubleTap = { onZen() }) }) {
             Hero(compact, Modifier.align(Alignment.CenterStart))
+            // 时间天气：左下暗处，点开是天气卡片
+            WeatherWidget(now, compact, Modifier.align(Alignment.BottomStart).offset(x = (-10).dp))
         }
     }
 }

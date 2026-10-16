@@ -2,6 +2,19 @@ package com.fuguang.lueying
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.core.VectorConverter
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.wrapContentHeight
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
@@ -62,9 +75,6 @@ object MineCard {
     var open by mutableStateOf(false)
     var full by mutableStateOf(false)
     var from by mutableStateOf(Offset.Unspecified)
-    /** 去二级页：卡片直接淡出，不走「缩回卡片 → 收进头像」。 */
-    var leaving = false
-    fun go() { leaving = true; open = false }
 }
 
 private val arrowOut = Ic("M7 17L17 7M9 7h8v8")
@@ -75,12 +85,21 @@ private val warmInk = Color(0xFF2A211B)
 private val cardFill = Color(0xFF22262F)
 private const val RISE_MS = 570f
 
+/** 页面深度：往深处走新页从右边进，往回走从左边进。 */
+private fun depth(s: String) = when {
+    s == "mine" -> 0
+    s == "assistant" || s == "mcp" -> 1
+    s == "persona" || s.startsWith("mcp/") -> 2
+    s == "providers" -> 3
+    else -> 4
+}
+
 /**
- * 「我的」：从头像长成停在视觉中心（略偏上）的卡片，原路缩回头像；右上角 ↗ 展开成整页，转成 ↙ 再点缩回卡片。
- * 整页时关掉：先缩回卡片，再收进头像。onGo 去助理 / MCP 这些二级页。
+ * 「我的」：从头像长成停在视觉中心（略偏上）的卡片，原路缩回头像。助理、记忆、MCP 这些二级页也在卡片里一页页推进，
+ * 卡片高度跟着走（首页贴内容，二级页 80% 屏高）。右上角 ↗ 随时展开成整页，转成 ↙ 再点缩回；整页时关掉先缩回卡片再收进头像。
  */
 @Composable
-fun MineCardLayer(onGo: (String) -> Unit) {
+fun MineCardLayer(store: AssistantStore, nav: MineNav) {
     val p = remember { Animatable(0f) }
     val f = remember { Animatable(0f) }
     val rise = remember { Animatable(0f) }
@@ -91,25 +110,27 @@ fun MineCardLayer(onGo: (String) -> Unit) {
             launch { rise.snapTo(0f); rise.animateTo(1f, tween(RISE_MS.toInt(), easing = LinearEasing)) }
             p.animateTo(1f, spring(dampingRatio = .7f, stiffness = 380f))
         } else {
-            if (MineCard.leaving) {
-                p.animateTo(0f, tween(160, easing = Curves.accel))
-                f.snapTo(0f); MineCard.full = false; MineCard.leaving = false
-            } else {
-                if (f.value > 0f) { MineCard.full = false; f.animateTo(0f, tween(440, easing = Curves.standard)) }
-                p.animateTo(0f, tween(200, easing = Curves.accel))
-            }
+            if (f.value > 0f) { MineCard.full = false; f.animateTo(0f, tween(440, easing = Curves.standard)) }
+            p.animateTo(0f, tween(200, easing = Curves.accel))
+            nav.screen = "mine"; nav.persona = ""
         }
     }
     LaunchedEffect(MineCard.full) {
         if (MineCard.open) f.animateTo(if (MineCard.full) 1f else 0f, tween(440, easing = Curves.standard))
     }
-    BackHandler(enabled = MineCard.open) { if (MineCard.full) MineCard.full = false else MineCard.open = false }
+    BackHandler(enabled = MineCard.open) {
+        when {
+            MineCard.full -> MineCard.full = false
+            nav.screen != "mine" -> nav.back()
+            else -> MineCard.open = false
+        }
+    }
     if (!MineCard.open && p.value == 0f) return
 
-    val density = LocalDensity.current
     val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     val navBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-    BoxWithConstraints(Modifier.fillMaxSize()) {
+    val density = LocalDensity.current
+    BoxWithConstraints(Modifier.fillMaxSize().imePadding()) {
         val pv = p.value
         val fv = f.value
         Box(
@@ -119,16 +140,24 @@ fun MineCardLayer(onGo: (String) -> Unit) {
                 .pointerInput(Unit) { detectTapGestures { MineCard.open = false } },
         )
         var natH by remember { mutableStateOf(0.dp) }
-        val cardW = min(340.dp, maxWidth - 40.dp)
-        val left0 = (maxWidth - cardW) / 2
-        val top0 = ((maxHeight * .94f - natH) / 2).coerceAtLeast(statusTop + 12.dp)
+        val sub = nav.screen != "mine"
+        val target = if (sub) min(maxHeight * .8f, 760.dp) else natH.coerceAtMost(maxHeight * .8f)
+        val hAnim = remember { Animatable(target, Dp.VectorConverter) }
+        LaunchedEffect(target) {
+            if (p.value < .05f || hAnim.value == 0.dp) hAnim.snapTo(target)
+            else hAnim.animateTo(target, tween(380, easing = Curves.standard))
+        }
+        val cardH = hAnim.value
+        val cardW = min(if (sub) 400.dp else 340.dp, maxWidth - 32.dp)
+        val wAnim by animateDpAsState(cardW, tween(380, easing = Curves.standard), label = "cardW")
+        val left0 = (maxWidth - wAnim) / 2
+        val top0 = ((maxHeight * .94f - cardH) / 2).coerceAtLeast(statusTop + 12.dp)
         val x = lerp(left0, 0.dp, fv)
         val y = lerp(top0, 0.dp, fv)
-        val w = lerp(cardW, maxWidth, fv)
-        val h = lerp(natH, maxHeight, fv)
+        val w = lerp(wAnim, maxWidth, fv)
+        val h = lerp(cardH, maxHeight, fv)
         Box(
-            Modifier.offset(x, y).width(w)
-                .then(if (fv > 0f) Modifier.height(h) else Modifier.onSizeChanged { natH = with(density) { it.height.toDp() } })
+            Modifier.offset(x, y).size(w, h)
                 .graphicsLayer {
                     val s = .16f + .84f * pv
                     scaleX = s; scaleY = s
@@ -144,27 +173,55 @@ fun MineCardLayer(onGo: (String) -> Unit) {
                 .background(cardFill)
                 .pointerInput(Unit) { detectTapGestures { } },
         ) {
-            Column(
-                Modifier.fillMaxWidth()
-                    .then(if (fv > 0f) Modifier.fillMaxSize() else Modifier)
-                    .verticalScroll(rememberScrollState())
-                    .padding(
-                        start = 12.dp, end = 12.dp,
-                        top = lerp(18.dp, statusTop + 22.dp, fv),
-                        bottom = 12.dp + navBottom * fv,
-                    ),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                Column(Modifier.widthIn(max = 560.dp).fillMaxWidth()) {
-                    MineCardBody(fv, rise.value, onGo)
+            val pad = Modifier.fillMaxSize().padding(
+                start = 14.dp, end = 14.dp,
+                top = lerp(18.dp, statusTop + 22.dp, fv),
+                bottom = 12.dp + navBottom * fv,
+            )
+            AnimatedContent(
+                nav.screen,
+                Modifier.fillMaxSize(),
+                transitionSpec = {
+                    val fwd = depth(targetState) >= depth(initialState)
+                    val dx = if (fwd) 1 else -1
+                    (slideInHorizontally(tween(320, easing = Curves.decel)) { dx * it / 9 } + fadeIn(tween(260)))
+                        .togetherWith(slideOutHorizontally(tween(240, easing = Curves.accel)) { -dx * it / 9 } + fadeOut(tween(180)))
+                        .using(SizeTransform(clip = false) { _, _ -> snap() })
+                },
+                contentAlignment = Alignment.TopCenter,
+                label = "minePage",
+            ) { screen ->
+                Box(pad, contentAlignment = Alignment.TopCenter) {
+                    if (screen == "mine") {
+                        Column(
+                            Modifier.widthIn(max = 560.dp).fillMaxWidth()
+                                .wrapContentHeight(Alignment.Top, unbounded = true)
+                                .onSizeChanged { natH = with(density) { it.height.toDp() } + 30.dp },
+                        ) { MineCardBody(rise.value) { nav.screen = it } }
+                    } else {
+                        Column(Modifier.widthIn(max = 720.dp).fillMaxSize()) {
+                            CompositionLocalProvider(LocalTitleEnd provides 36.dp) { MineSub(store, screen, true, 0.dp, nav) }
+                        }
+                    }
                 }
             }
+            // ↗ 钉在右上角，换页也不动
+            PressSurface(
+                { MineCard.full = !MineCard.full },
+                Modifier.align(Alignment.TopEnd).padding(top = lerp(4.dp, statusTop + 8.dp, fv), end = 4.dp).size(44.dp),
+                shape = CircleShape, fill = Color.Transparent, pressScale = .9f,
+                label = if (MineCard.full) "缩回卡片" else "展开成整页",
+            ) {
+                SvgIcon(arrowOut, Page.muted, 17.dp, stroke = 1.5f, modifier = Modifier.align(Alignment.Center).graphicsLayer { rotationZ = 180f * fv })
+            }
         }
+        // 添加记忆的卡片：画在最上层
+        MemoryCardHost()
     }
 }
 
 /** 一项按顺序浮出：开卡后 70ms 起，每项晚 40ms，各走 340ms。 */
-private fun Modifier.rise(i: Int, t: Float) = graphicsLayer {
+internal fun Modifier.mineRise(i: Int, t: Float) = graphicsLayer {
     val k = ((t * RISE_MS - (70 + 40 * i)) / 340f).coerceIn(0f, 1f)
     val e = Curves.decel.transform(k)
     alpha = e
@@ -172,11 +229,11 @@ private fun Modifier.rise(i: Int, t: Float) = graphicsLayer {
 }
 
 @Composable
-private fun MineCardBody(fv: Float, t: Float, onGo: (String) -> Unit) {
+private fun MineCardBody(t: Float, onGo: (String) -> Unit) {
     val me = Memory.userName.trim()
-    Row(Modifier.fillMaxWidth().padding(start = 6.dp, bottom = 14.dp).rise(0, t), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.fillMaxWidth().padding(start = 6.dp, end = 40.dp, bottom = 14.dp).mineRise(0, t), verticalAlignment = Alignment.CenterVertically) {
         Box(
-            Modifier.size(38.dp).graphicsLayer { scaleX = 1f + .15f * fv; scaleY = scaleX }
+            Modifier.size(38.dp)
                 .background(Brush.linearGradient(listOf(warm, Color(0xFFB97F62))), CircleShape),
             contentAlignment = Alignment.Center,
         ) { Txt(me.takeLast(1).ifEmpty { "你" }, warmInk, 16.sp, family = Serif) }
@@ -186,28 +243,20 @@ private fun MineCardBody(fv: Float, t: Float, onGo: (String) -> Unit) {
             Spacer(Modifier.height(2.dp))
             Txt("${me.ifEmpty { "你" }} · 在这台手机上", Page.muted.copy(alpha = .62f), 11.5.sp, maxLines = 1)
         }
-        PressSurface(
-            { MineCard.full = !MineCard.full },
-            Modifier.align(Alignment.Top).offset(x = 6.dp, y = (-14).dp).size(44.dp),
-            shape = CircleShape, fill = Color.Transparent, pressScale = .9f,
-            label = if (MineCard.full) "缩回卡片" else "展开成整页",
-        ) {
-            SvgIcon(arrowOut, Page.muted, 17.dp, stroke = 1.5f, modifier = Modifier.align(Alignment.Center).graphicsLayer { rotationZ = 180f * fv })
-        }
     }
-    CardRow(1, t, "助理", "名字、提示词、记忆", { onGo("assistant") }, glyph = { SvgIcon(person, warm, 19.dp) }) {
+    MineRow(1, t, "助理", "名字、提示词、记忆", { onGo("assistant") }, glyph = { SvgIcon(person, warm, 19.dp) }) {
         PersonaDot(Memory.active, 20.dp)
         Spacer(Modifier.width(6.dp))
         Txt(Memory.active.name, Page.muted, 13.5.sp, Modifier.widthIn(max = 96.dp), maxLines = 1)
         Spacer(Modifier.width(4.dp))
         SvgIcon(chevron, Page.muted.copy(alpha = .6f), 15.dp, stroke = 1.8f)
     }
-    Txt("连接器", Page.muted, 11.sp, Modifier.padding(start = 8.dp, top = 14.dp, bottom = 8.dp).rise(2, t), spacing = ls(2.75f, 11f))
-    YuRow(3, t)
+    Txt("连接器", Page.muted, 11.sp, Modifier.padding(start = 8.dp, top = 14.dp, bottom = 8.dp).mineRise(2, t), spacing = ls(2.75f, 11f))
+    MineYuRow(3, t)
     Spacer(Modifier.height(6.dp))
     val n = Mcp.servers.size
     val on = Mcp.enabled().size
-    CardRow(
+    MineRow(
         4, t, "MCP 服务",
         if (n == 0) "地图、车票、搜索……接上就能用" else Mcp.servers.filter { it.enabled }.joinToString("、") { it.name }.ifEmpty { "都关着" },
         { onGo("mcp") },
@@ -220,65 +269,5 @@ private fun MineCardBody(fv: Float, t: Float, onGo: (String) -> Unit) {
             Spacer(Modifier.width(4.dp))
         }
         SvgIcon(chevron, Page.muted.copy(alpha = .6f), 15.dp, stroke = 1.8f)
-    }
-}
-
-@Composable
-private fun CardRow(
-    i: Int, t: Float, title: String, sub: String, onClick: () -> Unit,
-    glyph: @Composable () -> Unit,
-    trailing: @Composable () -> Unit,
-) {
-    PressSurface(onClick, Modifier.fillMaxWidth().rise(i, t), shape = RoundedCornerShape(16.dp), pressScale = .985f, label = title) {
-        RowBody(title, sub, glyph, trailing)
-    }
-}
-
-@Composable
-private fun RowBody(title: String, sub: String, glyph: @Composable () -> Unit, trailing: @Composable () -> Unit) {
-    Row(
-        Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(horizontal = 12.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(Modifier.size(38.dp).background(rgba(233, 180, 142, .1f), RoundedCornerShape(11.dp)), contentAlignment = Alignment.Center) { glyph() }
-        Spacer(Modifier.width(12.dp))
-        Column(Modifier.weight(1f)) {
-            Txt(title, Page.ink, 15.sp, maxLines = 1)
-            Spacer(Modifier.height(3.dp))
-            Txt(sub, Page.muted, 12.sp, maxLines = 1)
-        }
-        Spacer(Modifier.width(10.dp))
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.End) { trailing() }
-    }
-}
-
-/** 羽：连接会跳到羽那边授权，回来再查一次状态。 */
-@Composable
-private fun YuRow(i: Int, t: Float) {
-    val scope = rememberCoroutineScope()
-    androidx.lifecycle.compose.LifecycleResumeEffect(Unit) {
-        scope.launch { Yu.refresh() }
-        onPauseOrDispose { }
-    }
-    val launcher = androidx.activity.compose.rememberLauncherForActivityResult(
-        androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult(),
-    ) { scope.launch { Yu.refresh() } }
-    val state = Yu.state
-    val sub = when (state) { "on" -> "助理可以查阅 ${Yu.notes} 篇笔记"; "missing" -> "需要先安装羽"; else -> "让助理读取你的笔记" }
-    Box(Modifier.fillMaxWidth().rise(i, t).background(CardBlock, RoundedCornerShape(16.dp))) {
-        RowBody("羽", sub, glyph = { Txt("羽", warm, 17.sp, family = Serif) }) {
-            when (state) {
-                "on" -> {
-                    Box(Modifier.size(6.dp).background(warm, CircleShape))
-                    Spacer(Modifier.width(7.dp))
-                    Txt("已连接", Page.muted, 13.sp)
-                }
-                "missing" -> Txt("未安装", Page.muted, 13.sp)
-                else -> PressSurface(
-                    { runCatching { launcher.launch(Yu.connectIntent()) }.onFailure { scope.launch { Yu.refresh() } } },
-                    fill = warm, pressedFill = warm.copy(alpha = .75f), ripple = warmInk, pressScale = .93f, label = "连接羽",
-                ) { Txt("连接", warmInk, 13.5.sp, Modifier.padding(horizontal = 15.dp, vertical = 8.dp)) }
-            }
-        }
     }
 }

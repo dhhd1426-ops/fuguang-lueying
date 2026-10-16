@@ -126,16 +126,7 @@ fun MinePage(
             val screen = nav.screen
             Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
                 Column(Modifier.widthIn(max = 720.dp).fillMaxWidth()) {
-                    when {
-                        screen == "assistant" -> AssistantScreen(compact, blur, nav)
-                        screen == "persona" -> Memory.get(nav.persona)?.let { PersonaScreen(store, it, compact, blur, nav) } ?: AssistantScreen(compact, blur, nav)
-                        screen == "providers" -> ProvidersScreen(store, compact, blur, nav)
-                        screen.startsWith("provider/") -> ProviderScreen(store, provider(screen.removePrefix("provider/")), compact, blur, nav)
-                        screen == "mcp" -> McpScreen(compact, blur, nav)
-                        screen.startsWith("mcp/") -> McpServerScreen(screen.removePrefix("mcp/"), compact, blur, nav)
-                        // 「我的」本身是聊天侧栏里的卡片（MineCard.kt），退到这一层就回聊天
-                        else -> LaunchedEffect(Unit) { onChat() }
-                    }
+                    if (screen == "mine") LaunchedEffect(Unit) { onChat() } else MineSub(store, screen, compact, blur, nav)
                 }
             }
         }
@@ -144,11 +135,27 @@ fun MinePage(
     }
 }
 
+/** 「我的」的二级页：整页（MinePage）和悬浮卡片（MineCard.kt）都用这一份。 */
+@Composable
+internal fun ColumnScope.MineSub(store: AssistantStore, screen: String, compact: Boolean, blur: Dp, nav: MineNav) {
+    when {
+        screen == "persona" -> Memory.get(nav.persona)?.let { PersonaScreen(store, it, compact, blur, nav) } ?: AssistantScreen(compact, blur, nav)
+        screen == "providers" -> ProvidersScreen(store, compact, blur, nav)
+        screen.startsWith("provider/") -> ProviderScreen(store, provider(screen.removePrefix("provider/")), compact, blur, nav)
+        screen == "mcp" -> McpScreen(compact, blur, nav)
+        screen.startsWith("mcp/") -> McpServerScreen(screen.removePrefix("mcp/"), compact, blur, nav)
+        else -> AssistantScreen(compact, blur, nav)
+    }
+}
+
+/** 页头右边让出的位置：卡片右上角有一颗 ↗。 */
+internal val LocalTitleEnd = androidx.compose.runtime.compositionLocalOf { 0.dp }
+
 /* ---------- 通用小部件 ---------- */
 
 @Composable
 private fun Title(text: String, compact: Boolean, onBack: (() -> Unit)?, trailing: @Composable () -> Unit = {}) {
-    Row(Modifier.fillMaxWidth().padding(bottom = 22.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.fillMaxWidth().padding(bottom = 22.dp, end = LocalTitleEnd.current), verticalAlignment = Alignment.CenterVertically) {
         if (onBack != null) {
             Pressable(onBack, label = "返回") { pressed ->
                 SvgIcon(MineIcons.back, if (pressed) Page.muted else Page.ink, 24.dp, modifier = Modifier.padding(end = 10.dp, top = 4.dp, bottom = 4.dp))
