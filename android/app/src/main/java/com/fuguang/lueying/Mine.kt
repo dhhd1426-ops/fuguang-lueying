@@ -79,7 +79,7 @@ private object MineIcons {
 private val rose = css("#c98a86")
 private val glassFill = rgba(30, 34, 42, .42f)
 
-/** “我的”页内部导航：mine → providers → provider/<id>。由 App 持有，返回键逐级退回。 */
+/** 「我的」卡片点进来的二级页：assistant / mcp → … 由 App 持有，返回键逐级退回，退到 mine 就回聊天。 */
 class MineNav {
     var screen by mutableStateOf("mine")
     /** 正在看的那位助理，和她的哪个标签页。 */
@@ -133,7 +133,8 @@ fun MinePage(
                         screen.startsWith("provider/") -> ProviderScreen(store, provider(screen.removePrefix("provider/")), compact, blur, nav)
                         screen == "mcp" -> McpScreen(compact, blur, nav)
                         screen.startsWith("mcp/") -> McpServerScreen(screen.removePrefix("mcp/"), compact, blur, nav)
-                        else -> MineRoot(store, compact, blur, nav)
+                        // 「我的」本身是聊天侧栏里的卡片（MineCard.kt），退到这一层就回聊天
+                        else -> LaunchedEffect(Unit) { onChat() }
                     }
                 }
             }
@@ -230,119 +231,6 @@ private fun PillButton(text: String, icon: Ic?, primary: Boolean, enabled: Boole
 
 @Composable
 private fun Divider() { Box(Modifier.fillMaxWidth().height(1.dp).background(rgba(255, 255, 255, .08f))) }
-
-/* ---------- 我的（根） ---------- */
-
-@Composable
-private fun ColumnScope.MineRoot(store: AssistantStore, compact: Boolean, blur: Dp, nav: MineNav) {
-    Title("我的", compact, null) { CornerMenuButton(compact) }
-    Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState())) {
-        Pressable({ nav.screen = "assistant" }, Modifier.fillMaxWidth(), label = "助理") { pressed ->
-            Row(
-                Modifier.fillMaxWidth()
-                    .glass(RoundedCornerShape(20.dp), blur, fill = if (pressed) rgba(255, 255, 255, .08f) else glassFill)
-                    .padding(horizontal = 18.dp, vertical = 18.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Txt("助理", Page.ink, 15.sp, Modifier.weight(1f))
-                Txt(Memory.active.name, Page.muted, 13.sp, maxLines = 1)
-                Spacer(Modifier.width(6.dp))
-                SvgIcon(MineIcons.next, Page.muted, 18.dp)
-            }
-        }
-        ConnectorGroup(blur, nav)
-    }
-}
-
-/* ---------- 连接器（方案 2：宋体图标 + 一句说明，状态在右） ---------- */
-
-@Composable
-private fun ConnectorGroup(blur: Dp, nav: MineNav) {
-    val scope = rememberCoroutineScope()
-    // 进来、从别的 App 回来时都查一次：羽那边可能刚断开或刚装上
-    androidx.lifecycle.compose.LifecycleResumeEffect(Unit) {
-        scope.launch { Yu.refresh() }
-        onPauseOrDispose { }
-    }
-    val launcher = androidx.activity.compose.rememberLauncherForActivityResult(
-        androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult(),
-    ) { scope.launch { Yu.refresh() } }
-    val state = Yu.state
-    Txt("连接器", Page.muted, 11.sp, Modifier.padding(start = 6.dp, top = 26.dp, bottom = 10.dp), spacing = ls(2.5f, 11f))
-    Pressable(
-        { if (state == "off") runCatching { launcher.launch(Yu.connectIntent()) }.onFailure { scope.launch { Yu.refresh() } } },
-        Modifier.fillMaxWidth(),
-        label = "羽",
-    ) { pressed ->
-        Row(
-            Modifier.fillMaxWidth()
-                .glass(RoundedCornerShape(20.dp), blur, fill = if (pressed && state == "off") rgba(255, 255, 255, .08f) else glassFill)
-                .padding(horizontal = 16.dp, vertical = 14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Box(
-                Modifier.size(36.dp).background(rgba(233, 180, 142, .16f), RoundedCornerShape(11.dp)),
-                contentAlignment = Alignment.Center,
-            ) { Txt("羽", css("#e9b48e"), 18.sp, family = Serif) }
-            Spacer(Modifier.width(13.dp))
-            Column(Modifier.weight(1f)) {
-                Txt("羽", Page.ink, 15.sp)
-                Spacer(Modifier.height(3.dp))
-                Txt(
-                    when (state) { "on" -> "助理可以查阅 ${Yu.notes} 篇笔记"; "missing" -> "需要先安装羽"; else -> "让助理读取你的笔记" },
-                    Page.muted, 12.5.sp, maxLines = 1,
-                )
-            }
-            Spacer(Modifier.width(10.dp))
-            when (state) {
-                "on" -> Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.size(6.dp).background(css("#e9b48e"), CircleShape))
-                    Spacer(Modifier.width(7.dp))
-                    Txt("已连接", Page.muted, 13.sp)
-                }
-                "missing" -> Txt("未安装", Page.muted, 13.sp)
-                else -> Txt(
-                    "连接", css("#2a211b"), 13.sp,
-                    Modifier.background(rgba(233, 180, 142, if (pressed) .75f else .92f), RoundedCornerShape(50)).padding(horizontal = 15.dp, vertical = 7.dp),
-                )
-            }
-        }
-    }
-    // MCP 服务：和羽并列的一行
-    val n = Mcp.servers.size
-    val on = Mcp.enabled().size
-    Spacer(Modifier.height(10.dp))
-    Pressable({ nav.screen = "mcp" }, Modifier.fillMaxWidth(), label = "MCP 服务") { pressed ->
-        Row(
-            Modifier.fillMaxWidth()
-                .glass(RoundedCornerShape(20.dp), blur, fill = if (pressed) rgba(255, 255, 255, .08f) else glassFill)
-                .padding(horizontal = 16.dp, vertical = 14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Box(Modifier.size(36.dp).background(rgba(233, 180, 142, .16f), RoundedCornerShape(11.dp)), contentAlignment = Alignment.Center) {
-                Txt("M", css("#e9b48e"), 17.sp, family = Serif)
-            }
-            Spacer(Modifier.width(13.dp))
-            Column(Modifier.weight(1f)) {
-                Txt("MCP 服务", Page.ink, 15.sp)
-                Spacer(Modifier.height(3.dp))
-                Txt(
-                    if (n == 0) "地图、车票、搜索……接上就能用"
-                    else Mcp.servers.filter { it.enabled }.joinToString("、") { it.name }.ifEmpty { "都关着" },
-                    Page.muted, 12.5.sp, maxLines = 1,
-                )
-            }
-            Spacer(Modifier.width(10.dp))
-            if (n > 0) Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.size(6.dp).background(if (on > 0) css("#e9b48e") else Page.muted.copy(alpha = .4f), CircleShape))
-                Spacer(Modifier.width(7.dp))
-                Txt("$on 个", Page.muted, 13.sp)
-            }
-            Spacer(Modifier.width(6.dp))
-            SvgIcon(MineIcons.next, Page.muted, 18.dp)
-        }
-    }
-}
 
 /* ---------- 助理（方案 4：先选人，再进她的标签页） ---------- */
 

@@ -142,6 +142,8 @@ fun FuguangApp(prefs: Prefs, fullscreen: Boolean, setFullscreen: (Boolean) -> Un
                 readerOpen -> 9.dp
                 modal == ModalKind.About -> 8.dp
                 modal != null -> if (chatOpen || mineOpen) 18.dp else 4.dp
+                // 新对话还没聊：背景直接露出来；聊起来再虚化
+                chatOpen && chatState.messages.isEmpty() && !chatState.busy -> 0.dp
                 chatOpen || mineOpen -> 18.dp
                 else -> 0.dp
             },
@@ -203,7 +205,7 @@ fun FuguangApp(prefs: Prefs, fullscreen: Boolean, setFullscreen: (Boolean) -> Un
                         store = assistant,
                         chat = chatState,
                         onHome = { chatOpen = false },
-                        onMine = { chatOpen = false; mineOpen = true; mineNav.screen = "mine" },
+                        onMine = { MineCard.open = true },
                         onSetup = { chatOpen = false; mineOpen = true; mineNav.screen = "provider/${assistant.activeProvider}" },
                         onAssistants = { chatOpen = false; mineOpen = true; mineNav.screen = "assistant" },
                         onOpen = { modal = it },
@@ -227,6 +229,9 @@ fun FuguangApp(prefs: Prefs, fullscreen: Boolean, setFullscreen: (Boolean) -> Un
                 }
             }
         }
+
+        // 「我的」卡片：在页面之上、圆钮卡片之下
+        if (!zen) MineCardLayer(onGo = { s -> MineCard.go(); chatOpen = false; mineOpen = true; mineNav.screen = s })
 
         if (!zen) CornerMenuLayer(
             active = when { chatOpen -> 1; mineOpen -> 3; else -> 0 },

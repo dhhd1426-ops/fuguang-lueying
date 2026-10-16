@@ -1,5 +1,7 @@
 package com.fuguang.lueying
 
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -209,9 +211,13 @@ private fun SideFoot(modifier: Modifier, onMine: () -> Unit, onNew: () -> Unit) 
         verticalAlignment = Alignment.CenterVertically,
     ) {
         val me = Memory.userName.trim().let { if (it.isEmpty()) "你" else it.takeLast(1) }
-        Pressable(onMine, label = "我的") { p ->
+        Pressable(onMine, Modifier.onGloballyPositioned { MineCard.from = it.boundsInRoot().center }, label = "我的") { p ->
             Box(
-                Modifier.size(42.dp).background(Brush.linearGradient(listOf(SideWarm, Color(0xFFB97F62))), CircleShape),
+                Modifier.size(42.dp)
+                    .drawBehind {
+                        if (MineCard.open) drawCircle(SideWarm.copy(alpha = .55f), size.minDimension / 2 + 4.5.dp.toPx(), style = androidx.compose.ui.graphics.drawscope.Stroke(1.5.dp.toPx()))
+                    }
+                    .background(Brush.linearGradient(listOf(SideWarm, Color(0xFFB97F62))), CircleShape),
                 contentAlignment = Alignment.Center,
             ) { Txt(me, Color(0xFF2A211B).copy(alpha = if (p) .6f else 1f), 17.sp, family = Serif) }
         }

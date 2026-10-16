@@ -453,7 +453,7 @@ fun ChatPage(
                     onNew = { if (!chat.busy) chat.reset(); menu = false },
                     onWorks = { menu = false; shelf = true },
                     onJournal = { menu = false; onOpen(ModalKind.Journal) },
-                    onMine = { menu = false; onMine() },
+                    onMine = { onMine() },
                     onAssistants = { menu = false; onAssistants() },
                 )
             }
