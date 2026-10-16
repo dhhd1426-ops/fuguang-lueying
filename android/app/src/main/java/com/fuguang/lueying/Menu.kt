@@ -122,7 +122,7 @@ private fun SideMain(
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(start = 10.dp, end = 10.dp, bottom = 96.dp)) {
             val works = remember(Works.version) { Works.list().size }
             SideRow(SideIcons.work, "作品", onWorks) { if (works > 0) Txt(works.toString(), SideFaint, 11.5.sp) }
-            SideRow(SideIcons.pen, "手记", onJournal)
+            SideRow(SideIcons.pen, "手记", onJournal, modifier = Modifier.onGloballyPositioned { NoteCard.from = it.boundsInRoot().center })
             AssistantSwitch(onManage = onAssistants)
             // 一道不碰边的细线
             Box(Modifier.padding(horizontal = 12.dp, vertical = 8.dp).fillMaxWidth().height(1.dp).background(rgba(255, 255, 255, .07f)))
@@ -156,8 +156,8 @@ internal fun SideLabel(text: String) {
 }
 
 @Composable
-internal fun SideRow(icon: Ic, label: String, onClick: () -> Unit, selected: Boolean = false, trailing: @Composable () -> Unit = {}) {
-    Pressable(onClick, Modifier.fillMaxWidth(), label = label) { p ->
+internal fun SideRow(icon: Ic, label: String, onClick: () -> Unit, selected: Boolean = false, modifier: Modifier = Modifier, trailing: @Composable () -> Unit = {}) {
+    Pressable(onClick, modifier.fillMaxWidth(), label = label) { p ->
         Row(
             Modifier.fillMaxWidth()
                 .background(if (selected || p) rgba(255, 255, 255, if (p) .06f else .08f) else Color.Transparent, RoundedCornerShape(14.dp))

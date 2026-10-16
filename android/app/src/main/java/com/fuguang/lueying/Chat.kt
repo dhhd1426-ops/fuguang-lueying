@@ -353,10 +353,8 @@ fun ChatPage(
     hour: Int,
     store: AssistantStore,
     chat: ChatState,
-    onHome: () -> Unit,
     onMine: () -> Unit,
     onSetup: () -> Unit,
-    onOpen: (ModalKind) -> Unit,
     /** 侧栏「管理助理」：去「我的 → 助理」。 */
     onAssistants: () -> Unit = onMine,
 ) {
@@ -461,7 +459,7 @@ fun ChatPage(
                     onOpen = { if (!chat.busy) chat.open(it); menu = false },
                     onNew = { if (!chat.busy) chat.reset(); menu = false },
                     onWorks = { menu = false; shelf = true },
-                    onJournal = { menu = false; onOpen(ModalKind.Journal) },
+                    onJournal = { menu = false; NoteCard.open = true },
                     onMine = { onMine() },
                     onAssistants = { menu = false; onAssistants() },
                 )

@@ -102,40 +102,7 @@ class MineNav {
     }
 }
 
-@Composable
-fun MinePage(
-    compact: Boolean,
-    tiny: Boolean,
-    width: Dp,
-    blur: Dp,
-    store: AssistantStore,
-    nav: MineNav,
-    onHome: () -> Unit,
-    onChat: () -> Unit,
-    onOpen: (ModalKind) -> Unit,
-) {
-    val side = if (compact) (if (tiny) 18.dp else 24.dp) else (width * .052f)
-    Box(Modifier.fillMaxSize().background(rgba(14, 17, 23, .42f))) {
-        Column(
-            Modifier
-                .fillMaxSize()
-                .windowInsetsPadding(WindowInsets.safeDrawing)
-                .imePadding()
-                .padding(start = side, end = side, top = if (compact) 26.dp else 38.dp, bottom = if (compact) 22.dp else 30.dp),
-        ) {
-            val screen = nav.screen
-            Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
-                Column(Modifier.widthIn(max = 720.dp).fillMaxWidth()) {
-                    if (screen == "mine") LaunchedEffect(Unit) { onChat() } else MineSub(store, screen, compact, blur, nav)
-                }
-            }
-        }
-        // 添加记忆的卡片：画在整页最上层
-        MemoryCardHost()
-    }
-}
-
-/** 「我的」的二级页：整页（MinePage）和悬浮卡片（MineCard.kt）都用这一份。 */
+/** 「我的」卡片（MineCard.kt）里的二级页。 */
 @Composable
 internal fun ColumnScope.MineSub(store: AssistantStore, screen: String, compact: Boolean, blur: Dp, nav: MineNav) {
     when {
