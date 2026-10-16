@@ -44,7 +44,7 @@ import androidx.compose.ui.unit.sp
 
 /**
  * 右上角圆钮（底栏收进来了，方案四）：点开从钮里长出一张小卡片——
- * 上面四个页面，下面暗度、虚化、只看画面；点空白或选完缩回钮里。
+ * 上面主页 / 聊天 / 手记（「我的」在聊天侧栏底部的头像里），下面暗度、虚化、只看画面；点空白或选完缩回钮里。
  * 主页、聊天、我的三页都放同一颗钮，卡片画在 App 最上层。
  */
 object CornerMenu {
@@ -76,9 +76,10 @@ fun CornerMenuButton(compact: Boolean) {
     }
 }
 
-private val PAGES = listOf("主页", "聊天", "手记", "我的")
+/** 「我的」不在这里：从聊天侧栏底部的头像进。 */
+private val PAGES = listOf("主页", "聊天", "手记")
 
-/** 卡片本体。active：现在在第几页（0 主页、1 聊天、3 我的）。 */
+/** 卡片本体。active：现在在第几页（0 主页、1 聊天；在「我的」时不点亮任何一项）。 */
 @Composable
 fun CornerMenuLayer(active: Int, dim: Int, blur: Int, onDim: (Int) -> Unit, onBlur: (Int) -> Unit, onGo: (Int) -> Unit, onZen: () -> Unit) {
     val open = CornerMenu.open
@@ -109,7 +110,7 @@ fun CornerMenuLayer(active: Int, dim: Int, blur: Int, onDim: (Int) -> Unit, onBl
             var n = 0
             // 卡片里的项依次浮出
             fun Modifier.rise(): Modifier { val k = n++; return this.graphicsLayer { val v = ((t - .2f - k * .05f) / .4f).coerceIn(0f, 1f); alpha = v; translationY = (1f - v) * (-4).dp.toPx() } }
-            val notes = listOf("浮光", "和 ${Memory.active.name} 说话", "写下此刻", "助理 · 供应商")
+            val notes = listOf("浮光", "和 ${Memory.active.name} 说话", "写下此刻")
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 PAGES.forEachIndexed { i, label ->
                     MenuRow(label, notes[i], i == active, Modifier.rise()) { close(); onGo(i) }
