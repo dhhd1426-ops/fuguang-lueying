@@ -119,19 +119,25 @@ fun WorkViewer(id: String?, onClose: () -> Unit) {
     val v = Works.version
     val w = remember(cur, v) { Works.get(cur) }
     val html = remember(cur, v) { Works.html(cur) }
-    var loaded by remember(cur, v) { mutableStateOf(false) }
+    // 加载状态和页面里的报错：WebView 回调直接改这两个，不跟着 remember 重建（否则回调还拿着旧的那份）
+    val loaded = remember { mutableStateOf(false) }
+    val problem = remember { mutableStateOf("") }
     var web by remember { mutableStateOf<WebView?>(null) }
     val ctx = LocalContext.current
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val lift = with(density) { 80.dp.toPx() }
 
+    // 注意：WebView 不能放在带透明度的 graphicsLayer 里，有的机型会整页画不出来。
+    // 所以进出场的透明和上移只加在底色和顶栏上，WebView 用它自己的 alpha / translationY。
     Box(
         Modifier.fillMaxSize()
-            .graphicsLayer { alpha = shown; translationY = (1f - shown) * 80.dp.toPx() }
-            .background(css("#121519"))
+            .background(css("#121519").copy(alpha = shown))
             .pointerInput(Unit) { detectTapGestures { } },
     ) {
         Column(Modifier.fillMaxSize()) {
             Row(
-                Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.statusBars).padding(horizontal = 10.dp, vertical = 6.dp),
+                Modifier.fillMaxWidth().graphicsLayer { alpha = shown; translationY = (1f - shown) * lift }
+                    .windowInsetsPadding(WindowInsets.statusBars).padding(horizontal = 10.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Pressable(onClose, label = "关闭") { p -> SvgIcon(WorkIcons.close, Page.ink.copy(alpha = if (p) 1f else .82f), 22.dp, modifier = Modifier.padding(10.dp)) }
@@ -150,8 +156,19 @@ fun WorkViewer(id: String?, onClose: () -> Unit) {
                                 settings.domStorageEnabled = true
                                 settings.mediaPlaybackRequiresUserGesture = false
                                 settings.allowFileAccess = false
+                                // 页面里的 JS 报错记下来，显示在底部，方便排查
+                                webChromeClient = object : android.webkit.WebChromeClient() {
+                                    override fun onConsoleMessage(m: android.webkit.ConsoleMessage?): Boolean {
+                                        if (m != null && m.messageLevel() == android.webkit.ConsoleMessage.MessageLevel.ERROR && problem.value.isEmpty())
+                                            problem.value = m.message().take(160) + (if (m.lineNumber() > 0) "（第 ${m.lineNumber()} 行）" else "")
+                                        return true
+                                    }
+                                }
                                 webViewClient = object : WebViewClient() {
-                                    override fun onPageFinished(view: WebView?, url: String?) { loaded = true }
+                                    override fun onPageFinished(view: WebView?, url: String?) { loaded.value = true }
+                                    override fun onReceivedError(view: WebView?, req: WebResourceRequest?, err: android.webkit.WebResourceError?) {
+                                        if (req?.isForMainFrame == false && problem.value.isEmpty()) problem.value = "有个文件没加载上：" + req.url.toString().take(120)
+                                    }
                                     override fun shouldOverrideUrlLoading(view: WebView?, req: WebResourceRequest?): Boolean {
                                         val u = req?.url ?: return false
                                         // 页内跳转留在页里；点到外面的链接交给浏览器
@@ -166,12 +183,20 @@ fun WorkViewer(id: String?, onClose: () -> Unit) {
                         },
                         update = { wv ->
                             val key = "$cur#$v"
-                            if (wv.tag != key) { wv.tag = key; loaded = false; wv.loadDataWithBaseURL("https://$BASE_HOST/", html, "text/html", "utf-8", null) }
+                            wv.alpha = shown
+                            wv.translationY = (1f - shown) * lift
+                            if (wv.tag != key) { wv.tag = key; loaded.value = false; problem.value = ""; wv.loadDataWithBaseURL("https://$BASE_HOST/", html, "text/html", "utf-8", null) }
                         },
                         onRelease = { it.stopLoading(); it.destroy(); web = null },
                         modifier = Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.navigationBars),
                     )
-                    val fade by animateFloatAsState(if (loaded) 0f else 1f, tween(220), label = "load")
+                    if (problem.value.isNotEmpty()) Txt(
+                        "页面报错：" + problem.value, css("#d79a94"), 12.sp,
+                        Modifier.align(Alignment.BottomCenter).windowInsetsPadding(WindowInsets.navigationBars).padding(16.dp)
+                            .background(rgba(20, 23, 29, .92f), RoundedCornerShape(10.dp)).padding(horizontal = 12.dp, vertical = 8.dp),
+                        lineHeight = 18.sp, maxLines = 4,
+                    )
+                    val fade by animateFloatAsState(if (loaded.value) 0f else 1f, tween(220), label = "load")
                     if (fade > 0f) Box(Modifier.fillMaxSize().alpha(fade).background(css("#121519")), contentAlignment = Alignment.Center) { Spinner() }
                 }
             }
