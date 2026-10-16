@@ -137,7 +137,6 @@ fun MinePage(
                     }
                 }
             }
-            if (screen == "mine") BottomNav(compact, active = "我的", onHome = onHome, onChat = onChat, onMine = {}, onOpen = onOpen)
         }
         // 添加记忆的卡片：画在整页最上层
         MemoryCardHost()
@@ -236,7 +235,7 @@ private fun Divider() { Box(Modifier.fillMaxWidth().height(1.dp).background(rgba
 
 @Composable
 private fun ColumnScope.MineRoot(store: AssistantStore, compact: Boolean, blur: Dp, nav: MineNav) {
-    Title("我的", compact, null)
+    Title("我的", compact, null) { CornerMenuButton(compact) }
     Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState())) {
         Pressable({ nav.screen = "assistant" }, Modifier.fillMaxWidth(), label = "助理") { pressed ->
             Row(

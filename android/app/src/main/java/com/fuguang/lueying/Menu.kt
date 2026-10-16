@@ -1,30 +1,32 @@
 package com.fuguang.lueying
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -32,178 +34,114 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.CompositingStrategy
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-private val Panel = Color(0xFF14171D)
-private val Warm = Color(0xFFE9B48E)
-private val Sel = Color(0x24E9B48E)
-private val Faint = Color(0xFF5F5C59)
-private val Dim = Color(0xFF8E8984)
+internal val SidePanel = Color(0xFF14171D)
+internal val SideWarm = Color(0xFFE9B48E)
+internal val SideFaint = rgba(250, 245, 238, .34f)
+internal val SideInk = rgba(250, 245, 238, .86f)
+
+/** 侧栏里用到的小图标。 */
+internal object SideIcons {
+    val search = Ic("M20 20l-4.2-4.2", circles = listOf(floatArrayOf(11f, 11f, 6.5f)))
+    val chat = Ic("M5 5.5h14v10H10l-4 3v-3H5Z")
+    val work = Ic("M12.5 12.5h7.5v7.5h-7.5Z", circles = listOf(floatArrayOf(9f, 9f, 5f)))
+    val pen = Ic("M13.5 6.5l4 4M5 19l1-4.5L15.5 5a1.5 1.5 0 0 1 2 0l1.5 1.5a1.5 1.5 0 0 1 0 2L9.5 18z")
+    val swap = Ic("M3.5 19c.8-3.2 3-5 5.5-5s4.7 1.8 5.5 5M16 6.5h5M19 4l2 2.5-2 2.5M21 15h-5M18 12.5l-2 2.5 2 2.5", circles = listOf(floatArrayOf(9f, 8.5f, 3.2f)))
+    val next = Ic("M9.5 6l6 6-6 6")
+    val back = Ic("M14.5 6l-6 6 6 6")
+    val plus = Ic("M12 5v14M5 12h14")
+}
+
+/** 这段对话的图标：置顶是四角星，做过作品是作品图标，其余是对话气泡。 */
+internal fun convIcon(c: Conv): Ic = when {
+    c.pinned -> Icons.spark
+    c.msgs.any { it.works.isNotEmpty() } -> SideIcons.work
+    else -> SideIcons.chat
+}
 
 /**
- * 左侧菜单里的对话记录（定稿：4 + 2，滑动用 2 + 3）：
- * 浮光标识 → 置顶小签 → 按日分组的时光轴（日期吸顶、竖线随滑动点亮、上下边缘渐隐）→ 新对话。
- * 长按一条对话：置顶 / 删除。
+ * 聊天页左侧栏（照 Claude App）：标题 + 搜索 → 作品 / 手记 / 切换助理 → 已置顶 → 最近对话 → 查看全部；
+ * 底下左边是你的头像（去「我的」），右边「新对话」。长按一条对话：置顶 / 删除。
  */
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun HistoryMenu(history: ConvStore, current: String?, onOpen: (Conv) -> Unit, onNew: () -> Unit) {
-    val days = history.days()
-    val pinned = history.all.filter { it.pinned }
-    var editing by remember { mutableStateOf<String?>(null) }
-    val list = rememberLazyListState()
-
-    // 每个列表项属于第几组（标题也算），用来决定竖线点亮到哪
-    val groupOf = remember(days) {
-        buildList { days.forEachIndexed { g, (_, cs) -> add(g); repeat(cs.size) { add(g) } } }
+fun HistoryMenu(
+    history: ConvStore,
+    current: String?,
+    busy: Boolean,
+    onOpen: (Conv) -> Unit,
+    onNew: () -> Unit,
+    onWorks: () -> Unit,
+    onJournal: () -> Unit,
+    onMine: () -> Unit,
+    onAssistants: () -> Unit,
+) {
+    var all by remember { mutableStateOf(false) }
+    androidx.activity.compose.BackHandler(enabled = all) { all = false }
+    Box(Modifier.fillMaxSize()) {
+        AnimatedContent(
+            all,
+            transitionSpec = {
+                if (targetState) (slideInHorizontally(tween(340, easing = Curves.standard)) { it } + fadeIn(tween(240))) togetherWith
+                    (slideOutHorizontally(tween(340, easing = Curves.standard)) { -it / 4 } + fadeOut(tween(200)))
+                else (slideInHorizontally(tween(340, easing = Curves.standard)) { -it / 4 } + fadeIn(tween(240))) togetherWith
+                    (slideOutHorizontally(tween(340, easing = Curves.standard)) { it } + fadeOut(tween(200)))
+            },
+            label = "side",
+        ) { showAll ->
+            if (showAll) AllConvs(history, current, busy, onBack = { all = false }, onOpen = onOpen)
+            else SideMain(history, current, busy, onSearch = { all = true }, onOpen, onNew, onWorks, onJournal, onAssistants)
+        }
+        SideFoot(Modifier.align(Alignment.BottomCenter), onMine, onNew)
     }
-    val litGroup by remember(groupOf) { derivedStateOf { groupOf.getOrElse(list.firstVisibleItemIndex) { 0 } } }
+}
 
-    Column(Modifier.fillMaxSize().padding(start = 18.dp, end = 18.dp, top = 30.dp, bottom = 18.dp)) {
-        Row(Modifier.padding(start = 6.dp, bottom = 18.dp), verticalAlignment = Alignment.CenterVertically) {
-            SvgIcon(Icons.spark, Warm, 20.dp, stroke = 1.1f)
+@Composable
+private fun SideMain(
+    history: ConvStore, current: String?, busy: Boolean, onSearch: () -> Unit, onOpen: (Conv) -> Unit, onNew: () -> Unit,
+    onWorks: () -> Unit, onJournal: () -> Unit, onAssistants: () -> Unit,
+) {
+    val pinned = history.all.filter { it.pinned }
+    val recent = history.all.filter { !it.pinned }.sortedByDescending { it.updated }.take(7)
+    var editing by remember { mutableStateOf<String?>(null) }
+    Column(Modifier.fillMaxSize().padding(top = 22.dp)) {
+        Row(Modifier.fillMaxWidth().padding(start = 22.dp, end = 12.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            SvgIcon(Icons.spark, SideWarm, 20.dp, stroke = 1.1f)
             Spacer(Modifier.width(8.dp))
-            Txt("浮光", Page.ink, 20.sp, spacing = ls(6f, 20f), family = Serif)
-        }
-        if (pinned.isNotEmpty()) {
-            Row(Modifier.horizontalScroll(rememberScrollState()).padding(bottom = 14.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                pinned.forEach { c ->
-                    Pressable({ onOpen(c) }, label = c.title) { pressed ->
-                        Row(
-                            Modifier.background(rgba(255, 255, 255, if (pressed) .1f else .055f), RoundedCornerShape(50)).padding(horizontal = 12.dp, vertical = 7.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Txt("✦", Warm, 11.sp)
-                            Spacer(Modifier.width(5.dp))
-                            Txt(firstSentence(c.title, 8), Page.ink.copy(alpha = .8f), 12.sp, maxLines = 1)
-                        }
-                    }
-                }
+            Txt("浮光", Page.ink, 20.sp, Modifier.weight(1f), spacing = ls(6f, 20f), family = Serif)
+            Pressable(onSearch, label = "搜索对话") { p ->
+                SvgIcon(SideIcons.search, if (p) Page.ink else SideInk, 21.dp, stroke = 1.5f, modifier = Modifier.padding(8.dp))
             }
         }
-
-        if (days.isEmpty()) {
-            Box(Modifier.weight(1f).fillMaxWidth().padding(top = 30.dp), contentAlignment = Alignment.TopCenter) {
-                Txt("还没有对话", Dim, 13.sp)
+        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(start = 10.dp, end = 10.dp, bottom = 96.dp)) {
+            val works = remember(Works.version) { Works.list().size }
+            SideRow(SideIcons.work, "作品", onWorks) { if (works > 0) Txt(works.toString(), SideFaint, 11.5.sp) }
+            SideRow(SideIcons.pen, "手记", onJournal)
+            AssistantSwitch(onManage = onAssistants)
+            // 一道不碰边的细线
+            Box(Modifier.padding(horizontal = 12.dp, vertical = 8.dp).fillMaxWidth().height(1.dp).background(rgba(255, 255, 255, .07f)))
+            if (history.all.isEmpty()) {
+                Txt("还没有对话。点下面「新对话」开始。", SideFaint, 13.sp, Modifier.padding(horizontal = 12.dp, vertical = 16.dp), lineHeight = 22.sp)
             }
-        } else {
-            LazyColumn(
-                state = list,
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-                    // 上下边缘渐隐：能往上滑时上沿淡出，能往下滑时下沿淡出
-                    .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
-                    .drawWithContent {
-                        drawContent()
-                        val h = size.height
-                        val top = if (list.canScrollBackward) 40.dp.toPx() / h else 0f
-                        val bot = if (list.canScrollForward) 52.dp.toPx() / h else 0f
-                        drawRect(
-                            Brush.verticalGradient(
-                                0f to (if (top > 0f) Color.Transparent else Color.Black),
-                                top to Color.Black,
-                                (1f - bot) to Color.Black,
-                                1f to (if (bot > 0f) Color.Transparent else Color.Black),
-                            ),
-                            blendMode = BlendMode.DstIn,
-                        )
-                    },
-            ) {
-                days.forEachIndexed { g, (label, convs) ->
-                    val lit = g <= litGroup
-                    val lastGroup = g == days.lastIndex
-                    stickyHeader(key = "h$label") {
-                        Row(Modifier.fillMaxWidth().background(Panel).padding(top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Box(Modifier.width(22.dp), contentAlignment = Alignment.Center) {
-                                if (g == 0 || lit) Box(Modifier.size(15.dp).background(Warm.copy(alpha = if (lit) .16f else 0f), CircleShape))
-                                Box(Modifier.size(7.dp).background(if (lit) Warm else Color(0xFF2A2D33), CircleShape))
-                            }
-                            Spacer(Modifier.width(6.dp))
-                            Txt(label, if (lit) Page.ink.copy(alpha = .7f) else Dim, 12.sp, spacing = ls(1f, 12f), family = Serif)
-                        }
-                    }
-                    convs.forEachIndexed { k, c ->
-                        val tailOfAll = lastGroup && k == convs.lastIndex
-                        item(key = c.id) {
-                            Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
-                                // 时光轴竖线：经过的日期变成暖色
-                                Box(
-                                    Modifier.width(22.dp).fillMaxHeight().drawBehind {
-                                        val x = size.width / 2
-                                        val end = if (tailOfAll) size.height * .5f else size.height
-                                        drawLine(if (lit) Warm.copy(alpha = .55f) else Color.White.copy(alpha = .1f), Offset(x, 0f), Offset(x, end), 1.dp.toPx())
-                                    },
-                                )
-                                Spacer(Modifier.width(6.dp))
-                                Column(Modifier.weight(1f).padding(bottom = 4.dp)) {
-                                    val on = c.id == current
-                                    Column(
-                                        Modifier
-                                            .fillMaxWidth()
-                                            .background(if (on) Sel else Color.Transparent, RoundedCornerShape(12.dp))
-                                            .combinedClickable(
-                                                interactionSource = remember { MutableInteractionSource() },
-                                                indication = null,
-                                                onClick = { editing = null; onOpen(c) },
-                                                onLongClick = { editing = if (editing == c.id) null else c.id },
-                                            )
-                                            .padding(horizontal = 10.dp, vertical = 8.dp),
-                                    ) {
-                                        Row(verticalAlignment = Alignment.Top) {
-                                            Txt(c.title.ifBlank { "新对话" }, if (on) Page.ink else Page.ink.copy(alpha = .78f), 14.5.sp, Modifier.weight(1f), maxLines = 1)
-                                            Spacer(Modifier.width(8.dp))
-                                            Txt(if (c.pinned) "✦" else ConvStore.clock(c.updated), if (c.pinned) Warm else Faint, 10.5.sp, Modifier.padding(top = 3.dp))
-                                        }
-                                        val pv = c.preview
-                                        if (pv.isNotEmpty()) {
-                                            Spacer(Modifier.height(3.dp))
-                                            Txt(pv, if (on) Dim else Faint, 11.5.sp, maxLines = 1)
-                                        }
-                                    }
-                                    if (editing == c.id) {
-                                        Row(Modifier.padding(start = 8.dp, top = 4.dp, bottom = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                            MenuAction(if (c.pinned) "取消置顶" else "置顶") { history.togglePin(c.id); editing = null }
-                                            MenuAction("删除", danger = true) {
-                                                history.delete(c.id); editing = null
-                                                if (c.id == current) onNew()
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    if (!lastGroup) item(key = "gap$label") {
-                        Box(Modifier.fillMaxWidth().height(10.dp)) {
-                            Box(Modifier.width(22.dp).fillMaxHeight().drawBehind {
-                                drawLine(if (g < litGroup) Warm.copy(alpha = .55f) else Color.White.copy(alpha = .1f), Offset(size.width / 2, 0f), Offset(size.width / 2, size.height), 1.dp.toPx())
-                            })
-                        }
-                    }
-                }
-                item { Spacer(Modifier.height(24.dp)) }
+            if (pinned.isNotEmpty()) {
+                SideLabel("已置顶")
+                pinned.forEach { c -> ConvLine(c, c.id == current, busy && c.id == current, editing == c.id, history, onOpen, { editing = if (editing == c.id) null else c.id }) { if (c.id == current) onNew() } }
             }
-        }
-
-        Row(Modifier.fillMaxWidth().padding(top = 10.dp), horizontalArrangement = Arrangement.End) {
-            Pressable(onNew, label = "新对话") { pressed ->
-                Row(
-                    Modifier.background(rgba(255, 255, 255, if (pressed) .1f else .055f), RoundedCornerShape(50)).padding(horizontal = 16.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    SvgIcon(Ic("M12 5v14M5 12h14"), Page.ink, 15.dp)
-                    Spacer(Modifier.width(6.dp))
-                    Txt("新对话", Page.ink, 13.sp, weight = FontWeight.Medium)
+            if (recent.isNotEmpty()) {
+                SideLabel("最近对话")
+                recent.forEach { c -> ConvLine(c, c.id == current, busy && c.id == current, editing == c.id, history, onOpen, { editing = if (editing == c.id) null else c.id }) { if (c.id == current) onNew() } }
+            }
+            if (history.all.isNotEmpty()) {
+                Pressable(onSearch, label = "查看全部对话") { p ->
+                    Row(Modifier.padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Txt("查看全部", if (p) Page.ink else Page.muted, 13.5.sp)
+                        Spacer(Modifier.width(4.dp))
+                        SvgIcon(SideIcons.next, Page.muted, 13.dp, stroke = 1.8f)
+                    }
                 }
             }
         }
@@ -211,7 +149,88 @@ fun HistoryMenu(history: ConvStore, current: String?, onOpen: (Conv) -> Unit, on
 }
 
 @Composable
-private fun MenuAction(text: String, danger: Boolean = false, onClick: () -> Unit) {
+internal fun SideLabel(text: String) {
+    Txt(text, SideFaint, 12.5.sp, Modifier.padding(start = 12.dp, top = 14.dp, bottom = 6.dp), spacing = ls(1f, 12.5f))
+}
+
+@Composable
+internal fun SideRow(icon: Ic, label: String, onClick: () -> Unit, selected: Boolean = false, trailing: @Composable () -> Unit = {}) {
+    Pressable(onClick, Modifier.fillMaxWidth(), label = label) { p ->
+        Row(
+            Modifier.fillMaxWidth()
+                .background(if (selected || p) rgba(255, 255, 255, if (p) .06f else .08f) else Color.Transparent, RoundedCornerShape(14.dp))
+                .padding(horizontal = 12.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            SvgIcon(icon, Page.muted, 20.dp, stroke = 1.4f)
+            Spacer(Modifier.width(14.dp))
+            Txt(label, SideInk, 15.sp, Modifier.weight(1f), maxLines = 1)
+            trailing()
+        }
+    }
+}
+
+/** 一条对话：一行字，前面图标；正在看的是淡杏色块，她还在回答的带一颗小橙点。长按出「置顶 / 删除」。 */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+internal fun ConvLine(
+    c: Conv, on: Boolean, live: Boolean, editing: Boolean, history: ConvStore,
+    onOpen: (Conv) -> Unit, onLong: () -> Unit, onDeletedCurrent: () -> Unit,
+) {
+    Column {
+        Row(
+            Modifier.fillMaxWidth()
+                .background(if (on) SideWarm.copy(alpha = .13f) else Color.Transparent, RoundedCornerShape(12.dp))
+                .combinedClickable(remember { MutableInteractionSource() }, null, onClick = { onOpen(c) }, onLongClick = onLong)
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            SvgIcon(convIcon(c), if (on) SideWarm else SideFaint, 17.dp, stroke = 1.4f)
+            Spacer(Modifier.width(12.dp))
+            Txt(c.title.ifBlank { "新对话" }, if (on) Page.ink else SideInk, 14.5.sp, Modifier.weight(1f), maxLines = 1)
+            if (live) Box(Modifier.padding(start = 8.dp).size(6.dp).background(Color(0xFFD97757), CircleShape))
+        }
+        if (editing) {
+            Row(Modifier.padding(start = 40.dp, top = 2.dp, bottom = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                MenuAction(if (c.pinned) "取消置顶" else "置顶") { history.togglePin(c.id); onLong() }
+                MenuAction("删除", danger = true) { history.delete(c.id); onLong(); onDeletedCurrent() }
+            }
+        }
+    }
+}
+
+/** 底部：左边你的头像（去「我的」），右边「新对话」；后面一层渐暗托着，列表从它下面滑过。 */
+@Composable
+private fun SideFoot(modifier: Modifier, onMine: () -> Unit, onNew: () -> Unit) {
+    Row(
+        modifier.fillMaxWidth()
+            .drawBehind { drawRect(Brush.verticalGradient(0f to Color.Transparent, .45f to SidePanel, 1f to SidePanel)) }
+            .padding(start = 16.dp, end = 14.dp, top = 30.dp, bottom = 16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        val me = Memory.userName.trim().let { if (it.isEmpty()) "你" else it.takeLast(1) }
+        Pressable(onMine, label = "我的") { p ->
+            Box(
+                Modifier.size(42.dp).background(Brush.linearGradient(listOf(SideWarm, Color(0xFFB97F62))), CircleShape),
+                contentAlignment = Alignment.Center,
+            ) { Txt(me, Color(0xFF2A211B).copy(alpha = if (p) .6f else 1f), 17.sp, family = Serif) }
+        }
+        Spacer(Modifier.weight(1f))
+        Pressable(onNew, label = "新对话") { p ->
+            Row(
+                Modifier.background(Page.ink.copy(alpha = if (p) .8f else 1f), RoundedCornerShape(50)).padding(horizontal = 18.dp, vertical = 11.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                SvgIcon(SideIcons.plus, Color(0xFF1B1A1A), 15.dp, stroke = 2f)
+                Spacer(Modifier.width(8.dp))
+                Txt("新对话", Color(0xFF1B1A1A), 14.5.sp, weight = FontWeight.Medium)
+            }
+        }
+    }
+}
+
+@Composable
+internal fun MenuAction(text: String, danger: Boolean = false, onClick: () -> Unit) {
     Pressable(onClick, label = text) { pressed ->
         Txt(
             text, if (danger) Color(0xFFD79A94) else Page.ink, 12.sp,

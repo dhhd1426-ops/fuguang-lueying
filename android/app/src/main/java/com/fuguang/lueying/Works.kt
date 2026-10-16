@@ -36,6 +36,9 @@ object Works {
         Work(id, o.optString("title"), o.optString("kind", "page"), o.optLong("updated"))
     }.getOrNull()
 
+    /** 做过的所有作品，新的在前。 */
+    fun list(): List<Work> = dir?.listFiles { f -> f.name.endsWith(".json") }?.mapNotNull { get(it.name.removeSuffix(".json")) }?.sortedByDescending { it.updated }.orEmpty()
+
     fun source(id: String): JSONObject? = runCatching { JSONObject(src(id)!!.readText()) }.getOrNull()
 
     fun html(id: String): String? = runCatching { htmlFile(id)!!.readText() }.getOrNull()

@@ -348,6 +348,8 @@ fun ChatPage(
     onMine: () -> Unit,
     onSetup: () -> Unit,
     onOpen: (ModalKind) -> Unit,
+    /** 侧栏「管理助理」：去「我的 → 助理」。 */
+    onAssistants: () -> Unit = onMine,
 ) {
     val side = if (compact) (if (tiny) 18.dp else 24.dp) else (width * .052f)
     val scope = rememberCoroutineScope()
@@ -379,6 +381,9 @@ fun ChatPage(
     var viewing by remember { mutableStateOf<String?>(null) }
     // 正在全屏看的作品
     var workOpen by remember { mutableStateOf<String?>(null) }
+    // 侧栏「作品」：所有做过的作品
+    var shelf by remember { mutableStateOf(false) }
+    androidx.activity.compose.BackHandler(enabled = shelf) { shelf = false }
     // 长按菜单、选择文字、小提示
     var press by remember { mutableStateOf<MsgPress?>(null) }
     var selectText by remember { mutableStateOf<String?>(null) }
@@ -395,7 +400,7 @@ fun ChatPage(
         if (menu) 1f else 0f, tween(320, easing = androidx.compose.animation.core.CubicBezierEasing(.2f, .8f, .2f, 1f)), label = "menu",
     )
     val density = LocalDensity.current
-    val menuW = min(width.value * .6f, 340f).dp
+    val menuW = min(width.value * .86f, 340f).dp
     val menuPx = with(density) { menuW.toPx() }
     Box(Modifier.fillMaxSize().background(rgba(14, 17, 23, .38f))) {
       Box(Modifier.fillMaxSize()) {
@@ -406,7 +411,7 @@ fun ChatPage(
                 .imePadding()
                 .padding(start = side, end = side, top = if (compact) 26.dp else 38.dp, bottom = if (compact) 22.dp else 30.dp),
         ) {
-            ChatHeader(compact, title, subtitle, onMenu = { menu = true }) { chat.reset() }
+            ChatHeader(compact, onMenu = { menu = true })
             Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                 if (chat.messages.isEmpty() && !chat.busy) Hello(compact, hour)
                 else Conversation(chat, store, compact, flight, onSetup = onSetup, onRetry = { chat.retry(scope, store) }, onThink = { thinkOf = it; thinkOpen = true }, onImage = { viewing = it }, onWork = { workOpen = it },
@@ -424,7 +429,6 @@ fun ChatPage(
                     modifier = Modifier.widthIn(max = 720.dp).fillMaxWidth(),
                 )
             }
-            BottomNav(compact, active = "聊天", onHome = onHome, onChat = {}, onMine = onMine, onOpen = onOpen)
         }
         SendFlightLayer(flight)
         if (menuT > 0f) {
@@ -444,9 +448,13 @@ fun ChatPage(
                     .windowInsetsPadding(WindowInsets.safeDrawing),
             ) {
                 HistoryMenu(
-                    chat.history, chat.convId,
+                    chat.history, chat.convId, chat.busy,
                     onOpen = { if (!chat.busy) chat.open(it); menu = false },
-                    onNew = { chat.reset(); menu = false },
+                    onNew = { if (!chat.busy) chat.reset(); menu = false },
+                    onWorks = { menu = false; shelf = true },
+                    onJournal = { menu = false; onOpen(ModalKind.Journal) },
+                    onMine = { menu = false; onMine() },
+                    onAssistants = { menu = false; onAssistants() },
                 )
             }
         }
@@ -460,6 +468,7 @@ fun ChatPage(
             live = liveThink && chat.busy && (chat.partial.isEmpty() || chat.liveSteps.any { !it.done }),
             onClose = { thinkOpen = false },
         )
+        WorksShelf(shelf, onClose = { shelf = false }) { shelf = false; workOpen = it }
         NoteImageViewer(viewing) { viewing = null }
         WorkViewer(workOpen, onClose = { workOpen = null }, onFix = { msg ->
             // 关掉作品页，把问题当作一条消息发给她，她自己读原稿改
@@ -521,14 +530,13 @@ fun ChatPage(
 }
 
 @Composable
-private fun ChatHeader(compact: Boolean, title: String, subtitle: String, onMenu: () -> Unit, onNew: () -> Unit) {
+private fun ChatHeader(compact: Boolean, onMenu: () -> Unit) {
+    // 左：侧栏（对话、作品、手记、切换助理、新对话）；右：和主页同一颗菜单钮
     Box(Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
-        Pressable(onMenu, Modifier.align(Alignment.CenterStart), label = "菜单") { pressed ->
+        Pressable(onMenu, Modifier.align(Alignment.CenterStart), label = "对话和助理") { pressed ->
             SvgIcon(Ic("M4 6.5h15M4 12h10M4 17.5h13"), if (pressed) Page.ink else Page.ink.copy(alpha = .85f), 22.dp, modifier = Modifier.padding(6.dp))
         }
-        Pressable(onNew, Modifier.align(Alignment.CenterEnd), label = "新对话") { pressed ->
-            SvgIcon(ChatIcons.newChat, if (pressed) Page.ink else Page.ink.copy(alpha = .85f), 22.dp, modifier = Modifier.padding(6.dp))
-        }
+        Box(Modifier.align(Alignment.CenterEnd)) { CornerMenuButton(compact) }
     }
 }
 

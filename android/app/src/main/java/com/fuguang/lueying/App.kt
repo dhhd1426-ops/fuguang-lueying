@@ -205,6 +205,7 @@ fun FuguangApp(prefs: Prefs, fullscreen: Boolean, setFullscreen: (Boolean) -> Un
                         onHome = { chatOpen = false },
                         onMine = { chatOpen = false; mineOpen = true; mineNav.screen = "mine" },
                         onSetup = { chatOpen = false; mineOpen = true; mineNav.screen = "provider/${assistant.activeProvider}" },
+                        onAssistants = { chatOpen = false; mineOpen = true; mineNav.screen = "assistant" },
                         onOpen = { modal = it },
                     )
                 }
@@ -226,6 +227,22 @@ fun FuguangApp(prefs: Prefs, fullscreen: Boolean, setFullscreen: (Boolean) -> Un
                 }
             }
         }
+
+        if (!zen) CornerMenuLayer(
+            active = when { chatOpen -> 1; mineOpen -> 3; else -> 0 },
+            dim = dim, blur = blur,
+            onDim = { dim = it; prefs.dim = it },
+            onBlur = { blur = it; prefs.blur = it },
+            onGo = { i ->
+                when (i) {
+                    0 -> { modal = null; readerOpen = false; lettersOpen = false; letterIndex = null; chatOpen = false; mineOpen = false }
+                    1 -> { chatOpen = true; mineOpen = false }
+                    2 -> modal = ModalKind.Journal
+                    else -> { mineOpen = true; chatOpen = false; mineNav.screen = "mine" }
+                }
+            },
+            onZen = { zen = true },
+        )
 
         CompositionLocalProvider(LocalPalette provides palette) {
             ThemeReveal(light = light) { reveal ->
@@ -289,16 +306,7 @@ private fun HomePage(
         // 双击画面空白处：进入沉浸，只看画面
         Box(Modifier.weight(1f).fillMaxWidth().pointerInput(Unit) { detectTapGestures(onDoubleTap = { onZen() }) }) {
             Hero(compact, Modifier.align(Alignment.CenterStart))
-            if (!compact) {
-                VerticalLabel("LIGHT / WIND / A QUIET MOMENT", Modifier.align(Alignment.CenterEnd))
-            }
-            // 时间：不用卡片，竖排宋体直接写在画面上（方案二·一：子正二刻）
-            ShichenClock(
-                now, compact,
-                Modifier.align(Alignment.BottomEnd).padding(end = if (compact) 0.dp else 40.dp, bottom = if (compact) 4.dp else 10.dp),
-            )
         }
-        BottomNav(compact, active = "主页", onHome = onHome, onChat = onChat, onMine = onMine, onOpen = onOpen)
     }
 }
 
@@ -315,18 +323,6 @@ private fun Header(
     onHome: () -> Unit,
 ) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Pressable(onHome, label = "浮光首页") {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                SvgIcon(Icons.spark, Page.ink, if (compact) 26.dp else 32.dp, stroke = 1f)
-                Spacer(Modifier.width(if (compact) 8.dp else 13.dp))
-                Column {
-                    val bs = if (compact) 18f else 21f
-                    Txt("浮光掠影", Page.ink, bs.sp, spacing = ls(if (tiny) 2f else if (compact) 3f else 6f, bs), maxLines = 1)
-                    Spacer(Modifier.height(5.dp))
-                    Txt("FUGUANG · LUEYING", Page.muted, 8.sp, spacing = ls(if (compact) 2.5f else 4f, 8f), maxLines = 1)
-                }
-            }
-        }
         Spacer(Modifier.weight(1f))
         val gap = if (tiny) 14.dp else if (compact) 22.dp else 38.dp
         Row(horizontalArrangement = Arrangement.spacedBy(gap), verticalAlignment = Alignment.CenterVertically) {
@@ -341,17 +337,8 @@ private fun Header(
             Txt(date, Page.muted, 10.sp, spacing = ls(2f, 10f))
         }
         Spacer(Modifier.width(if (tiny) 10.dp else if (compact) 18.dp else 26.dp))
-        val round = if (compact) 35.dp else 42.dp
-        Pressable({ onOpen(ModalKind.Settings) }, label = "显示设置") { pressed ->
-            Box(
-                Modifier
-                    .size(round)
-                    .clip(CircleShape)
-                    .background(rgba(255, 255, 255, if (pressed) .12f else .04f))
-                    .border(1.dp, Page.line, CircleShape),
-                contentAlignment = Alignment.Center,
-            ) { SvgIcon(Icons.settings, Page.ink) }
-        }
+        // 底栏收进这颗钮里：点开长出页面和显示设置
+        CornerMenuButton(compact)
     }
 }
 
@@ -409,172 +396,6 @@ private fun Hero(compact: Boolean, modifier: Modifier) {
     }
 }
 
-/* ---------- 主页时间：竖排时辰（方案二·一） ---------- */
-
-private val BRANCH = "子丑寅卯辰巳午未申酉戌亥"
-private val STEM = "甲乙丙丁戊己庚辛壬癸"
-private val CN_DIGIT = "〇一二三四五六七八九"
-
-/** 1–31 写成中文：十、十二、二十、三十一。 */
-private fun cnNum(n: Int): String = when {
-    n < 10 -> CN_DIGIT[n].toString()
-    n == 10 -> "十"
-    n < 20 -> "十" + CN_DIGIT[n % 10]
-    else -> CN_DIGIT[n / 10] + "十" + (if (n % 10 == 0) "" else CN_DIGIT[n % 10].toString())
-}
-
-/** 古时报时：子正二刻。时辰两小时一个，前一小时为「初」，后一小时为「正」；一刻十五分钟。 */
-private fun shichen(h: Int, m: Int): Pair<String, String> {
-    val branch = BRANCH[((h + 1) / 2) % 12]
-    val half = if (h % 2 == 1) "初" else "正"
-    val ke = listOf("初刻", "一刻", "二刻", "三刻")[m / 15]
-    return "$branch$half" to ke
-}
-
-/** 干支纪年：以立春（约 2 月 4 日）为界。 */
-private fun ganzhiYear(y: Int, mon: Int, d: Int): String {
-    val yy = if (mon < 2 || (mon == 2 && d < 4)) y - 1 else y
-    return "" + STEM[((yy - 4) % 10 + 10) % 10] + BRANCH[((yy - 4) % 12 + 12) % 12] + "年"
-}
-
-/** 一列竖排的字。 */
-@Composable
-private fun VColumn(text: String, color: Color, size: Float, step: Dp, gap: Dp = 0.dp) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        text.forEach { ch ->
-            if (ch == ' ') Spacer(Modifier.height(gap))
-            else Box(Modifier.height(step), contentAlignment = Alignment.Center) { Txt(ch.toString(), color, size.sp, family = Serif, maxLines = 1) }
-        }
-    }
-}
-
-@Composable
-private fun ShichenClock(now: Date, compact: Boolean, modifier: Modifier) {
-    val c = java.util.Calendar.getInstance().apply { time = now }
-    val (big, ke) = shichen(c.get(java.util.Calendar.HOUR_OF_DAY), c.get(java.util.Calendar.MINUTE))
-    val mon = c.get(java.util.Calendar.MONTH) + 1
-    val day = c.get(java.util.Calendar.DAY_OF_MONTH)
-    val week = "星期" + "日一二三四五六"[c.get(java.util.Calendar.DAY_OF_WEEK) - 1]
-    val date = ganzhiYear(c.get(java.util.Calendar.YEAR), mon, day) + " " + cnNum(mon) + "月" + cnNum(day) + "日 " + week
-    val bigSz = if (compact) 40f else 58f
-    val bigStep = if (compact) 52.dp else 74.dp
-    val keSz = if (compact) 22f else 30f
-    val keStep = if (compact) 30.dp else 40.dp
-    val dateSz = if (compact) 11f else 13f
-    val dateStep = if (compact) 16.dp else 19.dp
-    Row(
-        modifier
-            // 字背后一层没有边的淡暗，亮处也看得清
-            .drawBehind {
-                drawRect(
-                    androidx.compose.ui.graphics.Brush.radialGradient(
-                        listOf(rgba(8, 10, 14, .42f), Color.Transparent),
-                        center = Offset(size.width * .6f, size.height * .5f),
-                        radius = size.maxDimension * .9f,
-                    ),
-                    topLeft = Offset(-size.width, -size.height * .3f),
-                    size = androidx.compose.ui.geometry.Size(size.width * 3f, size.height * 1.6f),
-                )
-            }
-            .semantics(mergeDescendants = true) { contentDescription = "$big$ke，$date" },
-        verticalAlignment = Alignment.Top,
-    ) {
-        VColumn(date, rgba(236, 226, 214, .62f), dateSz, dateStep, gap = if (compact) 8.dp else 10.dp)
-        Spacer(Modifier.width(if (compact) 14.dp else 22.dp))
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            VColumn(big, Page.ink, bigSz, bigStep)
-            Spacer(Modifier.height(if (compact) 8.dp else 12.dp))
-            Box(Modifier.width(1.dp).height(if (compact) 22.dp else 30.dp).background(css("#e9b48e").copy(alpha = .85f)))
-            Spacer(Modifier.height(if (compact) 8.dp else 12.dp))
-            VColumn(ke, rgba(242, 236, 230, .92f), keSz, keStep)
-        }
-    }
-}
-
-/** 底部导航（方案二·潮线刻度）：没有框和分隔线，底下一层渐暗托住；
- *  选中项上方一道杏色短线，换页时从上一个标签像潮水一样涌过去（先拉长再收回）。 */
-private object NavTick { var last = 0 }
-private val NAV = listOf("主页", "聊天", "手记", "我的")
-
-@Composable
-fun BottomNav(compact: Boolean, active: String, onHome: () -> Unit, onChat: () -> Unit, onMine: () -> Unit, onOpen: (ModalKind) -> Unit) {
-    val idx = NAV.indexOf(active).coerceAtLeast(0)
-    val pos = remember { androidx.compose.animation.core.Animatable(NavTick.last.toFloat()) }
-    val stretch = remember { androidx.compose.animation.core.Animatable(0f) }
-    LaunchedEffect(idx) {
-        if (pos.value != idx.toFloat()) {
-            launch {
-                stretch.animateTo(1f, androidx.compose.animation.core.tween(220))
-                stretch.animateTo(0f, androidx.compose.animation.core.tween(320))
-            }
-            pos.animateTo(idx.toFloat(), androidx.compose.animation.core.spring(dampingRatio = .74f, stiffness = 300f))
-        }
-        NavTick.last = idx
-    }
-    Box(
-        Modifier
-            .fillMaxWidth()
-            .padding(top = if (compact) 14.dp else 20.dp)
-            // 渐暗托底：比自己大一圈，往上淡出，没有边
-            .drawBehind {
-                val ext = 400.dp.toPx()
-                drawRect(
-                    androidx.compose.ui.graphics.Brush.verticalGradient(
-                        0f to Color.Transparent, .55f to rgba(6, 8, 12, .38f), 1f to rgba(6, 8, 12, .55f),
-                        startY = -70.dp.toPx(), endY = size.height + 60.dp.toPx(),
-                    ),
-                    topLeft = Offset(-ext, -70.dp.toPx()),
-                    size = androidx.compose.ui.geometry.Size(size.width + 2 * ext, size.height + 130.dp.toPx()),
-                )
-            },
-        contentAlignment = Alignment.Center,
-    ) {
-        var rowW by remember { mutableStateOf(0f) }
-        Box(Modifier.widthIn(max = 560.dp).fillMaxWidth().onSizeChanged { rowW = it.width.toFloat() }) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                val item = Modifier.weight(1f)
-                BottomNavItem("主页", idx == 0, compact, item, onHome)
-                BottomNavItem("聊天", idx == 1, compact, item, onChat)
-                BottomNavItem("手记", idx == 2, compact, item) { onOpen(ModalKind.Journal) }
-                BottomNavItem("我的", idx == 3, compact, item, onMine)
-            }
-            // 杏色潮线
-            val d = LocalDensity.current
-            Box(
-                Modifier
-                    .graphicsLayer {
-                        val itemW = rowW / NAV.size
-                        val w = with(d) { (18.dp + 30.dp * stretch.value).toPx() }
-                        translationX = (pos.value + .5f) * itemW - w / 2
-                        scaleX = w / with(d) { 18.dp.toPx() }
-                        transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, .5f)
-                    }
-                    .padding(top = 8.dp)
-                    .width(18.dp).height(2.dp)
-                    .background(Page.accent, RoundedCornerShape(1.dp)),
-            )
-        }
-    }
-}
-
-@Composable
-private fun BottomNavItem(label: String, active: Boolean, compact: Boolean, modifier: Modifier, onClick: () -> Unit) {
-    Pressable(onClick, modifier, label = label) { pressed ->
-        Column(Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            // 没选中的：上方一颗很淡的小点，像刻度
-            Box(Modifier.size(3.dp).background(if (active) Color.Transparent else rgba(255, 255, 255, .18f), CircleShape))
-            Spacer(Modifier.height(if (compact) 12.dp else 14.dp))
-            val fs = if (compact) 13f else 14f
-            val k by androidx.compose.animation.core.animateFloatAsState(if (active) 1f else 0f, androidx.compose.animation.core.tween(300), label = "navInk")
-            Txt(
-                label, androidx.compose.ui.graphics.lerp(Page.muted, Page.ink, if (pressed) 1f else k), fs.sp,
-                Modifier.graphicsLayer { val sc = 1f + .08f * k; scaleX = sc; scaleY = sc },
-                spacing = ls(if (compact) 3f else 4f, fs), family = Serif, maxLines = 1,
-            )
-        }
-    }
-}
-
 @Composable
 private fun ShowUiButton(blur: Dp, onClick: () -> Unit) {
     Pressable(onClick, Modifier.navigationBarsPadding().padding(bottom = 25.dp), label = "显示界面") { pressed ->
@@ -587,22 +408,6 @@ private fun ShowUiButton(blur: Dp, onClick: () -> Unit) {
             SvgIcon(Icons.eye, Page.ink)
             Spacer(Modifier.width(10.dp))
             Txt("显示界面", Page.ink, 12.sp)
-        }
-    }
-}
-
-/** writing-mode: vertical-rl 的竖排小字。 */
-@Composable
-private fun VerticalLabel(text: String, modifier: Modifier) {
-    Layout(
-        content = { Txt(text, rgba(255, 255, 255, .4f), 9.sp, spacing = ls(4f, 9f), maxLines = 1) },
-        modifier = modifier,
-    ) { measurables, constraints ->
-        val p = measurables.first().measure(constraints.copy(minWidth = 0, minHeight = 0, maxWidth = 2000))
-        layout(p.height, p.width) {
-            p.placeWithLayer(-(p.width - p.height) / 2, (p.width - p.height) / 2) {
-                rotationZ = 90f
-            }
         }
     }
 }
