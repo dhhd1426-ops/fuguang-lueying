@@ -267,7 +267,12 @@ class Tools(
     val specs: List<ToolSpec>,
     val run: suspend (String, JSONObject) -> ToolOut,
     val onUse: suspend (String) -> Unit,
+    /** 每做完一步工具问一声：你在她做事时又发来的话（没有就是 null），她接着做时一起看到。 */
+    val inbox: suspend () -> String? = { null },
 )
+
+/** 做事中途收到的话，放进工具结果后面给她看。 */
+private fun midTurn(q: String) = "（你在做事的时候，对方又发来：）\n$q\n\n（把这句一起考虑进去，接着做。）"
 
 /** 工具结果：文字，加上要给模型看的图片。 */
 class ToolOut(val text: String, val images: List<ToolImage> = emptyList())
@@ -333,7 +338,8 @@ object ChatApi {
         if (!anthropic) msgs.put(JSONObject().put("role", "system").put("content", system))
         // DeepSeek 思考模式下带工具：以前每一轮的思考都要原样带回去，不然会 400
         val echo = p.id == "deepseek" && tools != null && level != 0
-        history.forEach {
+        // 做事中途收到新消息时，那一段回复可能没有正文：空的不带，免得供应商报错
+        history.filter { !(it.role == "assistant" && it.text.isBlank()) }.forEach {
             val m = JSONObject().put("role", it.role).put("content", it.text)
             if (echo && it.role == "assistant" && it.think.isNotEmpty()) m.put("reasoning_content", it.think)
             msgs.put(m)
@@ -357,6 +363,7 @@ object ChatApi {
                     }
                     results.put(JSONObject().put("type", "tool_result").put("tool_use_id", call.id).put("content", content))
                 }
+                tools.inbox()?.let { results.put(JSONObject().put("type", "text").put("text", midTurn(it))) }
                 msgs.put(JSONObject().put("role", "user").put("content", results))
             } else {
                 val tc = JSONArray()
@@ -386,6 +393,7 @@ object ChatApi {
                     for (k in 0 until pics.length()) content.put(pics.get(k))
                     msgs.put(JSONObject().put("role", "user").put("content", content))
                 }
+                tools.inbox()?.let { msgs.put(JSONObject().put("role", "user").put("content", midTurn(it))) }
             }
         }
     }

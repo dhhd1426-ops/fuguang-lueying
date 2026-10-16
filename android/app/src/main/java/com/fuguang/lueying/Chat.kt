@@ -115,6 +115,10 @@ class ChatState(val history: ConvStore) {
     var thinking by mutableStateOf(false)
     /** 正在进行的这轮思考原文。 */
     var thinkText by mutableStateOf("")
+    /** 她在做事时你发的话：先排在聊天末尾，她做完手上一步就收到；这轮结束还没收到就接着发。 */
+    val queue = mutableStateListOf<String>()
+    /** 点了「立即发送」：停下这轮后马上把排着的发出去。 */
+    private var sendNowAfterStop = false
     /** 这轮用过 / 正在用的工具，和思考段落排在同一条时间线上。 */
     val liveSteps = mutableStateListOf<ToolStep>()
     /** 这轮回答里读到的羽的笔记图片。 */
@@ -131,7 +135,7 @@ class ChatState(val history: ConvStore) {
 
     fun reset() {
         job?.cancel(); job = null
-        messages.clear(); partial = ""; shown = 0f; busy = false; thinking = false; thinkText = ""; error = null; needsSetup = false
+        messages.clear(); queue.clear(); partial = ""; shown = 0f; busy = false; thinking = false; thinkText = ""; error = null; needsSetup = false
         convId = null
     }
 
@@ -158,7 +162,9 @@ class ChatState(val history: ConvStore) {
     /** 发出输入框里的话；编辑重发时，先删掉那条及之后的内容。返回新消息的序号，没发出去是 -1。 */
     fun send(scope: CoroutineScope, store: AssistantStore): Int {
         val text = draft.trim()
-        if (text.isEmpty() || busy || (full && editing < 0)) return -1
+        if (text.isEmpty() || (full && editing < 0)) return -1
+        // 她还在做：排在末尾，不打断她
+        if (busy) { draft = ""; editing = -1; queue.add(text); return -1 }
         draft = ""
         error = null; needsSetup = false
         if (editing in messages.indices) while (messages.size > editing) messages.removeAt(messages.lastIndex)
@@ -245,6 +251,7 @@ class ChatState(val history: ConvStore) {
                             }
                         },
                         { },
+                        inbox = { takeQueue() },
                     ) else null,
                     fallback = if (specs.isNotEmpty()) ({
                         listOfNotNull(
@@ -271,13 +278,45 @@ class ChatState(val history: ConvStore) {
                 if (partial.isNotBlank() || pendingWorks.isNotEmpty()) messages.add(ChatMsg("assistant", partial.trim(), thinkText, pendingImgs.toList(), works = pendingWorks.toList(), steps = doneSteps()))
                 error = e.message ?: "出错了"
             } finally {
+                val stopped = job?.isCancelled == true
                 partial = ""; shown = 0f; busy = false; thinking = false; thinkText = ""; pendingImgs.clear(); pendingWorks.clear(); liveSteps.clear()
                 persist()
+                // 这轮结束还有排着的话：接着发（你自己点停止的不发，出错的也不发，留着等你）
+                val go = sendNowAfterStop || (!stopped && error == null)
+                sendNowAfterStop = false
+                if (go && queue.isNotEmpty()) scope.launch { flushQueue(scope, store) }
             }
         }
     }
 
     fun stop() { job?.cancel() }
+
+    /** 「立即发送」：她在做就先停下（写好的留着），然后马上发。 */
+    fun sendNow(scope: CoroutineScope, store: AssistantStore) {
+        if (busy) { sendNowAfterStop = true; stop() } else flushQueue(scope, store)
+    }
+
+    /** 把排着的几句合成一条发出去。 */
+    private fun flushQueue(scope: CoroutineScope, store: AssistantStore) {
+        if (queue.isEmpty() || busy || full) return
+        val text = queue.joinToString("\n"); queue.clear()
+        error = null; needsSetup = false
+        messages.add(ChatMsg("user", text))
+        persist(); sent++
+        ask(scope, store)
+    }
+
+    /** 做完一步工具时收排着的话：这一段先收成一条回复，你的话进对话，她接着做。 */
+    private fun takeQueue(): String? {
+        if (queue.isEmpty()) return null
+        val q = queue.joinToString("\n"); queue.clear()
+        if (partial.isNotBlank() || pendingWorks.isNotEmpty() || thinkText.isNotBlank() || liveSteps.isNotEmpty())
+            messages.add(ChatMsg("assistant", partial.trim(), thinkText, pendingImgs.toList(), works = pendingWorks.toList(), steps = doneSteps()))
+        messages.add(ChatMsg("user", q))
+        partial = ""; shown = 0f; thinkText = ""; liveSteps.clear(); pendingImgs.clear(); pendingWorks.clear()
+        persist(); sent++
+        return q
+    }
 
     /** 存进消息的工具步骤：中途停下的也算用过。 */
     private fun doneSteps() = liveSteps.map { if (it.done) it else it.copy(title = it.title.removePrefix("正在"), done = true) }
@@ -576,6 +615,7 @@ private fun Conversation(
                     NoteImageRow(chat.pendingImgs.toList(), onImage)
                     WorkCards(chat.pendingWorks.toList(), onWork)
                 }
+                if (chat.queue.isNotEmpty()) QueuedBubbles(chat, compact) { chat.sendNow(scope, store) }
                 chat.error?.let { err ->
                     Column(Modifier.padding(top = 6.dp, start = 2.dp)) {
                         Txt(err, css("#d79a94"), 13.sp, lineHeight = 21.sp)
@@ -607,7 +647,7 @@ private fun Conversation(
 }
 
 @Composable
-private fun UserBubble(text: String, compact: Boolean, modifier: Modifier = Modifier) {
+fun UserBubble(text: String, compact: Boolean, modifier: Modifier = Modifier) {
     Box(
         modifier.widthIn(max = if (compact) 300.dp else 460.dp)
             .background(rgba(255, 255, 255, .08f), RoundedCornerShape(18.dp))
@@ -714,7 +754,8 @@ private fun ChatInput(
     val shape = RoundedCornerShape(22.dp)
     val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
     val focus = androidx.compose.ui.platform.LocalFocusManager.current
-    val canSend = chat.draft.isNotBlank() && !chat.busy && (!chat.full || chat.editing >= 0)
+    // 她在做时也能发：有字就是 ↑（排在末尾），没字才是 ■
+    val canSend = chat.draft.isNotBlank() && (!chat.full || chat.editing >= 0)
     // 方案 2：开始打字，发送球从输入框里拉出来；删空了再被吸回去
     val t by androidx.compose.animation.core.animateFloatAsState(
         if (canSend) 1f else 0f,
@@ -815,12 +856,12 @@ private fun ChatInput(
         }
         // 杏色的液体球（带黏连），画在输入框外层
         Box(Modifier.matchParentSize()) { SendGoo(t, pulse.value, pressed, inset, sep, ball) }
-        val icon = when { chat.busy -> ChatIcons.stop; canSend -> ChatIcons.up; else -> ChatIcons.wave }
+        val icon = when { canSend -> ChatIcons.up; chat.busy -> ChatIcons.stop; else -> ChatIcons.wave }
         Pressable(
-            { if (chat.busy) onStop() else if (canSend) { onSend(); keyboard?.hide(); focus.clearFocus() } },
+            { if (canSend) { onSend(); if (!chat.busy) { keyboard?.hide(); focus.clearFocus() } } else if (chat.busy) onStop() },
             Modifier.align(Alignment.BottomEnd).offset(x = -inset * (1f - t), y = -inset)
                 .onGloballyPositioned { flight.from = it.boundsInRoot().center },
-            label = when { chat.busy -> "停止"; canSend -> "发送"; else -> "语音" },
+            label = when { canSend -> "发送"; chat.busy -> "停止"; else -> "语音" },
         ) { p ->
             LaunchedEffect(p) { pressed = p }
             Box(Modifier.size(ball).graphicsLayer { scaleX = pulse.value; scaleY = pulse.value }, contentAlignment = Alignment.Center) {
