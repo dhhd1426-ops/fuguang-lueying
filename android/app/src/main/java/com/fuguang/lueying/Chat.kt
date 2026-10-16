@@ -52,6 +52,8 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.drawOutline
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -295,7 +297,6 @@ fun ChatPage(
     onHome: () -> Unit,
     onMine: () -> Unit,
     onSetup: () -> Unit,
-    onMoreModels: () -> Unit,
     onOpen: (ModalKind) -> Unit,
 ) {
     val side = if (compact) (if (tiny) 18.dp else 24.dp) else (width * .052f)
@@ -400,7 +401,7 @@ fun ChatPage(
             }
         }
         LiquidPlusLayer(plus) { /* 照片、拍照、文件：入口先放好，功能后面接 */ }
-        ModelDrawer(picker, store, compact, onClose = { picker = false }, onMore = { picker = false; onMoreModels() })
+        ModelDrawer(picker, store, compact, onClose = { picker = false })
         val liveThink = thinkOf < 0 || thinkOf >= chat.messages.size
         ThinkDrawer(
             open = thinkOpen,
@@ -823,13 +824,31 @@ private fun ChatInput(
 
 /* ---------------- 选择模型抽屉（方案 1：无边框，选中项淡暖色块） ---------------- */
 
+/**
+ * 「更多模型」不再跳到「我的」，而是从按钮里长出一张浮动小卡片（ProviderCard.kt）。
+ * 卡片开着时抽屉压暗；在卡片里选了模型，卡片和抽屉一起沉下去。
+ */
 @Composable
-private fun ModelDrawer(open: Boolean, store: AssistantStore, compact: Boolean, onClose: () -> Unit, onMore: () -> Unit) {
+private fun ModelDrawer(open: Boolean, store: AssistantStore, compact: Boolean, onClose: () -> Unit) {
     val shown by androidx.compose.animation.core.animateFloatAsState(
         if (open) 1f else 0f, tween(if (open) 320 else 220, easing = androidx.compose.animation.core.CubicBezierEasing(.2f, .8f, .2f, 1f)), label = "drawer",
     )
-    if (shown <= 0f) return
-    Box(Modifier.fillMaxSize()) {
+    val card = remember { ProviderCardState() }
+    var host by remember { mutableStateOf<androidx.compose.ui.layout.LayoutCoordinates?>(null) }
+    var moreAt by remember { mutableStateOf<androidx.compose.ui.layout.LayoutCoordinates?>(null) }
+    var anchor by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
+    val dim by androidx.compose.animation.core.animateFloatAsState(if (card.open || card.sink) 1f else 0f, tween(260), label = "dim")
+    androidx.activity.compose.BackHandler(enabled = card.open) { if (card.pid != null) card.back(store) else card.dismiss(store) }
+    LaunchedEffect(open) { if (!open && card.open) card.dismiss(store) }
+    LaunchedEffect(card.note) { if (card.note != null) { kotlinx.coroutines.delay(2200); card.note = null } }
+    fun openCard() {
+        val h = host; val m = moreAt
+        if (h != null && m != null && m.isAttached) anchor = h.localBoundingBoxOf(m)
+        card.show()
+    }
+    if (shown <= 0f && !card.open && !card.sink) return
+    val sheet = RoundedCornerShape(topStart = 26.dp, topEnd = 26.dp)
+    Box(Modifier.fillMaxSize().onGloballyPositioned { host = it }) {
         // 暗幕：点空白处收起
         Box(
             Modifier.fillMaxSize().alpha(shown).background(rgba(6, 9, 14, .5f))
@@ -841,7 +860,11 @@ private fun ModelDrawer(open: Boolean, store: AssistantStore, compact: Boolean, 
                 Modifier
                     .widthIn(max = 560.dp).fillMaxWidth()
                     .graphicsLayer { translationY = (1f - shown) * h.toPx() * .6f; alpha = shown }
-                    .background(rgba(20, 24, 31, .97f), RoundedCornerShape(topStart = 26.dp, topEnd = 26.dp))
+                    .drawWithContent {
+                        drawContent()
+                        if (dim > 0f) drawOutline(sheet.createOutline(size, layoutDirection, this), rgba(0, 0, 0, .4f * dim))
+                    }
+                    .background(rgba(20, 24, 31, .97f), sheet)
                     .pointerInput(Unit) { detectTapGestures { } }
                     .windowInsetsPadding(WindowInsets.safeDrawing.only(androidx.compose.foundation.layout.WindowInsetsSides.Bottom))
                     .heightIn(max = h * .78f)
@@ -860,7 +883,7 @@ private fun ModelDrawer(open: Boolean, store: AssistantStore, compact: Boolean, 
                 val ready = store.ready()
                 if (ready.isEmpty()) {
                     Spacer(Modifier.height(8.dp))
-                    DrawerRow("还没有可用的模型", selected = false, dim = true) { onMore() }
+                    DrawerRow("还没有可用的模型", selected = false, dim = true) { openCard() }
                 }
                 ready.forEach { p ->
                     val c = store.config(p.id)
@@ -873,16 +896,25 @@ private fun ModelDrawer(open: Boolean, store: AssistantStore, compact: Boolean, 
                 Spacer(Modifier.height(16.dp))
                 // 深度思考六档：液体色块，可点可拖
                 ThinkSegment(store.thinkLevel, store.activeProvider) { store.setThink(it) }
+                val note = card.note
+                val noteA by androidx.compose.animation.core.animateFloatAsState(if (note != null) 1f else 0f, tween(200), label = "note")
+                if (noteA > 0f) Txt(note ?: "", Page.accent, 12.sp, Modifier.fillMaxWidth().padding(top = 10.dp).alpha(noteA), align = androidx.compose.ui.text.style.TextAlign.Center)
                 Spacer(Modifier.height(10.dp))
-                Pressable(onMore, Modifier.align(Alignment.CenterHorizontally), label = "更多模型") { pressed ->
-                    Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Txt("更多模型", if (pressed) Page.ink else Page.muted, 13.sp)
-                        Spacer(Modifier.width(4.dp))
-                        SvgIcon(Ic("M9.5 6l6 6-6 6"), Page.muted, 14.dp)
+                Box(Modifier.align(Alignment.CenterHorizontally).onGloballyPositioned { moreAt = it }) {
+                    PressSurface(
+                        { openCard() }, shape = RoundedCornerShape(50),
+                        fill = if (card.open) rgba(255, 255, 255, .09f) else Color.Transparent, label = "更多模型",
+                    ) {
+                        Row(Modifier.padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Txt("更多模型", if (card.open) Page.ink else Page.muted, 13.sp)
+                            Spacer(Modifier.width(4.dp))
+                            SvgIcon(Ic("M9.5 6l6 6-6 6"), Page.muted, 14.dp)
+                        }
                     }
                 }
             }
         }
+        ProviderCardLayer(card, store, anchor) { card.sink = true; card.open = false; onClose() }
     }
 }
 

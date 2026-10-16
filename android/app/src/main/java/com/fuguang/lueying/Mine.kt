@@ -1071,7 +1071,7 @@ private fun ColumnScope.ProvidersScreen(store: AssistantStore, compact: Boolean,
         Field(q, { q = it }, "搜索供应商", modifier = Modifier.padding(bottom = 16.dp))
     }
     Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        PROVIDERS.filter { q.isBlank() || it.name.contains(q.trim(), ignoreCase = true) }.forEach { p ->
+        store.ordered().filter { q.isBlank() || it.name.contains(q.trim(), ignoreCase = true) }.forEach { p ->
             val c = store.config(p.id)
             Pressable({ nav.screen = "provider/${p.id}" }, Modifier.fillMaxWidth(), label = p.name) { pressed ->
                 Row(

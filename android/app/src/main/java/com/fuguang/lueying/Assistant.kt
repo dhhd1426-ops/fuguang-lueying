@@ -1,6 +1,7 @@
 package com.fuguang.lueying
 
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -67,6 +68,8 @@ class AssistantStore(private val prefs: Prefs) {
     val configs = mutableStateMapOf<String, ProviderConfig>()
     /** 最近一次查到的余额，只在本次打开 App 期间显示。 */
     val balances = mutableStateMapOf<String, String>()
+    /** 供应商的排列顺序（长按拖动调整），存的是 id。 */
+    val order = mutableStateListOf<String>().apply { addAll(PROVIDERS.map { it.id }) }
 
     init {
         PROVIDERS.forEach { configs[it.id] = ProviderConfig.default(it) }
@@ -77,6 +80,10 @@ class AssistantStore(private val prefs: Prefs) {
             activeProvider = o.optString("provider", "deepseek")
             activeModel = o.optString("model", "deepseek-flash")
             thinkLevel = if (o.has("level")) o.optInt("level", 0).coerceIn(0, 5) else if (o.optBoolean("think", false)) 3 else 0
+            o.optJSONArray("order")?.let { a ->
+                val saved = List(a.length()) { a.getString(it) }.filter { id -> PROVIDERS.any { it.id == id } }.distinct()
+                order.clear(); order.addAll(saved + PROVIDERS.map { it.id }.filter { it !in saved })
+            }
             val cs = o.optJSONObject("configs") ?: JSONObject()
             PROVIDERS.forEach { p ->
                 val c = cs.optJSONObject(p.id) ?: return@forEach
@@ -109,8 +116,16 @@ class AssistantStore(private val prefs: Prefs) {
 
     fun setThink(level: Int) { thinkLevel = level.coerceIn(0, 5); save() }
 
+    /** 按用户排好的顺序。 */
+    fun ordered(): List<Provider> = order.mapNotNull { id -> PROVIDERS.firstOrNull { it.id == id } }
+
+    fun move(from: Int, to: Int) {
+        if (from == to || from !in order.indices || to !in order.indices) return
+        order.add(to, order.removeAt(from)); save()
+    }
+
     /** 填了密钥的供应商，按列表顺序。 */
-    fun ready(): List<Provider> = PROVIDERS.filter { config(it.id).configured }
+    fun ready(): List<Provider> = ordered().filter { config(it.id).configured }
 
     fun save() {
         val cs = JSONObject()
@@ -121,7 +136,7 @@ class AssistantStore(private val prefs: Prefs) {
             })
         }
         prefs.putString(KEY, JSONObject().apply {
-            put("name", name); put("provider", activeProvider); put("model", activeModel); put("level", thinkLevel); put("configs", cs)
+            put("name", name); put("provider", activeProvider); put("model", activeModel); put("level", thinkLevel); put("configs", cs); put("order", JSONArray(order.toList()))
         }.toString())
     }
 
