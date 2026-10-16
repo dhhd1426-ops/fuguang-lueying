@@ -272,7 +272,7 @@ class Tools(
 )
 
 /** 做事中途收到的话，放进工具结果后面给她看。 */
-private fun midTurn(q: String) = "（你在做事的时候，对方又发来：）\n$q\n\n（把这句一起考虑进去，接着做。）"
+private fun midTurn(q: String) = "（你在忙的时候，${Memory.userCall}又说：）\n$q\n\n（把这句也放在心上，接着做。）"
 
 /** 工具结果：文字，加上要给模型看的图片。 */
 class ToolOut(val text: String, val images: List<ToolImage> = emptyList())
@@ -324,7 +324,7 @@ object ChatApi {
                 val sys = when {
                     tools == null -> system
                     useTools -> system + toolNote
-                    else -> system + "\n\n这一轮你手边没有工具：记不了、也做不了作品。没真的做出来的东西，不要说已经做好了。" +
+                    else -> system + "\n\n这一会儿你手边那些本事用不上：记不了事，也做不了作品。没真做出来的东西，别说已经做好了。" +
                         (fallback?.let { "\n\n" + runCatching { it() }.getOrDefault("") } ?: "")
                 }
                 conversation(p, c, model, sys, history, lv, if (useTools) tools else null, show, onText)

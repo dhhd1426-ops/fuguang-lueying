@@ -231,7 +231,7 @@ class ChatState(val history: ConvStore) {
                     if (mcp.isNotEmpty()) append("\n").append(Mcp.system())
                 }
                 ChatApi.stream(
-                    p, c, store.activeModel, Memory.prompt(who, store.activeModel), history, level,
+                    p, c, store.activeModel, Prompt.system(who, store.activeModel), Entries.weave(who, history, Prompt.aside(who, history, who.prevAt)), level,
                     onThink = { thinkText += it; thinking = true },
                     tools = if (specs.isNotEmpty()) Tools(
                         specs,
@@ -278,7 +278,7 @@ class ChatState(val history: ConvStore) {
                     val cid = convId.orEmpty()
                     val title = this@ChatState.history.get(convId)?.title ?: firstSentence(question, 18)
                     val model = store.activeModel
-                    Reflect.later(cid, messages.toList()) { w -> Reflect.run(who, p, c, model, w, cid, title) }
+                    Reflect.later(cid, messages.toList()) { w -> Reflect.run(who, p, c, model, w, cid, title); Reflect.tidy(who, p, c, model) }
                 } else error = "没有收到回复，换个模型再试"
             } catch (e: kotlinx.coroutines.CancellationException) {
                 if (partial.isNotBlank() || pendingWorks.isNotEmpty()) messages.add(ChatMsg("assistant", partial.take(ceil(shown).toInt()).trim(), thinkText, pendingImgs.toList(), works = pendingWorks.toList(), steps = doneSteps()))

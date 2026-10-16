@@ -39,6 +39,13 @@ class Persona(val id: String, name: String, sys: String) {
     var topOn by mutableStateOf(false)
     var top by mutableStateOf(.9f)
     var limit by mutableIntStateOf(40)
+    /** 设定条目：按位置和深度放进她读到的东西里（Entries.kt）。 */
+    val entries = mutableStateListOf<Entry>()
+    /** 上次整理记忆的时间、那时聊过几次（Reflect.tidy）。 */
+    var tidyAt = 0L
+    var tidyChats = 0
+    /** 这次发消息之前，上一次来找她的时间（touch 会把 lastAt 改成现在）。 */
+    var prevAt = 0L
 }
 
 /**
@@ -101,6 +108,7 @@ object Memory {
         firstAt = o.optLong("first"); lastAt = o.optLong("last"); chats = o.optInt("chats")
         temp = o.optDouble("temp", .7).toFloat(); topOn = o.optBoolean("topOn", false); top = o.optDouble("top", .9).toFloat(); limit = o.optInt("limit", 40)
         o.optJSONArray("m")?.let { m -> for (i in 0 until m.length()) items += mem(m.getJSONObject(i)) }
+        entries += Entries.read(o.optJSONArray("e")); tidyAt = o.optLong("tidyAt"); tidyChats = o.optInt("tidyChats")
     }
 
     fun save() {
@@ -110,7 +118,7 @@ object Memory {
             p.items.forEach { m.put(JSONObject().put("id", it.id).put("t", it.text).put("d", it.detail).put("at", it.at).put("c", it.conv).put("ct", it.convTitle).put("k", it.kind).put("b", it.by)) }
             a.put(JSONObject().put("id", p.id).put("name", p.name).put("sys", p.sys).put("on", p.memOn)
                 .put("first", p.firstAt).put("last", p.lastAt).put("chats", p.chats)
-                .put("temp", p.temp.toDouble()).put("topOn", p.topOn).put("top", p.top.toDouble()).put("limit", p.limit).put("m", m))
+                .put("temp", p.temp.toDouble()).put("topOn", p.topOn).put("top", p.top.toDouble()).put("limit", p.limit).put("m", m).put("e", Entries.write(p.entries)).put("tidyAt", p.tidyAt).put("tidyChats", p.tidyChats))
         }
         prefs?.putString(KEY, JSONObject().put("active", activeId).put("user", userName).put("all", a).toString())
     }
@@ -157,6 +165,7 @@ object Memory {
         val a = active
         val now = System.currentTimeMillis()
         if (a.firstAt == 0L) a.firstAt = now
+        a.prevAt = a.lastAt
         a.lastAt = now
         if (newChat) a.chats++
         save()
@@ -184,38 +193,7 @@ object Memory {
     private fun hers(s: String) = s.replace("我们", "\u0000").replace("咱们", "\u0000").replace("我", "他").replace("\u0000", "我们")
 
     /** 旧记忆里的"用户"统一换成"他"，读起来是她自己知道的事。 */
-    private fun own(s: String) = s.replace("该用户", who).replace("用户", who)
-
-    /** 时间感知：现在几点、认识多久、多久没来了。 */
-    private fun timeSense(p: Persona): String {
-        val now = System.currentTimeMillis()
-        val c = java.util.Calendar.getInstance()
-        val h = c.get(java.util.Calendar.HOUR_OF_DAY)
-        val part = when (h) { in 0..4 -> "凌晨"; in 5..8 -> "早上"; in 9..11 -> "上午"; in 12..13 -> "中午"; in 14..17 -> "下午"; in 18..22 -> "晚上"; else -> "深夜" }
-        val lines = mutableListOf<String>()
-        lines += java.text.SimpleDateFormat("M 月 d 日 EEEE", java.util.Locale.CHINA).format(java.util.Date(now)) + " $part " +
-            java.text.SimpleDateFormat("HH:mm", java.util.Locale.CHINA).format(java.util.Date(now)) + "。"
-        if (p.firstAt <= 0) lines += "这是$who 第一次找你聊天。"
-        else {
-            val days = ((now - p.firstAt) / 86_400_000L).toInt() + 1
-            lines += "你们认识第 $days 天，聊过 ${p.chats} 次。"
-            val gap = now - p.lastAt
-            if (p.lastAt > 0) {
-                val min = gap / 60_000
-                lines += "上一次$who 找你是" + when {
-                    min < 10 -> "刚刚"
-                    min < 60 -> "${min} 分钟前"
-                    min < 24 * 60 -> "${min / 60} 小时前"
-                    min < 48 * 60 -> "昨天"
-                    else -> "${min / 1440} 天前"
-                } + "。"
-                if (gap >= 7L * 86_400_000) lines += "已经一周多没来了，可以自然地问问最近怎么样，别埋怨。"
-                else if (gap >= 3L * 86_400_000) lines += "好几天没聊了，可以轻轻带一句好久不见。"
-            }
-        }
-        if (h in 1..4) lines += "现在很晚了。"
-        return lines.joinToString("")
-    }
+    fun ownWords(s: String) = s.replace("该用户", who).replace("用户", who)
 
     /**
      * 提示词里可以写的占位符（照 RikkaHub，{x} 和 {{x}} 都认，不分大小写）：
@@ -230,35 +208,6 @@ object Memory {
         return s
     }
 
-    /**
-     * 拼进 system 的部分，和云朵天气一样分段加【标签】：
-     * 她是谁、在和谁聊 → 你写的提示词（占位符见 fill）→【时间感知】→【关于你】→【你的偏好】→【她自己的样子】→【她自己记得的事】。
-     */
-    fun prompt(p: Persona = active, model: String = ""): String {
-        val sb = StringBuilder()
-        // 她是谁、在和谁聊：固定写在最前面，不靠记忆段落的标题带出来（照 RikkaHub：called {{char}} … User Nickname: {{user}}）
-        sb.append("你的名字是").append(p.name).append("，").append(who).append("叫你").append(p.name).append("。")
-        if (userName.isNotBlank()) sb.append("正在和你聊天的是").append(who).append("。")
-        // 名字可能是后来改的，记忆和以前的聊天里可能还留着“没名字”或旧名字
-        sb.append("要是记忆或以前的聊天里说你没有名字、或者叫别的，那是过去的事，现在以这里的名字为准，别再说自己没名字。")
-        sb.append("\n\n").append(fill(p.sys.trim().ifEmpty { DEFAULT_SYS }, p, model))
-        sb.append("\n\n【时间感知】\n").append(timeSense(p))
-        fun line(m: Mem) = own(m.text).trimEnd('。') + if (m.detail.isNotBlank()) "（" + own(m.detail).trimEnd('。') + "）" else ""
-        fun block(title: String, ms: List<Mem>) {
-            if (ms.isNotEmpty()) sb.append("\n\n【").append(title).append("】\n").append(ms.joinToString("\n") { "- " + line(it) })
-        }
-        block("关于$who", p.items.filter { it.kind == "about" }.take(30))
-        block("${who}的偏好，回答时照着做", p.items.filter { it.kind == "pref" }.take(30))
-        block("你（${p.name}）自己的样子", p.items.filter { it.kind == "self" }.take(20))
-        val diary = p.items.filter { it.kind == "talk" || it.kind == "promise" || it.kind == "know" }.take(48)
-        if (diary.isNotEmpty()) {
-            sb.append("\n\n【你自己记得的事】\n").append(diary.joinToString("\n") { "- " + (if (it.kind == "promise") "答应过：" else "") + line(it) })
-        }
-        if (p.items.isNotEmpty())
-            sb.append("\n\n上面这些是你本来就记得、感觉得到的，像老朋友一样自然地用上：合适的时候提一句，不要逐条复述，不要每次都说时间，也不要说“根据记忆”“根据记录”之类的话。答应过的事放在心上，$who 提起或聊到相关的事时再接上。")
-        return sb.toString()
-    }
-
     /* ---------- 她自己用的记忆工具：记下、忘掉 ---------- */
 
     const val REMEMBER = "remember"
@@ -267,11 +216,13 @@ object Memory {
     val toolSpecs: List<ToolSpec> get() = listOf(
         ToolSpec(
             REMEMBER,
-            "$who 明确让你记住某件事时（“记住…”“别忘了…”“以后都…”），把它记进你的记忆。平常聊天里的事不用你记，聊完你会自己回想一遍。" +
-                "kind：about=$who 的基本情况；pref=$who 的偏好、希望你怎么说话；self=你自己的样子；promise=你答应$who 的事；talk=你们定下、还没做完的事；know=其他。",
+            "$who 明确让你记住某件事（“记住…”“别忘了…”“以后都…”），或者纠正你（“不是这样”“别再…”）时，当场记下。平常聊天里的事不用你记，聊完你会自己回想一遍。" +
+                "kind：about=$who 的情况；pref=$who 的偏好、希望你怎么和他相处（纠正也记在这里）；self=你自己的样子；promise=你答应$who 的事；talk=你们定下、还没做完的事；know=其他。" +
+                "提到“明天”“周四”这类日子，写成具体日期。",
             JSONObject().put("type", "object").put("properties", JSONObject()
                 .put("kind", JSONObject().put("type", "string").put("enum", JSONArray(listOf("about", "pref", "self", "promise", "talk", "know"))))
                 .put("text", JSONObject().put("type", "string").put("description", "一句话，30 字以内，用你自己的口吻"))
+                .put("why", JSONObject().put("type", "string").put("description", "纠正或偏好时：为什么、什么时候照着做，一句话，可以不填"))
             ).put("required", JSONArray(listOf("kind", "text"))),
         ),
         ToolSpec(
@@ -284,8 +235,8 @@ object Memory {
     )
 
     fun toolRule(): String =
-        "你的记忆是聊完之后自己整理的，聊天时不用操心记什么。$who 明确让你记住什么，用 $REMEMBER 记下；$who 让你忘掉什么，用 $FORGET 删掉，" +
-            "这两种情况做完说一声就好（比如“记住了”）。角色扮演和故事里发生的事不是记忆；密码、验证码、证件号这类绝不记。"
+        "聊天时不用操心记什么，聊完你会自己回想一遍。$who 明确让你记住什么、或者纠正你的时候，用 $REMEMBER 当场记下；$who 让你忘掉什么，用 $FORGET 删掉，" +
+            "做完说一声就好（比如“记住了”）。你们闹着玩、一起编故事时说的话不用记；密码、验证码、证件号这类绝不记。"
 
     fun runTool(p: Persona, name: String, a: JSONObject, conv: String, convTitle: String): ToolOut {
         if (name == REMEMBER) {
@@ -295,7 +246,7 @@ object Memory {
             val k = a.optString("kind").trim().let { if (it in setOf("about", "pref", "self", "promise", "talk", "know")) it else "know" }
             if (p.items.any { it.text == t }) return ToolOut("已经记得了。")
             val now = System.currentTimeMillis()
-            p.items.add(0, Mem("$now-t", t, "", now, conv, convTitle, k, "her"))
+            p.items.add(0, Mem("$now-t", t, a.optString("why").trim().take(80), now, conv, convTitle, k, "her"))
             save()
             return ToolOut("记下了。")
         }

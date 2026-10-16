@@ -586,7 +586,7 @@ private fun Ends(left: String, right: String) {
 }
 
 @Composable
-private fun ChoiceChip(text: String, on: Boolean, onClick: () -> Unit) {
+internal fun ChoiceChip(text: String, on: Boolean, onClick: () -> Unit) {
     Pressable(onClick, label = text) { pr ->
         Txt(
             text, if (on) warm else Page.muted, 12.sp,
@@ -598,7 +598,7 @@ private fun ChoiceChip(text: String, on: Boolean, onClick: () -> Unit) {
 
 /** 滑杆：杏色走过的那段，白色圆钮带一圈淡杏色光晕；按住拖、点一下都行，按步长吸附。 */
 @Composable
-private fun FeelSlider(value: Float, min: Float, max: Float, step: Float, ticks: Int = 0, onDone: () -> Unit, onChange: (Float) -> Unit) {
+internal fun FeelSlider(value: Float, min: Float, max: Float, step: Float, ticks: Int = 0, onDone: () -> Unit, onChange: (Float) -> Unit) {
     var w by remember { mutableStateOf(1f) }
     fun at(x: Float): Float {
         val raw = min + (x / w).coerceIn(0f, 1f) * (max - min)
@@ -656,7 +656,7 @@ private fun ColumnScope.PromptTab(p: Persona, blur: Dp) {
         modifier = Modifier.fillMaxWidth(),
         decorationBox = { inner ->
             Box(Modifier.fillMaxWidth().heightIn(min = 280.dp).glass(RoundedCornerShape(20.dp), blur, fill = glassFill).padding(18.dp)) {
-                if (draft.isEmpty()) Txt("写下 ${p.name} 是谁、怎么说话。留空就用默认的样子。", Page.muted.copy(alpha = .6f), 14.5.sp, lineHeight = 24.sp)
+                if (draft.isEmpty()) Txt("用「你是…」写下 ${p.name} 本来的样子、怎么说话。留空就用默认的样子。", Page.muted.copy(alpha = .6f), 14.5.sp, lineHeight = 24.sp)
                 inner()
             }
         },
@@ -670,6 +670,8 @@ private fun ColumnScope.PromptTab(p: Persona, blur: Dp) {
         }
         SaveButton(dirty = draft != p.sys) { p.sys = draft; Memory.save() }
     }
+    IdentityHint(draft) { draft = it }
+    EntriesSection(p, blur)
 }
 
 /**
@@ -731,7 +733,7 @@ private fun SaveButton(dirty: Boolean, onSave: () -> Unit) {
 }
 
 @Composable
-private fun SectionLabel(text: String, trailing: @Composable () -> Unit = {}) {
+internal fun SectionLabel(text: String, trailing: @Composable () -> Unit = {}) {
     Row(Modifier.fillMaxWidth().padding(start = 4.dp, end = 2.dp, top = 24.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
         Txt(text, Page.muted, 11.sp, Modifier.weight(1f), spacing = ls(2.5f, 11f))
         trailing()
