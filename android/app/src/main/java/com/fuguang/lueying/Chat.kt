@@ -410,7 +410,15 @@ fun ChatPage(
             onClose = { thinkOpen = false },
         )
         NoteImageViewer(viewing) { viewing = null }
-        WorkViewer(workOpen) { workOpen = null }
+        WorkViewer(workOpen, onClose = { workOpen = null }, onFix = { msg ->
+            // 关掉作品页，把问题当作一条消息发给她，她自己读原稿改
+            workOpen = null
+            if (!chat.busy) {
+                chat.draft = msg
+                val n = chat.send(scope, store)
+                if (n >= 0) scope.launch { flight.launch(n) }
+            } else chat.draft = msg
+        })
         val pm = press?.let { chat.messages.getOrNull(it.index) }
         val pIdx = press?.index ?: -1
         val pBounds = press?.bounds

@@ -107,7 +107,7 @@ fun WorkCards(ids: List<String>, onOpen: (String) -> Unit) {
 /** 全屏看作品：顶上「关闭 · 作品名 · 分享」，下面是作品本身；加载时中间转一圈。 */
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
-fun WorkViewer(id: String?, onClose: () -> Unit) {
+fun WorkViewer(id: String?, onClose: () -> Unit, onFix: (String) -> Unit = {}) {
     var last by remember { mutableStateOf<String?>(null) }
     if (id != null) last = id
     val shown by animateFloatAsState(if (id != null) 1f else 0f, tween(if (id != null) 320 else 240, easing = Ease), label = "work")
@@ -151,6 +151,8 @@ fun WorkViewer(id: String?, onClose: () -> Unit) {
                     AndroidView(
                         factory = { c ->
                             WebView(c).apply {
+                                // 一定要撑满：不给尺寸时 WebView 按内容高度算，页面里的 100vh、innerHeight 会是 0，整页空白
+                                layoutParams = android.view.ViewGroup.LayoutParams(android.view.ViewGroup.LayoutParams.MATCH_PARENT, android.view.ViewGroup.LayoutParams.MATCH_PARENT)
                                 setBackgroundColor(0xFF121519.toInt())
                                 settings.javaScriptEnabled = true
                                 settings.domStorageEnabled = true
@@ -165,9 +167,21 @@ fun WorkViewer(id: String?, onClose: () -> Unit) {
                                     }
                                 }
                                 webViewClient = object : WebViewClient() {
-                                    override fun onPageFinished(view: WebView?, url: String?) { loaded.value = true }
+                                    override fun onPageFinished(view: WebView?, url: String?) {
+                                        loaded.value = true
+                                        // 过一会儿量一下：页面尺寸是 0、或者什么都没画出来，就当作有问题
+                                        view?.postDelayed({
+                                            if (view.tag == null) return@postDelayed
+                                            view.evaluateJavascript(PROBE) { r ->
+                                                val t = r.orEmpty().trim('"')
+                                                if (t.isNotEmpty() && t != "ok" && problem.value.isEmpty()) problem.value = t
+                                            }
+                                        }, 1500)
+                                    }
                                     override fun onReceivedError(view: WebView?, req: WebResourceRequest?, err: android.webkit.WebResourceError?) {
-                                        if (req?.isForMainFrame == false && problem.value.isEmpty()) problem.value = "有个文件没加载上：" + req.url.toString().take(120)
+                                        val u = req?.url?.toString().orEmpty()
+                                        // 站点图标是 WebView 自己去要的，没有也不影响
+                                        if (req?.isForMainFrame == false && !u.endsWith("favicon.ico") && problem.value.isEmpty()) problem.value = "有个文件没加载上：" + u.take(120)
                                     }
                                     override fun shouldOverrideUrlLoading(view: WebView?, req: WebResourceRequest?): Boolean {
                                         val u = req?.url ?: return false
@@ -185,17 +199,26 @@ fun WorkViewer(id: String?, onClose: () -> Unit) {
                             val key = "$cur#$v"
                             wv.alpha = shown
                             wv.translationY = (1f - shown) * lift
-                            if (wv.tag != key) { wv.tag = key; loaded.value = false; problem.value = ""; wv.loadDataWithBaseURL("https://$BASE_HOST/", html, "text/html", "utf-8", null) }
+                            if (wv.tag != key) {
+                                wv.tag = key; loaded.value = false; problem.value = ""
+                                // 量好尺寸再加载：页面脚本一开始读到的宽高才是真的
+                                wv.doOnLayoutReady { wv.loadDataWithBaseURL("https://$BASE_HOST/", html, "text/html", "utf-8", null) }
+                            }
                         },
-                        onRelease = { it.stopLoading(); it.destroy(); web = null },
+                        onRelease = { it.tag = null; it.stopLoading(); it.destroy(); web = null },
                         modifier = Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.navigationBars),
                     )
-                    if (problem.value.isNotEmpty()) Txt(
-                        "页面报错：" + problem.value, css("#d79a94"), 12.sp,
-                        Modifier.align(Alignment.BottomCenter).windowInsetsPadding(WindowInsets.navigationBars).padding(16.dp)
-                            .background(rgba(20, 23, 29, .92f), RoundedCornerShape(10.dp)).padding(horizontal = 12.dp, vertical = 8.dp),
-                        lineHeight = 18.sp, maxLines = 4,
-                    )
+                    // 页面有问题：底部一条提示，点「让她修」把问题交回给她
+                    if (problem.value.isNotEmpty()) Row(
+                        Modifier.align(Alignment.BottomCenter).windowInsetsPadding(WindowInsets.navigationBars).padding(14.dp).fillMaxWidth()
+                            .background(css("#22272d"), RoundedCornerShape(14.dp)).padding(start = 14.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Txt(problem.value, css("#d79a94"), 12.5.sp, Modifier.weight(1f).padding(vertical = 6.dp), lineHeight = 18.sp, maxLines = 3)
+                        Pressable({ onFix("《${w?.title ?: "作品"}》打开有问题：${problem.value}。帮我看看，修好它。") }, label = "让她修") { p ->
+                            Txt("让她修", Apricot.copy(alpha = if (p) .7f else 1f), 14.sp, Modifier.padding(horizontal = 12.dp, vertical = 10.dp))
+                        }
+                    }
                     val fade by animateFloatAsState(if (loaded.value) 0f else 1f, tween(220), label = "load")
                     if (fade > 0f) Box(Modifier.fillMaxSize().alpha(fade).background(css("#121519")), contentAlignment = Alignment.Center) { Spinner() }
                 }
@@ -242,6 +265,30 @@ fun WorkViewer(id: String?, onClose: () -> Unit) {
 }
 
 private const val BASE_HOST = "work.fuguang.local"
+
+/** 已经量好尺寸就马上执行，否则等第一次布局完再执行。 */
+private fun android.view.View.doOnLayoutReady(block: () -> Unit) {
+    if (isLaidOut && width > 0 && height > 0) { block(); return }
+    addOnLayoutChangeListener(object : android.view.View.OnLayoutChangeListener {
+        override fun onLayoutChange(v: android.view.View, l: Int, t: Int, r: Int, b: Int, l0: Int, t0: Int, r0: Int, b0: Int) {
+            if (r - l <= 0 || b - t <= 0) return
+            v.removeOnLayoutChangeListener(this)
+            block()
+        }
+    })
+}
+
+/** 页面体检：尺寸为 0，或者看起来什么都没画，返回一句说明；正常返回 ok。 */
+private const val PROBE = """(function(){try{
+var w=innerWidth,h=innerHeight;if(!w||!h)return '页面尺寸是 0（'+w+'×'+h+'）';
+var b=document.body;if(!b)return '页面没有内容';
+var seen=0,all=[b].concat([].slice.call(b.querySelectorAll('*')));
+for(var i=0;i<all.length&&i<800;i++){var e=all[i],r=e.getBoundingClientRect();if(r.width<2||r.height<2||r.bottom<0||r.top>h)continue;
+var t=e.tagName,cs=getComputedStyle(e);if(cs.visibility=='hidden'||cs.opacity=='0'||cs.display=='none')continue;
+if(t=='CANVAS'||t=='SVG'||t=='svg'||t=='IMG'||t=='VIDEO'){seen++;break}
+if(cs.backgroundImage!='none'||(cs.backgroundColor&&cs.backgroundColor!='rgba(0, 0, 0, 0)')||cs.boxShadow!='none'){seen++;break}
+for(var n=e.firstChild;n;n=n.nextSibling)if(n.nodeType==3&&n.textContent.trim()){seen++;break}if(seen)break}
+return seen?'ok':'页面打开了，但什么也没画出来';}catch(x){return '页面体检出错：'+x.message}})()"""
 
 /** 加载时的小圈：一段杏色弧线慢慢转。 */
 @Composable
