@@ -115,8 +115,8 @@ class ChatState(val history: ConvStore) {
     var thinking by mutableStateOf(false)
     /** 正在进行的这轮思考原文。 */
     var thinkText by mutableStateOf("")
-    /** 正在用工具时的一行提示，如「正在查阅羽的笔记…」。 */
-    var toolNote by mutableStateOf("")
+    /** 这轮用过 / 正在用的工具，和思考段落排在同一条时间线上。 */
+    val liveSteps = mutableStateListOf<ToolStep>()
     /** 这轮回答里读到的羽的笔记图片。 */
     val pendingImgs = mutableStateListOf<String>()
     /** 这次回复里做好的作品 id。 */
@@ -197,7 +197,7 @@ class ChatState(val history: ConvStore) {
             return
         }
         busy = true; thinking = false; thinkText = ""; partial = ""; shown = 0f; streamDone = false
-        pendingImgs.clear(); pendingWorks.clear()
+        pendingImgs.clear(); pendingWorks.clear(); liveSteps.clear()
         val who = Memory.active
         val history = messages.toList()
         // “自动”：发出前按这条消息定一个具体的档
@@ -230,13 +230,21 @@ class ChatState(val history: ConvStore) {
                     tools = if (specs.isNotEmpty()) Tools(
                         specs,
                         { n, a ->
+                            // 记进时间线：思考原文在这里断一段，工具排在它后面
+                            if (thinkText.isNotBlank() && !thinkText.endsWith("\n\n")) thinkText += "\n\n"
+                            val idx = liveSteps.size
+                            liveSteps.add(ToolStep(thinkText.length, n, Trail.liveTitle(n), Trail.detail(n, a), done = false))
+                            try {
                             if (n == Memory.REMEMBER || n == Memory.FORGET) Memory.runTool(who, n, a, cur.orEmpty(), convTitle0)
                             else if (n == Recall.TOOL) Recall.run(store0, cur, a.optString("query"))
                             else if (n == Works.MAKE || n == Works.READ) Works.run(n, a) { id -> if (id !in pendingWorks) pendingWorks.add(id) }
                             else if (Mcp.owns(n)) Mcp.run(n, a)
                             else Yu.run(n, a, Yu.vision(p.id)) { refs -> refs.forEach { r -> if (r !in pendingImgs) pendingImgs.add(r) } }
+                            } finally {
+                                if (idx < liveSteps.size) liveSteps[idx] = liveSteps[idx].copy(title = Trail.doneTitle(n, a), done = true)
+                            }
                         },
-                        { toolNote = when (it) { Memory.REMEMBER -> "正在记下…"; Memory.FORGET -> "正在忘掉…"; Recall.TOOL -> "正在翻看以前的聊天…"; Works.MAKE -> "正在动手做…"; Works.READ -> "正在看原稿…"; "list_todos" -> "正在查看羽的待办…"; else -> if (Mcp.owns(it)) Mcp.note(it) else "正在查阅羽的笔记…" } },
+                        { },
                     ) else null,
                     fallback = if (specs.isNotEmpty()) ({
                         listOfNotNull(
@@ -244,12 +252,12 @@ class ChatState(val history: ConvStore) {
                             if (yu) Yu.context(question) else null,
                         ).joinToString("\n\n")
                     }) else null,
-                ) { partial += it; thinking = false; toolNote = "" }
+                ) { partial += it; thinking = false }
                 streamDone = true
                 // 等书写追上再收尾
                 snapshotFlow { shown >= partial.length }.first { it }
                 if (partial.isNotBlank() || pendingWorks.isNotEmpty()) {
-                    messages.add(ChatMsg("assistant", partial.trim(), thinkText, pendingImgs.toList(), works = pendingWorks.toList()))
+                    messages.add(ChatMsg("assistant", partial.trim(), thinkText, pendingImgs.toList(), works = pendingWorks.toList(), steps = doneSteps()))
                     // 全局记忆：回答完后在后台整理一下值得记住的事
                     val reply = partial.trim()
                     val cid = convId.orEmpty()
@@ -257,19 +265,22 @@ class ChatState(val history: ConvStore) {
                     scope.launch { Memory.learn(who, p, c, store.activeModel, question, reply, cid, title) }
                 } else error = "没有收到回复，换个模型再试"
             } catch (e: kotlinx.coroutines.CancellationException) {
-                if (partial.isNotBlank() || pendingWorks.isNotEmpty()) messages.add(ChatMsg("assistant", partial.take(ceil(shown).toInt()).trim(), thinkText, pendingImgs.toList(), works = pendingWorks.toList()))
+                if (partial.isNotBlank() || pendingWorks.isNotEmpty()) messages.add(ChatMsg("assistant", partial.take(ceil(shown).toInt()).trim(), thinkText, pendingImgs.toList(), works = pendingWorks.toList(), steps = doneSteps()))
                 throw e
             } catch (e: Exception) {
-                if (partial.isNotBlank() || pendingWorks.isNotEmpty()) messages.add(ChatMsg("assistant", partial.trim(), thinkText, pendingImgs.toList(), works = pendingWorks.toList()))
+                if (partial.isNotBlank() || pendingWorks.isNotEmpty()) messages.add(ChatMsg("assistant", partial.trim(), thinkText, pendingImgs.toList(), works = pendingWorks.toList(), steps = doneSteps()))
                 error = e.message ?: "出错了"
             } finally {
-                partial = ""; shown = 0f; busy = false; thinking = false; thinkText = ""; toolNote = ""; pendingImgs.clear(); pendingWorks.clear()
+                partial = ""; shown = 0f; busy = false; thinking = false; thinkText = ""; pendingImgs.clear(); pendingWorks.clear(); liveSteps.clear()
                 persist()
             }
         }
     }
 
     fun stop() { job?.cancel() }
+
+    /** 存进消息的工具步骤：中途停下的也算用过。 */
+    private fun doneSteps() = liveSteps.map { if (it.done) it else it.copy(title = it.title.removePrefix("正在"), done = true) }
 
     /** 每帧推进一点书写进度。dt 单位秒。 */
     fun step(dt: Float) {
@@ -406,7 +417,8 @@ fun ChatPage(
         ThinkDrawer(
             open = thinkOpen,
             raw = if (liveThink) chat.thinkText else chat.messages[thinkOf].think,
-            live = liveThink && chat.busy && chat.partial.isEmpty(),
+            steps = if (liveThink) chat.liveSteps.toList() else chat.messages[thinkOf].steps,
+            live = liveThink && chat.busy && (chat.partial.isEmpty() || chat.liveSteps.any { !it.done }),
             onClose = { thinkOpen = false },
         )
         NoteImageViewer(viewing) { viewing = null }
@@ -546,7 +558,7 @@ private fun Conversation(
                             contentAlignment = Alignment.CenterEnd,
                         ) { UserBubble(m.text, compact, Modifier.longPressMsg(i, pressed == i, onLong).flightBubble(flight, i == flight.idx, 18.dp)) }
                     } else {
-                        if (m.think.isNotBlank()) ThinkSummaryLine(thinkSummary(m.think)) { onThink(i) }
+                        ThinkRow(m.think, m.steps, live = false) { onThink(i) }
                         Box(Modifier.fillMaxWidth().longPressMsg(i, pressed == i, onLong)) { Reply(m.text, compact, fadeTail = false) }
                         NoteImageRow(m.imgs, onImage)
                         WorkCards(m.works, onWork)
@@ -554,26 +566,15 @@ private fun Conversation(
                     }
                 }
                 if (chat.busy) {
-                    if (chat.partial.isEmpty() && chat.toolNote.isNotEmpty()) {
-                        ThinkingMotion(chat.toolNote, Modifier.padding(start = 2.dp, top = 6.dp, bottom = 10.dp))
-                    } else if (chat.partial.isEmpty()) {
-                        if (chat.thinkText.isNotBlank()) {
-                            // 深度思考中：三点动效 + 最新一句，点开看过程
-                            Pressable({ onThink(-1) }, label = "查看思考过程") { _ ->
-                                Row(Modifier.padding(start = 2.dp, top = 2.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                                    ThinkingMotion(latestSentence(chat.thinkText), Modifier.weight(1f, fill = false))
-                                    Spacer(Modifier.width(6.dp))
-                                    SvgIcon(Ic("M9.5 6l6 6-6 6"), Page.muted, 14.dp)
-                                }
-                            }
-                        } else ThinkingMotion("", Modifier.padding(start = 2.dp, top = 6.dp))   // 没开深度思考：只有三点
-                    } else {
-                        if (chat.thinkText.isNotBlank()) ThinkSummaryLine(thinkSummary(chat.thinkText)) { onThink(-1) }
-                    }
+                    // 思考、用工具、开始回答都在同一行：进行中三点 + 最新一句，结束换时钟
+                    val steps = chat.liveSteps.toList()
+                    val trailLive = chat.partial.isEmpty() || steps.any { !it.done }
+                    if (chat.thinkText.isBlank() && steps.isEmpty()) {
+                        if (chat.partial.isEmpty()) ThinkingMotion("", Modifier.padding(start = 2.dp, top = 6.dp))   // 没开深度思考也没用工具：只有三点
+                    } else ThinkRow(chat.thinkText, steps, trailLive) { onThink(-1) }
                     if (chat.partial.isNotEmpty()) Reply(chat.partial.take(ceil(chat.shown).toInt()), compact, fadeTail = chat.shown < chat.partial.length + 1)
                     NoteImageRow(chat.pendingImgs.toList(), onImage)
                     WorkCards(chat.pendingWorks.toList(), onWork)
-                    if (chat.partial.isNotEmpty() && chat.toolNote.isNotEmpty()) ThinkingMotion(chat.toolNote, Modifier.padding(start = 2.dp, top = 8.dp))
                 }
                 chat.error?.let { err ->
                     Column(Modifier.padding(top = 6.dp, start = 2.dp)) {
@@ -940,93 +941,6 @@ private fun DrawerRow(text: String, selected: Boolean, dim: Boolean = false, onC
         ) {
             Txt(text, if (selected) Page.ink else if (dim) Page.muted else Page.ink.copy(alpha = .78f), 15.sp, Modifier.weight(1f), maxLines = 1)
             if (selected) SvgIcon(Ic("M5 12.5l4.5 4.5L19 7.5"), rgba(233, 180, 142, 1f), 18.dp, stroke = 1.8f)
-        }
-    }
-}
-
-
-/* ---------------- 深度思考可见 ---------------- */
-
-/** 开始写回复后：只有一句总结 + ›，不带动效。 */
-@Composable
-private fun ThinkSummaryLine(summary: String, onClick: () -> Unit) {
-    if (summary.isBlank()) return
-    Pressable(onClick, Modifier.padding(bottom = 10.dp), label = "查看思考过程") { pressed ->
-        Row(Modifier.padding(start = 2.dp, top = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-            Txt(summary, if (pressed) Page.ink else Page.muted, 14.sp, Modifier.weight(1f, fill = false), maxLines = 1)
-            Spacer(Modifier.width(6.dp))
-            SvgIcon(Ic("M9.5 6l6 6-6 6"), Page.muted, 14.dp)
-        }
-    }
-}
-
-/** 思考过程抽屉（方案 1）：时间线，一段一个节点；正在写的那段是橙点 + 动效；点节点看全文。 */
-@Composable
-private fun ThinkDrawer(open: Boolean, raw: String, live: Boolean, onClose: () -> Unit) {
-    val shown by androidx.compose.animation.core.animateFloatAsState(
-        if (open) 1f else 0f, tween(if (open) 320 else 220, easing = androidx.compose.animation.core.CubicBezierEasing(.2f, .8f, .2f, 1f)), label = "think",
-    )
-    var detail by remember(open) { mutableIntStateOf(-1) }
-    if (shown <= 0f) return
-    val segs = thinkSegments(raw)
-    val orange = Color(0xFFD97757)
-    Box(Modifier.fillMaxSize()) {
-        Box(Modifier.fillMaxSize().alpha(shown).background(rgba(6, 9, 14, .5f)).pointerInput(Unit) { detectTapGestures { onClose() } })
-        BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
-            val h = maxHeight
-            Column(
-                Modifier
-                    .widthIn(max = 640.dp).fillMaxWidth()
-                    .height(h * .82f)
-                    .graphicsLayer { translationY = (1f - shown) * h.toPx() * .6f; alpha = shown }
-                    .background(rgba(20, 24, 31, .97f), RoundedCornerShape(topStart = 26.dp, topEnd = 26.dp))
-                    .pointerInput(Unit) { detectTapGestures { } }
-                    .padding(start = 22.dp, end = 22.dp, top = 10.dp),
-            ) {
-                Box(Modifier.align(Alignment.CenterHorizontally).width(40.dp).height(4.dp).background(rgba(255, 255, 255, .25f), RoundedCornerShape(2.dp)))
-                Spacer(Modifier.height(14.dp))
-                Box(Modifier.fillMaxWidth()) {
-                    if (detail >= 0) Pressable({ detail = -1 }, Modifier.align(Alignment.CenterStart), label = "返回") { _ ->
-                        SvgIcon(Ic("M14.5 6l-6 6 6 6"), Page.ink, 20.dp, modifier = Modifier.padding(6.dp))
-                    } else Pressable(onClose, Modifier.align(Alignment.CenterStart), label = "关闭") { _ ->
-                        SvgIcon(Icons.close, Page.ink, 20.dp, modifier = Modifier.padding(6.dp))
-                    }
-                    Txt(
-                        if (detail >= 0 && detail < segs.size) firstSentence(segs[detail], 16) else "思考过程",
-                        Page.ink, 16.sp, Modifier.align(Alignment.Center).padding(horizontal = 44.dp), weight = FontWeight.SemiBold, maxLines = 1,
-                    )
-                }
-                Spacer(Modifier.height(16.dp))
-                Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(bottom = 24.dp)) {
-                    if (detail >= 0 && detail < segs.size) {
-                        Txt(segs[detail], Page.ink.copy(alpha = .86f), 14.5.sp, lineHeight = 25.sp)
-                    } else if (segs.isEmpty()) {
-                        ThinkingMotion("", Modifier.padding(4.dp))
-                    } else segs.forEachIndexed { k, seg ->
-                        val isLive = live && k == segs.lastIndex
-                        val last = k == segs.lastIndex
-                        Pressable({ if (!isLive) detail = k }, Modifier.fillMaxWidth(), label = firstSentence(seg)) { pressed ->
-                            Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min).background(if (pressed) rgba(255, 255, 255, .05f) else Color.Transparent, RoundedCornerShape(12.dp))) {
-                                Box(Modifier.width(22.dp).fillMaxHeight()) {
-                                    if (!last) Box(Modifier.padding(top = 18.dp).align(Alignment.TopCenter).width(1.dp).fillMaxHeight().background(rgba(255, 255, 255, .12f)))
-                                    Box(Modifier.padding(top = 9.dp).align(Alignment.TopCenter).size(7.dp).background(if (isLive) orange else rgba(255, 255, 255, .32f), CircleShape))
-                                }
-                                Column(Modifier.weight(1f).padding(start = 8.dp, bottom = 18.dp, end = 6.dp)) {
-                                    if (isLive) ThinkingMotion(latestSentence(seg, 24), size = 14.5.sp)
-                                    else {
-                                        Txt(firstSentence(seg, 24), Page.ink.copy(alpha = .9f), 14.5.sp, maxLines = 1)
-                                        val rest = seg.removePrefix(Regex("[^。！？!?\\n]+[。！？!?]?").find(seg)?.value.orEmpty()).trim()
-                                        if (rest.isNotEmpty()) {
-                                            Spacer(Modifier.height(3.dp))
-                                            Txt(rest.replace('\n', ' '), Page.muted, 12.5.sp, maxLines = 1)
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
         }
     }
 }

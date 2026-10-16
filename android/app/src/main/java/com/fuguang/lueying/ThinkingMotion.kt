@@ -106,6 +106,8 @@ fun ThinkingMotion(
     size: TextUnit = 15.sp,
     /** 三点相对字号的缩放：1 时三角约和一行字等高偏大，默认缩到 0.65 让它比字矮一点。 */
     dotScale: Float = .65f,
+    /** false：只要流光字，不画三点（思考过程里记号已经单独画了）。 */
+    showDots: Boolean = true,
 ) {
     var now by remember { mutableLongStateOf(0L) }
     LaunchedEffect(Unit) {
@@ -117,7 +119,7 @@ fun ThinkingMotion(
     val u = fontPx / 14f * dotScale
     val boxDp = with(density) { (fontPx * 1.2f).toDp() }
     Row(modifier, verticalAlignment = Alignment.CenterVertically) {
-        Canvas(Modifier.size(boxDp)) {
+        if (showDots) Canvas(Modifier.size(boxDp)) {
             val c = Offset(this.size.width / 2, this.size.height / 2)
             for (d in 1..3) {
                 val p = Tk.pos(now, d)
@@ -125,7 +127,7 @@ fun ThinkingMotion(
             }
         }
         if (text.isEmpty()) return@Row
-        Spacer(Modifier.width(with(density) { (fontPx * .6f).toDp() }))
+        if (showDots) Spacer(Modifier.width(with(density) { (fontPx * .6f).toDp() }))
         BasicText(
             buildAnnotatedString {
                 text.forEachIndexed { k, ch ->
