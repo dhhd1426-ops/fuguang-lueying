@@ -231,7 +231,7 @@ class ChatState(val history: ConvStore) {
                     if (mcp.isNotEmpty()) append("\n").append(Mcp.system())
                 }
                 ChatApi.stream(
-                    p, c, store.activeModel, Memory.prompt(who, store.activeModel) + extra, history, level,
+                    p, c, store.activeModel, Memory.prompt(who, store.activeModel), history, level,
                     onThink = { thinkText += it; thinking = true },
                     tools = if (specs.isNotEmpty()) Tools(
                         specs,
@@ -240,14 +240,22 @@ class ChatState(val history: ConvStore) {
                             if (thinkText.isNotBlank() && !thinkText.endsWith("\n\n")) thinkText += "\n\n"
                             val idx = liveSteps.size
                             liveSteps.add(ToolStep(thinkText.length, n, Trail.liveTitle(n), Trail.detail(n, a), done = false))
+                            var made = n != Works.MAKE
                             try {
                             if (n == Memory.REMEMBER || n == Memory.FORGET) Memory.runTool(who, n, a, cur.orEmpty(), convTitle0)
                             else if (n == Recall.TOOL) Recall.run(store0, cur, a.optString("query"))
-                            else if (n == Works.MAKE || n == Works.READ) Works.run(n, a) { id -> if (id !in pendingWorks) pendingWorks.add(id) }
+                            else if (n == Works.MAKE || n == Works.READ) Works.run(n, a) { id -> made = true; if (id !in pendingWorks) pendingWorks.add(id) }
                             else if (Mcp.owns(n)) Mcp.run(n, a)
                             else Yu.run(n, a, Yu.vision(p.id)) { refs -> refs.forEach { r -> if (r !in pendingImgs) pendingImgs.add(r) } }
+                            } catch (e: kotlinx.coroutines.CancellationException) {
+                                throw e
+                            } catch (e: Exception) {
+                                // 工具自己出错不拖垮整轮：告诉她没成，她可以重来或如实说
+                                ToolOut("没成功：" + (e.message ?: e.javaClass.simpleName).take(80) + "。可以再试一次，或如实告诉对方没做成。")
                             } finally {
-                                if (idx < liveSteps.size) liveSteps[idx] = liveSteps[idx].copy(title = Trail.doneTitle(n, a), done = true)
+                                // 没做成的作品如实标出来，不显示「做好了」
+                                val t = if (made) Trail.doneTitle(n, a) else Trail.failTitle(a)
+                                if (idx < liveSteps.size) liveSteps[idx] = liveSteps[idx].copy(title = t, done = true)
                             }
                         },
                         { },
@@ -259,17 +267,18 @@ class ChatState(val history: ConvStore) {
                             if (yu) Yu.context(question) else null,
                         ).joinToString("\n\n")
                     }) else null,
+                    toolNote = extra,
                 ) { partial += it; thinking = false }
                 streamDone = true
                 // 等书写追上再收尾
                 snapshotFlow { shown >= partial.length }.first { it }
                 if (partial.isNotBlank() || pendingWorks.isNotEmpty()) {
                     messages.add(ChatMsg("assistant", partial.trim(), thinkText, pendingImgs.toList(), works = pendingWorks.toList(), steps = doneSteps()))
-                    // 全局记忆：回答完后在后台整理一下值得记住的事
-                    val reply = partial.trim()
+                    // 记忆：不是每句都记，等这段聊停了再整段回想（换对话时马上回想上一段）
                     val cid = convId.orEmpty()
                     val title = this@ChatState.history.get(convId)?.title ?: firstSentence(question, 18)
-                    scope.launch { Memory.learn(who, p, c, store.activeModel, question, reply, cid, title) }
+                    val model = store.activeModel
+                    Reflect.later(cid, messages.toList()) { w -> Reflect.run(who, p, c, model, w, cid, title) }
                 } else error = "没有收到回复，换个模型再试"
             } catch (e: kotlinx.coroutines.CancellationException) {
                 if (partial.isNotBlank() || pendingWorks.isNotEmpty()) messages.add(ChatMsg("assistant", partial.take(ceil(shown).toInt()).trim(), thinkText, pendingImgs.toList(), works = pendingWorks.toList(), steps = doneSteps()))

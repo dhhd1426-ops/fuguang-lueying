@@ -310,6 +310,8 @@ object ChatApi {
         tools: Tools? = null,
         /** 模型不支持工具时，放进 system 提示的补充内容。 */
         fallback: (suspend () -> String)? = null,
+        /** 只在真的带上工具时才拼进 system 的说明：工具被去掉了还写着「你有笔」，她会说做好了其实没做。 */
+        toolNote: String = "",
         onText: suspend (String) -> Unit,
     ) {
         // 先怀疑工具，再怀疑思考参数，逐个去掉再发；-1 = 什么思考参数都不带
@@ -319,8 +321,12 @@ object ChatApi {
         val show: suspend (String) -> Unit = if (level == 0) ({ }) else onThink
         tries.forEachIndexed { i, (lv, useTools) ->
             try {
-                val sys = if (tools != null && !useTools && fallback != null)
-                    system + "\n\n" + runCatching { fallback() }.getOrDefault("") else system
+                val sys = when {
+                    tools == null -> system
+                    useTools -> system + toolNote
+                    else -> system + "\n\n这一轮你手边没有工具：记不了、也做不了作品。没真的做出来的东西，不要说已经做好了。" +
+                        (fallback?.let { "\n\n" + runCatching { it() }.getOrDefault("") } ?: "")
+                }
                 conversation(p, c, model, sys, history, lv, if (useTools) tools else null, show, onText)
                 return
             } catch (e: Rejected) {
@@ -336,12 +342,13 @@ object ChatApi {
         val anthropic = p.kind == "anthropic"
         val msgs = JSONArray()
         if (!anthropic) msgs.put(JSONObject().put("role", "system").put("content", system))
-        // DeepSeek 思考模式下带工具：以前每一轮的思考都要原样带回去，不然会 400
+        // DeepSeek 思考模式下带工具：以前每一条回复的 reasoning_content 都要带回去，没想过的也要带一个空的，
+        // 少一条就 400，然后会退成不带工具再发，她就只能嘴上说「做好了」（作品卡丢失的根子）
         val echo = p.id == "deepseek" && tools != null && level != 0
         // 做事中途收到新消息时，那一段回复可能没有正文：空的不带，免得供应商报错
         history.filter { !(it.role == "assistant" && it.text.isBlank()) }.forEach {
             val m = JSONObject().put("role", it.role).put("content", it.text)
-            if (echo && it.role == "assistant" && it.think.isNotEmpty()) m.put("reasoning_content", it.think)
+            if (echo && it.role == "assistant") m.put("reasoning_content", it.think)
             msgs.put(m)
         }
         var round = 0
@@ -376,7 +383,7 @@ object ChatApi {
                 }
                 val am = JSONObject().put("role", "assistant").put("content", r.text).put("tool_calls", tc)
                 // DeepSeek 思考模式下用工具，要把这一轮的思考原样带回去
-                if (p.id == "deepseek" && r.reasoning.isNotEmpty()) am.put("reasoning_content", r.reasoning)
+                if (echo || (p.id == "deepseek" && r.reasoning.isNotEmpty())) am.put("reasoning_content", r.reasoning)
                 msgs.put(am)
                 // 工具消息只能放文字，图片另起一条放在后面给模型看
                 val pics = JSONArray()

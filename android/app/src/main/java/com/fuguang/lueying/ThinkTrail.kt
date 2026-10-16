@@ -81,6 +81,8 @@ object Trail {
         else -> if (Mcp.owns(n)) Mcp.note(n).replace("正在用", "用了").trimEnd('…') else "查了羽的笔记"
     }
 
+    fun failTitle(a: JSONObject): String = "作品「${a.optString("title").trim().ifEmpty { "未命名" }.take(20)}」没做成"
+
     fun detail(n: String, a: JSONObject): String = when (n) {
         Memory.REMEMBER, Memory.FORGET -> a.optString("text")
         Recall.TOOL, "search_notes" -> a.optString("query")

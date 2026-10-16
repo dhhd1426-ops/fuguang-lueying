@@ -267,8 +267,8 @@ object Memory {
     val toolSpecs: List<ToolSpec> get() = listOf(
         ToolSpec(
             REMEMBER,
-            "把值得长期记住的事记进你的记忆。kind：about=$who 的基本情况（住哪、做什么、身边的人）；pref=$who 的偏好、习惯、希望你怎么说话；" +
-                "self=你自己的偏好和样子（比如你喜欢怎么说话、你的口头禅）；promise=你答应$who 的事；talk=你们一起定下的、聊到哪一步了；know=你对$who 的其他了解。",
+            "$who 明确让你记住某件事时（“记住…”“别忘了…”“以后都…”），把它记进你的记忆。平常聊天里的事不用你记，聊完你会自己回想一遍。" +
+                "kind：about=$who 的基本情况；pref=$who 的偏好、希望你怎么说话；self=你自己的样子；promise=你答应$who 的事；talk=你们定下、还没做完的事；know=其他。",
             JSONObject().put("type", "object").put("properties", JSONObject()
                 .put("kind", JSONObject().put("type", "string").put("enum", JSONArray(listOf("about", "pref", "self", "promise", "talk", "know"))))
                 .put("text", JSONObject().put("type", "string").put("description", "一句话，30 字以内，用你自己的口吻"))
@@ -284,13 +284,14 @@ object Memory {
     )
 
     fun toolRule(): String =
-        "你可以用 $REMEMBER 记下值得长期记住的事（$who 的情况、$who 的偏好、你自己的偏好、你答应的事），用 $FORGET 删掉$who 让你忘掉的。" +
-            "要不要记由你自己判断：$who 明确说“记住”的一定记；寒暄、一次性的问题不记；密码、验证码、证件号这类绝不记。记的时候不用说出来。"
+        "你的记忆是聊完之后自己整理的，聊天时不用操心记什么。$who 明确让你记住什么，用 $REMEMBER 记下；$who 让你忘掉什么，用 $FORGET 删掉，" +
+            "这两种情况做完说一声就好（比如“记住了”）。角色扮演和故事里发生的事不是记忆；密码、验证码、证件号这类绝不记。"
 
     fun runTool(p: Persona, name: String, a: JSONObject, conv: String, convTitle: String): ToolOut {
         if (name == REMEMBER) {
             val t = a.optString("text").trim().take(80)
             if (t.isEmpty()) return ToolOut("没有内容。")
+            if (Reflect.sensitive(t)) return ToolOut("这条像是证件号、卡号或密码，不记。")
             val k = a.optString("kind").trim().let { if (it in setOf("about", "pref", "self", "promise", "talk", "know")) it else "know" }
             if (p.items.any { it.text == t }) return ToolOut("已经记得了。")
             val now = System.currentTimeMillis()
@@ -307,48 +308,5 @@ object Memory {
             return ToolOut("忘掉了 ${hit.size} 件：" + hit.joinToString("；") { it.text })
         }
         return ToolOut("没有这个工具。")
-    }
-
-    /** 一轮回答之后：让她回想一下，有什么关于他的事值得记住。失败就算了，不打扰用户。 */
-    suspend fun learn(who: Persona, p: Provider, c: ProviderConfig, model: String, user: String, reply: String, conv: String, convTitle: String) {
-        if (user.isBlank() || reply.isBlank()) return
-        val sys = "你是${who.name}，在写自己的日记。回想刚才和他的这段对话，记下你想一直记住的事。只输出 JSON，不要别的文字。" +
-            "你的名字和他的称呼由设置决定，不要记“我还没名字”“他要给我起名字”“他叫我 X”这类事。"
-        val tag = mapOf("talk" to "聊过", "promise" to "答应", "know" to "了解", "about" to "他的情况", "pref" to "他的偏好", "self" to "你自己")
-        val known = who.items.take(60).joinToString("\n") { "- [" + (tag[it.kind] ?: "了解") + "] " + it.text }.ifBlank { "（还没有）" }
-        val ask = """
-你已经记得的事：
-$known
-
-这一轮对话：
-他：${user.take(1500)}
-你：${reply.take(1500)}
-
-你只记这几种事：
-1. talk 你们聊过的事：一起定下的决定、做到哪一步了、还悬着没定的问题。比如“我们定了主页分四块，随笔谁来写还没定”。
-2. promise 你答应过他的：你说要做、要提醒、要等他回复再做的事。比如“答应给他做一段动画，等他点头就开工”。你答应过的一定要记。
-3. about 他的基本情况：住在哪、做什么工作、身边的人。比如“他在济南，是工程师”。
-4. pref 他的偏好：他希望你怎么和他说话、他的喜好和习惯。比如“他喜欢回答短一点”“时间以网络时间为准”。
-5. self 你自己的偏好和样子：比如你发现自己喜欢怎么说话、你的口头禅。
-6. know 你对他的其他了解：在做的事、在意的东西，放不进上面两类的。比如“他在用羽记笔记，分工作和创作两路”。
-
-寒暄、一次性的小问题、已经记得的都不要；如果这一轮把以前记的事推进了或兑现了，就写成新的一条。大多数时候什么都不用记，返回空数组。
-用你自己的口吻写，称他为“他”，说你们俩就用“我们”；不要写“用户”，不要写日期，不要以你的名字开头。
-输出格式：{"memories":[{"kind":"talk|promise|about|pref|self|know","text":"一句话，24 字以内","detail":"补充细节，60 字以内，可以为空"}]}
-""".trim()
-        val raw = runCatching { ChatApi.complete(p, c, model, sys, ask) }.getOrNull() ?: return
-        val json = raw.substringAfter('{', "").substringBeforeLast('}', "").let { if (it.isEmpty()) return else "{$it}" }
-        val o = runCatching { JSONObject(json) }.getOrNull() ?: return
-        val now = System.currentTimeMillis()
-        o.optJSONArray("memories")?.let { a ->
-            for (i in 0 until a.length()) {
-                val m = a.optJSONObject(i) ?: continue
-                val t = m.optString("text").trim()
-                if (t.isEmpty() || who.items.any { it.text == t }) continue
-                val k = m.optString("kind").trim().lowercase().let { if (it in setOf("talk", "promise", "about", "pref", "self")) it else "know" }
-                who.items.add(0, Mem("$now-$i", t, m.optString("detail").trim(), now, conv, convTitle, k))
-            }
-        }
-        save()
     }
 }
