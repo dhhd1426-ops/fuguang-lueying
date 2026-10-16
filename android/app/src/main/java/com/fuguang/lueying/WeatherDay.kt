@@ -49,28 +49,28 @@ private val warm = Color(0xFFE9B48E)
 /** 卡片背面：那一天的一句话、气温曲线、六格细节。 */
 @Composable
 fun WeatherDayFace(d: WxDay, onBack: () -> Unit) {
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 16.dp)) {
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 12.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             PressSurface(onBack, Modifier.size(40.dp), shape = CircleShape, fill = Color.Transparent, pressScale = .9f, label = "翻回去") {
                 SvgIcon(back, Page.ink, 20.dp, 1.6f, Modifier.align(Alignment.Center))
             }
             Spacer(Modifier.width(4.dp))
             val name = dayName(d.date)
-            Txt(if (name == weekName(d.date)) name else "$name · ${weekName(d.date)}", Page.ink, 19.sp, spacing = ls(2.6f, 19f), family = Serif)
+            Txt(if (name == weekName(d.date)) name else "$name · ${weekName(d.date)}", Page.ink, 17.sp, spacing = ls(2.2f, 17f), family = Serif)
             Spacer(Modifier.width(8.dp))
             Txt("${d.date.monthValue}月${d.date.dayOfMonth}日", Page.muted.copy(alpha = .6f), 12.sp)
         }
         Row(Modifier.fillMaxWidth().padding(start = 4.dp, end = 4.dp, top = 6.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-            Txt("${d.hi}°", Page.ink, 52.sp, weight = FontWeight.ExtraLight)
+            Txt("${d.hi}°", Page.ink, 38.sp, weight = FontWeight.ExtraLight)
             Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
                 Txt(wxText(d.code), Page.ink, 15.sp)
                 Spacer(Modifier.height(4.dp))
                 Txt("最低 ${d.lo}°", Page.muted, 12.sp)
             }
-            WxIcon(wxKind(d.code), 54.dp)
+            WxIcon(wxKind(d.code), 36.dp)
         }
-        Txt(daySay(d), Page.ink.copy(alpha = .86f), 14.sp, Modifier.padding(start = 4.dp, end = 4.dp, bottom = 14.dp), lineHeight = 25.sp)
+        Txt(daySay(d), Page.ink.copy(alpha = .86f), 13.sp, Modifier.padding(start = 4.dp, end = 4.dp, bottom = 12.dp), lineHeight = 22.sp)
         if (d.hours.size >= 2) TempCurve(d.hours)
         Spacer(Modifier.height(14.dp))
         val lv = windLevel(d.windKmh)
@@ -80,7 +80,7 @@ fun WeatherDayFace(d: WxDay, onBack: () -> Unit) {
                 Triple("风", "$lv 级", windDir(d.windDir)),
                 Triple("湿度", "${d.hum}%", if (d.hum > 75) "有点闷" else if (d.hum < 40) "偏干" else "舒服"),
                 Triple("紫外线", "%.0f".format(d.uv), uvWord(d.uv)),
-                Triple("日出 / 日落", d.sunrise, "${d.sunset} 落山"),
+                Triple("日出", d.sunrise, "${d.sunset} 落"),
                 Triple("空气", d.aqi?.toString() ?: "—", d.aqi?.let { aqiWord(it) } ?: "暂无"),
             ),
         )
@@ -90,7 +90,7 @@ fun WeatherDayFace(d: WxDay, onBack: () -> Unit) {
 @Composable
 private fun Cells(items: List<Triple<String, String, String>>) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        items.chunked(2).forEach { row ->
+        items.chunked(3).forEach { row ->
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { row.forEach { Cell(it) } }
         }
     }
@@ -98,12 +98,12 @@ private fun Cells(items: List<Triple<String, String, String>>) {
 
 @Composable
 private fun RowScope.Cell(c: Triple<String, String, String>) {
-    Column(Modifier.weight(1f).background(CardBlock, RoundedCornerShape(16.dp)).padding(horizontal = 14.dp, vertical = 12.dp)) {
-        Txt(c.first, Page.muted, 11.5.sp, spacing = ls(.9f, 11.5f))
+    Column(Modifier.weight(1f).background(CardBlock, RoundedCornerShape(18.dp)).padding(horizontal = 10.dp, vertical = 9.dp)) {
+        Txt(c.first, Page.muted, 10.5.sp, spacing = ls(.6f, 10.5f), maxLines = 1)
         Spacer(Modifier.height(6.dp))
-        Txt(c.second, Page.ink, 17.sp)
+        Txt(c.second, Page.ink, 15.sp, maxLines = 1)
         Spacer(Modifier.height(2.dp))
-        Txt(c.third, Page.muted.copy(alpha = .6f), 11.5.sp, maxLines = 1)
+        Txt(c.third, Page.muted.copy(alpha = .6f), 10.5.sp, maxLines = 1)
     }
 }
 
@@ -115,8 +115,8 @@ private fun TempCurve(hours: List<WxHour>) {
     val lo = vs.min() - 1
     val hi = vs.max() + 1
     val top = vs.indexOf(vs.max())
-    Box(Modifier.fillMaxWidth().background(WxWell, RoundedCornerShape(18.dp)).padding(horizontal = 10.dp, vertical = 14.dp)) {
-        Canvas(Modifier.fillMaxWidth().height(100.dp)) {
+    Box(Modifier.fillMaxWidth().background(WxWell, RoundedCornerShape(22.dp)).padding(horizontal = 8.dp, vertical = 12.dp)) {
+        Canvas(Modifier.fillMaxWidth().height(76.dp)) {
             val pad = 14.dp.toPx()
             val base = size.height - 20.dp.toPx()
             fun x(i: Int) = pad + i * (size.width - 2 * pad) / (vs.size - 1)

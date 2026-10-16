@@ -313,7 +313,7 @@ private fun HomePage(
         Box(Modifier.weight(1f).fillMaxWidth().pointerInput(Unit) { detectTapGestures(onDoubleTap = { onZen() }) }) {
             Hero(compact, Modifier.align(Alignment.CenterStart))
             // 时间天气：左下暗处，点开是天气卡片
-            WeatherWidget(now, compact, Modifier.align(Alignment.BottomStart).offset(x = (-10).dp))
+            WeatherWidget(now, compact, Modifier.align(Alignment.BottomStart))
         }
     }
 }

@@ -99,8 +99,8 @@ fun WeatherCardLayer() {
                 .background(rgba(6, 8, 12, .5f))
                 .pointerInput(Unit) { detectTapGestures { WeatherCard.open = false } },
         )
-        val w = min(400.dp, maxWidth - 28.dp)
-        val h = min(maxHeight * .84f, 690.dp)
+        val w = min(316.dp, maxWidth - 56.dp)
+        val h = min(maxHeight * .64f, 500.dp)
         val x = (maxWidth - w) / 2
         val y = (maxHeight * .96f - h) / 2
         val fv = flip.value
@@ -114,7 +114,7 @@ fun WeatherCardLayer() {
                     transformOrigin = if (from.isSpecified) TransformOrigin((from.x - x.toPx()) / size.width, (from.y - y.toPx()) / size.height) else TransformOrigin(.5f, 1.1f)
                     rotationY = 180f * fv
                     cameraDistance = 14f * density
-                    shape = RoundedCornerShape(26.dp); clip = true
+                    shape = RoundedCornerShape(36.dp); clip = true
                     shadowElevation = 26.dp.toPx()
                 }
                 .background(WxCardFill)
@@ -125,7 +125,7 @@ fun WeatherCardLayer() {
                     WeatherDayFace(data.days[day.coerceIn(0, data.days.lastIndex)]) { back = false }
                 }
             } else {
-                Column(Modifier.fillMaxSize().verticalScroll(frontScroll).padding(start = 16.dp, end = 16.dp, top = 20.dp, bottom = 16.dp)) {
+                Column(Modifier.fillMaxSize().verticalScroll(frontScroll).padding(start = 12.dp, end = 12.dp, top = 18.dp, bottom = 12.dp)) {
                     WeatherFront(data, rise.value) { day = it; back = true }
                 }
             }
@@ -137,7 +137,7 @@ fun WeatherCardLayer() {
 private fun WeatherFront(d: Forecast, t: Float, onDay: (Int) -> Unit) {
     var picking by remember { mutableStateOf(false) }
     Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp).mineRise(0, t), verticalAlignment = Alignment.CenterVertically) {
-        Txt(Weather.place.name, Page.ink, 19.sp, spacing = ls(3f, 19f), family = Serif, maxLines = 1)
+        Txt(Weather.place.name, Page.ink, 17.sp, spacing = ls(2.6f, 17f), family = Serif, maxLines = 1)
         Spacer(Modifier.width(10.dp))
         Txt(SimpleDateFormat("HH:mm", Locale.CHINA).format(Date(d.at)) + " 更新", Page.muted.copy(alpha = .6f), 12.sp, Modifier.weight(1f), maxLines = 1)
         PressSurface({ picking = !picking }, shape = RoundedCornerShape(50), label = "换城市") {
@@ -145,8 +145,8 @@ private fun WeatherFront(d: Forecast, t: Float, onDay: (Int) -> Unit) {
         }
     }
     if (picking) WeatherPlacePicker { picking = false }
-    Row(Modifier.fillMaxWidth().padding(start = 4.dp, end = 4.dp, top = 10.dp, bottom = 16.dp).mineRise(1, t), verticalAlignment = Alignment.CenterVertically) {
-        Txt("${d.now.temp}°", Page.ink, 62.sp, weight = FontWeight.ExtraLight)
+    Row(Modifier.fillMaxWidth().padding(start = 4.dp, end = 4.dp, top = 6.dp, bottom = 12.dp).mineRise(1, t), verticalAlignment = Alignment.CenterVertically) {
+        Txt("${d.now.temp}°", Page.ink, 42.sp, weight = FontWeight.ExtraLight)
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
             Txt(wxText(d.now.code), Page.ink, 15.sp)
@@ -158,44 +158,43 @@ private fun WeatherFront(d: Forecast, t: Float, onDay: (Int) -> Unit) {
                 Txt("空气 $it · ${aqiWord(it)}", WxAqi, 11.5.sp, Modifier.background(WxAqi.copy(alpha = .16f), RoundedCornerShape(50)).padding(horizontal = 9.dp, vertical = 3.dp))
             }
         }
-        WxIcon(wxKind(d.now.code, d.now.day), 56.dp)
+        WxIcon(wxKind(d.now.code, d.now.day), 38.dp)
     }
     // 逐小时：横着滑
     Row(
-        Modifier.fillMaxWidth().mineRise(2, t).background(WxWell, RoundedCornerShape(18.dp))
-            .horizontalScroll(rememberScrollState()).padding(horizontal = 6.dp, vertical = 12.dp),
+        Modifier.fillMaxWidth().mineRise(2, t).background(WxWell, RoundedCornerShape(22.dp))
+            .horizontalScroll(rememberScrollState()).padding(horizontal = 4.dp, vertical = 10.dp),
     ) {
         d.next.forEachIndexed { i, h ->
-            Column(Modifier.width(52.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                Txt(if (i == 0) "现在" else "%02d时".format(h.hour), if (i == 0) Page.accent else Page.muted, 12.sp)
+            Column(Modifier.width(44.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                Txt(if (i == 0) "现在" else "%02d时".format(h.hour), if (i == 0) Page.accent else Page.muted, 11.sp)
                 Spacer(Modifier.height(8.dp))
-                WxIcon(wxKind(h.code, h.day), 22.dp)
+                WxIcon(wxKind(h.code, h.day), 20.dp)
                 Spacer(Modifier.height(8.dp))
-                Txt("${h.temp}°", Page.ink, 14.sp)
+                Txt("${h.temp}°", Page.ink, 13.sp)
             }
         }
     }
-    Txt("七天", Page.muted, 11.sp, Modifier.padding(start = 6.dp, top = 16.dp, bottom = 8.dp).mineRise(3, t), spacing = ls(2.75f, 11f))
+    Txt("七天", Page.muted, 11.sp, Modifier.padding(start = 6.dp, top = 14.dp, bottom = 8.dp).mineRise(3, t), spacing = ls(2.75f, 11f))
     val lo = d.days.minOf { it.lo }
     val hi = d.days.maxOf { it.hi }.coerceAtLeast(lo + 1)
-    Column(Modifier.fillMaxWidth().mineRise(4, t).background(CardBlock, RoundedCornerShape(18.dp))) {
+    Column(Modifier.fillMaxWidth().mineRise(4, t).background(CardBlock, RoundedCornerShape(22.dp))) {
         d.days.forEachIndexed { i, x ->
             if (i > 0) Box(Modifier.fillMaxWidth().height(1.dp).background(Color.White.copy(alpha = .06f)))
             PressSurface({ onDay(i) }, Modifier.fillMaxWidth(), shape = RoundedCornerShape(0.dp), fill = Color.Transparent, pressScale = 1f, label = "${dayName(x.date)} ${wxText(x.code)}") {
-                Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 13.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Txt(dayName(x.date), Page.ink, 14.sp, Modifier.width(44.dp))
-                    WxIcon(wxKind(x.code), 20.dp)
-                    Txt("${x.lo}°", Page.muted, 14.sp, Modifier.width(40.dp), align = androidx.compose.ui.text.style.TextAlign.End)
+                Row(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Txt(dayName(x.date), Page.ink, 13.sp, Modifier.width(40.dp))
+                    WxIcon(wxKind(x.code), 18.dp)
+                    Txt("${x.lo}°", Page.muted, 13.sp, Modifier.width(34.dp), align = androidx.compose.ui.text.style.TextAlign.End)
                     Spacer(Modifier.width(10.dp))
                     TempBar((x.lo - lo).toFloat() / (hi - lo), (x.hi - lo).toFloat() / (hi - lo), Modifier.weight(1f))
                     Spacer(Modifier.width(10.dp))
-                    Txt("${x.hi}°", Page.ink, 14.sp, Modifier.width(32.dp))
+                    Txt("${x.hi}°", Page.ink, 13.sp, Modifier.width(30.dp))
                     SvgIcon(chev, Page.muted.copy(alpha = .5f), 14.dp, 1.8f)
                 }
             }
         }
     }
-    Txt("点一天，看那天的详细。", Page.muted.copy(alpha = .55f), 11.5.sp, Modifier.padding(start = 6.dp, top = 12.dp).mineRise(5, t))
 }
 
 /** 一周最低到最高的那根细轨上，这一天占的一段：冷蓝到杏色。 */

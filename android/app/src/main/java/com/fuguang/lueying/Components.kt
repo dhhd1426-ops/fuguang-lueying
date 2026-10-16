@@ -93,6 +93,7 @@ fun Txt(
     weight: FontWeight = FontWeight.Normal,
     align: TextAlign = TextAlign.Start,
     maxLines: Int = Int.MAX_VALUE,
+    shadow: androidx.compose.ui.graphics.Shadow? = null,
 ) {
     BasicText(
         text = text,
@@ -105,6 +106,7 @@ fun Txt(
             fontFamily = family,
             fontWeight = weight,
             textAlign = align,
+            shadow = shadow,
         ),
         overflow = TextOverflow.Ellipsis,
         maxLines = maxLines,
