@@ -67,7 +67,7 @@ import kotlinx.coroutines.launch
 
 /* 浮动小卡片用的一套小部件：按压反馈、四段按钮、输入框、开关、标题。曲线照 dongxiaosheji 的动效 token。 */
 
-object Ease {
+object Curves {
     val standard = CubicBezierEasing(.2f, 0f, 0f, 1f)
     val decel = CubicBezierEasing(.05f, .7f, .1f, 1f)
     val accel = CubicBezierEasing(.3f, 0f, .8f, .15f)
@@ -114,7 +114,7 @@ fun PressSurface(
             if (i is PressInteraction.Press) {
                 val d = RippleDrop(i.pressPosition)
                 drops += d
-                scope.launch { d.t.animateTo(1f, tween(560, easing = Ease.decel)); drops -= d }
+                scope.launch { d.t.animateTo(1f, tween(560, easing = Curves.decel)); drops -= d }
             }
         }
     }
@@ -148,7 +148,7 @@ fun LoadRing(color: Color, size: Dp = 13.dp) {
 @Composable
 fun DrawnCheck(color: Color, size: Dp = 16.dp) {
     val p = remember { Animatable(0f) }
-    LaunchedEffect(Unit) { delay(90); p.animateTo(1f, tween(340, easing = Ease.decel)) }
+    LaunchedEffect(Unit) { delay(90); p.animateTo(1f, tween(340, easing = Curves.decel)) }
     Canvas(Modifier.size(size)) {
         val s = this.size.minDimension / 24f
         val a = Offset(5f * s, 12.5f * s); val b = Offset(9.5f * s, 17f * s); val c = Offset(19f * s, 7.5f * s)
@@ -194,8 +194,8 @@ fun <S> CardButton(
         BtnTone.Bad -> CardRose
         BtnTone.Plain -> Page.ink
     }
-    val fill by animateColorAsState(fillTarget, tween(220, easing = Ease.standard), label = "btnFill")
-    val ink by animateColorAsState(inkTarget, tween(220, easing = Ease.standard), label = "btnInk")
+    val fill by animateColorAsState(fillTarget, tween(220, easing = Curves.standard), label = "btnFill")
+    val ink by animateColorAsState(inkTarget, tween(220, easing = Curves.standard), label = "btnInk")
     val dx = remember { Animatable(0f) }
     LaunchedEffect(shake) {
         if (shake > 0) dx.animateTo(0f, keyframes { durationMillis = 300; -4f at 75; 4f at 150; -2f at 225 })
@@ -207,8 +207,8 @@ fun <S> CardButton(
         AnimatedContent(
             state,
             transitionSpec = {
-                (slideInVertically(tween(200, easing = Ease.standard)) { it / 2 } + fadeIn(tween(160))) togetherWith
-                    (slideOutVertically(tween(200, easing = Ease.standard)) { -it / 2 } + fadeOut(tween(140))) using SizeTransform(clip = false)
+                (slideInVertically(tween(200, easing = Curves.standard)) { it / 2 } + fadeIn(tween(160))) togetherWith
+                    (slideOutVertically(tween(200, easing = Curves.standard)) { -it / 2 } + fadeOut(tween(140))) using SizeTransform(clip = false)
             },
             label = "btnLabel",
         ) { s -> Row(verticalAlignment = Alignment.CenterVertically) { content(s, ink) } }

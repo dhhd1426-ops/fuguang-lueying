@@ -103,7 +103,7 @@ private fun ProviderConfig.sameSettings(o: ProviderConfig) =
 fun ProviderCardLayer(state: ProviderCardState, store: AssistantStore, anchor: Rect?, onPicked: () -> Unit) {
     val t by animateFloatAsState(
         if (state.open) 1f else 0f,
-        if (state.open) spring(dampingRatio = .8f, stiffness = 380f) else tween(if (state.sink) 260 else 230, easing = Ease.accel),
+        if (state.open) spring(dampingRatio = .8f, stiffness = 380f) else tween(if (state.sink) 260 else 230, easing = Curves.accel),
         label = "card",
     )
     LaunchedEffect(state.open) { if (!state.open) { delay(300); state.sink = false } }
@@ -153,7 +153,7 @@ fun ProviderCardLayer(state: ProviderCardState, store: AssistantStore, anchor: R
 
 @Composable
 private fun CardPanes(state: ProviderCardState, store: AssistantStore, w: Float, onPicked: () -> Unit) {
-    val d by animateFloatAsState(if (state.pid != null) 1f else 0f, tween(320, easing = Ease.standard), label = "pane")
+    val d by animateFloatAsState(if (state.pid != null) 1f else 0f, tween(320, easing = Curves.standard), label = "pane")
     if (d < 1f) {
         Box(Modifier.fillMaxSize().graphicsLayer { translationX = -.22f * w * d; alpha = 1f - d }) {
             ProviderListPane(state, store)

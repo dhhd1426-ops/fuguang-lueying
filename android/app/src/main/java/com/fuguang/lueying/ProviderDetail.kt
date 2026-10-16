@@ -50,7 +50,7 @@ fun ProviderDetailPane(state: ProviderCardState, store: AssistantStore, onPicked
     Column(Modifier.fillMaxSize()) {
         CardHeader(store.config(p.id).name, onBack = { state.back(store) })
         DetailTabs(state.tab) { state.setTab(store, it) }
-        Crossfade(state.tab, Modifier.weight(1f), animationSpec = tween(180, easing = Ease.standard), label = "tab") { t ->
+        Crossfade(state.tab, Modifier.weight(1f), animationSpec = tween(180, easing = Curves.standard), label = "tab") { t ->
             if (t == 0) ConfigPane(state, store, p) else ModelsPane(store, p, onPicked)
         }
     }
@@ -58,7 +58,7 @@ fun ProviderDetailPane(state: ProviderCardState, store: AssistantStore, onPicked
 
 @Composable
 private fun DetailTabs(tab: Int, onTab: (Int) -> Unit) {
-    val x by animateFloatAsState(tab.toFloat(), tween(320, easing = Ease.standard), label = "slab")
+    val x by animateFloatAsState(tab.toFloat(), tween(320, easing = Curves.standard), label = "slab")
     BoxWithConstraints(
         Modifier.padding(start = 12.dp, end = 12.dp, bottom = 10.dp).fillMaxWidth().height(42.dp)
             .background(CardWell, RoundedCornerShape(13.dp)).padding(3.dp),

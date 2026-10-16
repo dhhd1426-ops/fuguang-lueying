@@ -141,9 +141,9 @@ fun SortableProviders(
                     val ci = tops[i] + h[i] / 2f
                     when { i < from && center < ci -> h[from] + gap; i > from && center > ci -> -(h[from] + gap); else -> 0f }
                 }
-                val moved by animateFloatAsState(shift, if (snapBack) snap() else tween(240, easing = Ease.standard), label = "shift")
+                val moved by animateFloatAsState(shift, if (snapBack) snap() else tween(240, easing = Curves.standard), label = "shift")
                 val lifted = p.id == dragId && !settling
-                val lift by animateFloatAsState(if (lifted) 1f else 0f, if (lifted) spring(dampingRatio = .5f, stiffness = 500f) else tween(260, easing = Ease.standard), label = "lift")
+                val lift by animateFloatAsState(if (lifted) 1f else 0f, if (lifted) spring(dampingRatio = .5f, stiffness = 500f) else tween(260, easing = Curves.standard), label = "lift")
                 val mine = p.id == dragId
                 Box(
                     Modifier
