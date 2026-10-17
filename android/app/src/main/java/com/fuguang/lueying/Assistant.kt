@@ -328,8 +328,8 @@ object ChatApi {
         toolNote: String = "",
         onText: suspend (String) -> Unit,
     ) {
-        // 先按 ModelFit 认这个模型（认过 / 学过的参数一开始就不带）；报错点名了哪个参数就记下、去掉重发（最多 3 次）。
-        repeat(3) {
+        // 先按 ModelFit 认这个模型（认过 / 学过的参数一开始就不带）；报错点名了哪个参数就记下、去掉重发（最多 5 次）；思考档位先一档档往下退，退到底才不带。
+        repeat(5) {
             try { return tiers(p, c, model, system, history, level, onThink, tools, fallback, toolNote, onText) } catch (_: Adapted) { }
         }
         tiers(p, c, model, system, history, level, onThink, tools, fallback, toolNote, onText)
@@ -508,7 +508,9 @@ object ChatApi {
             val body = JSONObject().put("model", model).put("messages", msgs).put("stream", true)
             // 做作品时一整张网页写在工具参数里，留足长度
             if (anthropic) body.put("system", system).put("max_tokens", 16000)
-            val sentThink = ThinkParams.apply(p, level, body)
+            // 这个模型学到的最高档：超过的按能到的最高一档发
+            val lv = if (level >= 2) minOf(level, ModelFit.cap(p.id, model)) else level
+            val sentThink = ThinkParams.apply(p, lv, body)
             // 回答的手感：温度、Top P（Anthropic 开着思考时不能带）
             if (!(anthropic && level >= 2)) {
                 temperature?.let { body.put("temperature", it.toDouble()) }
@@ -533,7 +535,10 @@ object ChatApi {
             val err = if (code !in 200..299) conn.errorStream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() } ?: "" else ""
             if (code == 400 || code == 422) {
                 // 报错点名了哪个参数：记在这个模型名下，去掉重发
-                ModelFit.blame(err, body)?.let { ModelFit.learn(p.id, model, it); throw Adapted() }
+                ModelFit.blame(err, body)?.let { w ->
+                    if (w == "think" && lv >= 2) ModelFit.stepDown(p.id, model, lv) else ModelFit.learn(p.id, model, w)
+                    throw Adapted()
+                }
                 if (canReject && (sentThink || tools != null)) throw Rejected()
             }
             if (code !in 200..299) {
