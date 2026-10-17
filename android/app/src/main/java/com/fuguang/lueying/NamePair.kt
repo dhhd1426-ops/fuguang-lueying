@@ -135,32 +135,34 @@ internal fun NamePair(p: Persona, a: String, u: String, onA: (String) -> Unit, o
             }
         }
         Row(Modifier.fillMaxWidth().padding(start = 10.dp, end = 10.dp, top = 18.dp, bottom = 14.dp)) {
-            Side(Modifier.weight(1f), p.id, p.name.trim().take(1), SolidColor(tintOf(p)), "助理名称", a, "Amor", onA, her) { ha = it }
+            Side(Modifier.weight(1f), p.id, p.name.trim().take(1), SolidColor(tintOf(p)), "助理名称", a, onA, her) { ha = it }
             Spacer(Modifier.width(64.dp))
-            Side(Modifier.weight(1f), Avatars.ME, Memory.userName.trim().takeLast(1).ifEmpty { "你" }, meFill, "用户名称", u, "怎么叫你", onU, me) { ma = it }
+            Side(Modifier.weight(1f), Avatars.ME, Memory.userName.trim().takeLast(1).ifEmpty { "你" }, meFill, "用户名称", u, onU, me) { ma = it }
         }
         if (ha != Rect.Zero) {
-            val days = if (p.firstAt > 0) "认识第 ${((System.currentTimeMillis() - p.firstAt) / 86_400_000L + 1)} 天 · ${p.chats} 次聊天" else "还没开始聊"
-            Txt(
-                days, Page.muted.copy(alpha = .55f), 10.5.sp,
-                Modifier.align(Alignment.TopCenter).offset { IntOffset(0, (ha.center.y - box.top + 14 * d).roundToInt()) },
-                family = Serif, spacing = ls(1.2f, 10.5f), maxLines = 1,
-            )
+            // 线下面两行小字：第几天、聊了几次（在两颗头像中间的空里，不碰相机角标）
+            Column(
+                Modifier.align(Alignment.TopCenter).offset { IntOffset(0, (ha.center.y - box.top + 20 * d).roundToInt()) },
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                if (p.firstAt > 0) {
+                    Txt("第 ${(System.currentTimeMillis() - p.firstAt) / 86_400_000L + 1} 天", Page.muted.copy(alpha = .75f), 11.sp, family = Serif, spacing = ls(1.3f, 11f), maxLines = 1)
+                    Txt("${p.chats} 次聊天", Page.muted.copy(alpha = .45f), 9.5.sp, spacing = ls(.8f, 9.5f), maxLines = 1)
+                } else Txt("还没聊过", Page.muted.copy(alpha = .5f), 10.5.sp, family = Serif, maxLines = 1)
+            }
         }
     }
 }
 
-/** 一边：头像（点了换图）、小字标签、宋体名字。 */
+/** 一边：头像（点了换图）和宋体名字。名字空着时才露出「助理名称 / 用户名称」。 */
 @Composable
 private fun Side(
-    modifier: Modifier, id: String, letter: String, fill: Brush, label: String, value: String, hint: String,
+    modifier: Modifier, id: String, letter: String, fill: Brush, hint: String, value: String,
     onChange: (String) -> Unit, scale: Animatable<Float, *>, onAt: (Rect) -> Unit,
 ) {
     Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
         AvatarButton(id, letter, fill, scale, onAt)
-        Spacer(Modifier.height(10.dp))
-        Txt(label, Page.muted, 10.5.sp, spacing = ls(3f, 10.5f))
-        Spacer(Modifier.height(4.dp))
+        Spacer(Modifier.height(12.dp))
         BasicTextField(
             value = value, onValueChange = onChange, singleLine = true,
             textStyle = TextStyle(color = Page.ink, fontSize = 19.sp, fontFamily = Serif, letterSpacing = 1.sp, textAlign = TextAlign.Center),
@@ -168,7 +170,7 @@ private fun Side(
             modifier = Modifier.fillMaxWidth(),
             decorationBox = { inner ->
                 Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                    if (value.isEmpty()) Txt(hint, Page.muted.copy(alpha = .5f), 15.sp, family = Serif, maxLines = 1)
+                    if (value.isEmpty()) Txt(hint, Page.muted.copy(alpha = .45f), 15.sp, family = Serif, spacing = ls(2f, 15f), maxLines = 1)
                     inner()
                 }
             },
