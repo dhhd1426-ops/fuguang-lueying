@@ -300,6 +300,8 @@ object ChatApi {
 
     /** 这家不认思考参数或工具（400 / 422）。 */
     private class Rejected : Exception()
+    /** 报错点名了某个参数，已经记进 ModelFit：去掉它重新发。 */
+    private class Adapted : Exception()
 
     private class Call(var id: String = "", val name: StringBuilder = StringBuilder(), val args: StringBuilder = StringBuilder())
 
@@ -326,8 +328,19 @@ object ChatApi {
         toolNote: String = "",
         onText: suspend (String) -> Unit,
     ) {
-        // 先怀疑工具，再怀疑思考参数，逐个去掉再发；-1 = 什么思考参数都不带
-        val hasTools = tools != null
+        // 先按 ModelFit 认这个模型（认过 / 学过的参数一开始就不带）；报错点名了哪个参数就记下、去掉重发（最多 3 次）。
+        repeat(3) {
+            try { return tiers(p, c, model, system, history, level, onThink, tools, fallback, toolNote, onText) } catch (_: Adapted) { }
+        }
+        tiers(p, c, model, system, history, level, onThink, tools, fallback, toolNote, onText)
+    }
+
+    private suspend fun tiers(
+        p: Provider, c: ProviderConfig, model: String, system: String, history: List<ChatMsg>, level: Int,
+        onThink: suspend (String) -> Unit, tools: Tools?, fallback: (suspend () -> String)?, toolNote: String, onText: suspend (String) -> Unit,
+    ) {
+        // 报错没点名时：先怀疑工具，再怀疑思考参数，逐个去掉再发；-1 = 什么思考参数都不带
+        val hasTools = tools != null && !ModelFit.drops(p.id, model, "tools")
         val tries = listOf(level to hasTools, level to false, -1 to hasTools, -1 to false).distinct()
         // 关闭时就算模型自己想了也不显示
         val show: suspend (String) -> Unit = if (level == 0) ({ }) else onThink
@@ -340,6 +353,8 @@ object ChatApi {
                         (fallback?.let { "\n\n" + runCatching { it() }.getOrDefault("") } ?: "")
                 }
                 conversation(p, c, model, sys, history, lv, if (useTools) tools else null, show, onText)
+                // 去掉思考参数、工具留着就通了：这个模型不收思考参数，记下来，下次直接不带
+                if (lv == -1 && level >= 0 && useTools == hasTools) ModelFit.learn(p.id, model, "think")
                 return
             } catch (e: Rejected) {
                 if (i == tries.lastIndex) throw IllegalStateException("出错了（400）")
@@ -440,6 +455,7 @@ object ChatApi {
             if (anthropic) body.put("system", system).put("max_tokens", maxTokens)
             // 整理记忆不用想：DeepSeek 默认会思考，明确关掉
             if (p.id == "deepseek") body.put("thinking", JSONObject().put("type", "disabled"))
+            ModelFit.strip(p.id, model, body)
             conn.outputStream.use { it.write(body.toString().toByteArray()) }
             if (conn.responseCode !in 200..299) throw IllegalStateException("记忆整理失败（${conn.responseCode}）")
             val o = JSONObject(conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() })
@@ -510,12 +526,17 @@ object ChatApi {
                 }
                 body.put("tools", arr)
             }
+            ModelFit.strip(p.id, model, body)
             conn.outputStream.use { it.write(body.toString().toByteArray()) }
 
             val code = conn.responseCode
-            if (canReject && (sentThink || tools != null) && (code == 400 || code == 422)) throw Rejected()
+            val err = if (code !in 200..299) conn.errorStream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() } ?: "" else ""
+            if (code == 400 || code == 422) {
+                // 报错点名了哪个参数：记在这个模型名下，去掉重发
+                ModelFit.blame(err, body)?.let { ModelFit.learn(p.id, model, it); throw Adapted() }
+                if (canReject && (sentThink || tools != null)) throw Rejected()
+            }
             if (code !in 200..299) {
-                val err = conn.errorStream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() } ?: ""
                 val msg = runCatching { JSONObject(err).optJSONObject("error")?.optString("message") }.getOrNull()
                 throw IllegalStateException(
                     when (code) {
