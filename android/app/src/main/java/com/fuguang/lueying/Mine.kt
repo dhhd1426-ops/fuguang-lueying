@@ -91,6 +91,9 @@ class MineNav {
     fun back(): Boolean {
         screen = when {
             screen.startsWith("provider/") -> "providers"
+            screen.startsWith("search/") -> "search"
+            screen == "search" -> "features"
+            screen == "features" -> "mine"
             screen.startsWith("mcp/") -> "mcp"
             screen == "mcp" -> "mine"
             screen == "providers" -> if (persona.isNotEmpty() && Memory.get(persona) != null) "persona" else "assistant"

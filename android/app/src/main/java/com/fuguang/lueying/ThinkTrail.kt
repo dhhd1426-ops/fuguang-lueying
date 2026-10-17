@@ -69,13 +69,13 @@ data class ToolStep(val at: Int, val name: String, val title: String, val detail
 /** 每种工具在时间线上的说法和图标。 */
 object Trail {
     fun liveTitle(n: String): String = when (n) {
-        Memory.REMEMBER -> "正在记下"; Memory.FORGET -> "正在忘掉"; Recall.TOOL -> "正在翻看以前的聊天"
+        Memory.REMEMBER -> "正在记下"; Memory.FORGET -> "正在忘掉"; Recall.TOOL -> "正在翻看以前的聊天"; WebSearch.TOOL -> "正在上网查"
         Works.MAKE -> "正在动手做"; Works.READ -> "正在看原稿"; "list_todos" -> "正在查看羽的待办"; "read_note" -> "正在读羽的笔记"
         else -> if (Mcp.owns(n)) Mcp.note(n).trimEnd('…') else "正在查阅羽的笔记"
     }
 
     fun doneTitle(n: String, a: JSONObject): String = when (n) {
-        Memory.REMEMBER -> "记下了一条"; Memory.FORGET -> "忘掉了一些"; Recall.TOOL -> "翻了以前的聊天"
+        Memory.REMEMBER -> "记下了一条"; Memory.FORGET -> "忘掉了一些"; Recall.TOOL -> "翻了以前的聊天"; WebSearch.TOOL -> "上网查了「${a.optString("query").trim().take(16)}」"
         Works.MAKE -> "做好了作品「${a.optString("title").trim().ifEmpty { "未命名" }.take(20)}」"
         Works.READ -> "看了原稿"; "list_todos" -> "看了羽的待办"; "read_note" -> "读了一篇羽的笔记"
         else -> if (Mcp.owns(n)) Mcp.note(n).replace("正在用", "用了").trimEnd('…') else "查了羽的笔记"
@@ -85,20 +85,21 @@ object Trail {
 
     fun detail(n: String, a: JSONObject): String = when (n) {
         Memory.REMEMBER, Memory.FORGET -> a.optString("text")
-        Recall.TOOL, "search_notes" -> a.optString("query")
+        Recall.TOOL, "search_notes", WebSearch.TOOL -> a.optString("query")
         Works.MAKE -> when (a.optString("kind")) { "slides" -> "作品 · 幻灯片"; "doc" -> "作品 · 文档"; else -> "作品 · 网页" }
         else -> ""
     }.trim().replace('\n', ' ').take(80)
 
     /** 作品用和作品卡同一个图标（圆 + 方）。 */
     fun icon(n: String): Ic = when (n) {
-        Memory.REMEMBER -> bookmark; Memory.FORGET -> eraser; Recall.TOOL -> bubble
+        Memory.REMEMBER -> bookmark; Memory.FORGET -> eraser; Recall.TOOL -> bubble; WebSearch.TOOL -> globe
         Works.MAKE -> shapes; Works.READ -> page; "list_todos" -> todo
         else -> if (Mcp.owns(n)) plug else feather
     }
 
     val clock = Ic("M3.5 12a8.5 8.5 0 1 0 2.6-6.1M3.5 4.5v3.7h3.7M12 7.5V12l3 2")
     val chevron = Ic("M9.5 6l6 6-6 6")
+    private val globe = Ic("M4 12h16M12 4c2.4 2.5 2.4 13.5 0 16M12 4c-2.4 2.5-2.4 13.5 0 16", circles = listOf(floatArrayOf(12f, 12f, 8f)))
     private val bookmark = Ic("M7 4h10a1 1 0 0 1 1 1v15l-6-3.5L6 20V5a1 1 0 0 1 1-1Z")
     private val eraser = Ic("M8.5 19.5h11M4.8 14.7l9.9-9.9a1.5 1.5 0 0 1 2.1 0l2.4 2.4a1.5 1.5 0 0 1 0 2.1L10.3 18.2a1.5 1.5 0 0 1-2.1 0l-3.4-3.4ZM9.6 9.9l4.5 4.5")
     private val bubble = Ic("M5 5.5h14v10H10l-4 3v-3H5ZM9 10.5h6")

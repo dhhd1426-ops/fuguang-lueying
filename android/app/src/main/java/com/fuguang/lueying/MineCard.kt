@@ -75,14 +75,16 @@ object MineCard : FloatCard()
 
 private val person = Ic("M5.5 19.5c.9-3.4 3.4-5.3 6.5-5.3s5.6 1.9 6.5 5.3", circles = listOf(floatArrayOf(12f, 8.5f, 3.4f)))
 private val chevron = Ic("M9.5 6l6 6-6 6")
+private val tune = Ic("M6 4v5M6 14v6M12 4v2M12 11v9M18 4v9M18 18v2", circles = listOf(floatArrayOf(6f, 11.5f, 2.3f), floatArrayOf(12f, 8.5f, 2.3f), floatArrayOf(18f, 15.5f, 2.3f)))
 private val warm = Color(0xFFE9B48E)
 private val warmInk = Color(0xFF2A211B)
 
 /** 页面深度：往深处走新页从右边进，往回走从左边进。 */
 private fun depth(s: String) = when {
     s == "mine" -> 0
-    s == "assistant" || s == "mcp" || s == "about" -> 1
-    s == "persona" || s.startsWith("mcp/") -> 2
+    s == "assistant" || s == "mcp" || s == "about" || s == "features" -> 1
+    s == "persona" || s.startsWith("mcp/") || s == "search" -> 2
+    s.startsWith("search/") -> 3
     s == "providers" -> 3
     else -> 4
 }
@@ -101,7 +103,10 @@ fun MineCardLayer(store: AssistantStore, nav: MineNav) {
                 MineCardBody(rise) { nav.screen = it }
             }
             "about" -> AboutPage { nav.screen = "mine" }
-            else -> Column(Modifier.widthIn(max = 720.dp).fillMaxSize()) {
+            "features" -> FeaturesPage({ nav.screen = "mine" }) { nav.screen = "search" }
+            "search" -> SearchPage({ nav.screen = "features" }) { nav.screen = "search/$it" }
+            else -> if (screen.startsWith("search/")) SearchSourcePage(screen.removePrefix("search/")) { nav.screen = "search" }
+            else Column(Modifier.widthIn(max = 720.dp).fillMaxSize()) {
                 CompositionLocalProvider(LocalTitleEnd provides 36.dp) { MineSub(store, screen, true, 0.dp, nav) }
             }
         }
@@ -125,6 +130,10 @@ private fun MineCardBody(t: Float, onGo: (String) -> Unit) {
         Spacer(Modifier.width(6.dp))
         Txt(Memory.active.name, Page.muted, 13.5.sp, Modifier.widthIn(max = 96.dp), maxLines = 1)
         Spacer(Modifier.width(4.dp))
+        SvgIcon(chevron, Page.muted.copy(alpha = .6f), 15.dp, stroke = 1.8f)
+    }
+    Spacer(Modifier.height(6.dp))
+    MineRow(2, t, "功能", if (WebSearch.enabledCount > 0) "已启用 ${WebSearch.enabledCount} 项" else "都关着", { onGo("features") }, glyph = { SvgIcon(tune, warm, 19.dp, stroke = 1.6f) }) {
         SvgIcon(chevron, Page.muted.copy(alpha = .6f), 15.dp, stroke = 1.8f)
     }
     Txt("连接器", Page.muted, 11.sp, Modifier.padding(start = 8.dp, top = 14.dp, bottom = 8.dp).mineRise(2, t), spacing = ls(2.75f, 11f))
