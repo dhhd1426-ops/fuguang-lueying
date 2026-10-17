@@ -31,7 +31,7 @@ object Recall {
     /** 搜以前的对话：每段对话里命中的句子，带上前后各一句。 */
     fun run(store: ConvStore, current: String?, query: String): ToolOut {
         val words = query.trim().split(Regex("\\s+")).filter { it.isNotBlank() }
-        val convs = store.all.filter { it.id != current }.sortedByDescending { it.updated }
+        val convs = store.of().filter { it.id != current }.sortedByDescending { it.updated }
         if (convs.isEmpty()) return ToolOut("你们以前还没有别的聊天。")
         val out = JSONArray()
         if (words.isEmpty()) {
@@ -58,7 +58,7 @@ object Recall {
 
     /** 不支持工具时：最近几段对话的题目和日期。 */
     fun context(store: ConvStore, current: String?): String {
-        val convs = store.all.filter { it.id != current }.sortedByDescending { it.updated }.take(6)
+        val convs = store.of().filter { it.id != current }.sortedByDescending { it.updated }.take(6)
         if (convs.isEmpty()) return ""
         return "你们最近还聊过：" + convs.joinToString("；") { day(it.updated) + "「" + it.title + "」" } + "。他提起时接得上就好，不用主动提。"
     }

@@ -141,6 +141,8 @@ class ChatState(val history: ConvStore) {
 
     /** 打开记录里的一段对话。 */
     fun open(c: Conv) {
+        // 对话只属于一位助理：打开别人的对话，就换到她那边
+        if (c.who.isNotEmpty() && c.who != Memory.activeId) Memory.get(c.who)?.let { Memory.use(it) }
         reset()
         messages.addAll(c.msgs)
         convId = c.id
@@ -148,6 +150,12 @@ class ChatState(val history: ConvStore) {
     }
 
     private fun persist() { convId = history.save(convId, messages) }
+
+    /** 换了助理：手上这段对话不是她的，就换成和她的新对话。 */
+    fun followPersona() {
+        val c = history.get(convId) ?: return
+        if (c.who.isNotEmpty() && c.who != Memory.activeId) reset()
+    }
 
     /** 上下文消息限制：这段对话到顶了，只能开新对话。 */
     val full: Boolean get() = Memory.active.limit > 0 && messages.size >= Memory.active.limit
@@ -361,6 +369,7 @@ fun ChatPage(
     val side = if (compact) (if (tiny) 18.dp else 24.dp) else (width * .052f)
     val scope = rememberCoroutineScope()
     val title = Memory.active.name
+    LaunchedEffect(Memory.activeId) { chat.followPersona() }
     val subtitle = "${Memory.active.name} · ${store.config(store.activeProvider).name} · ${store.activeModel}"
 
     // 书写节奏：有积压时每帧推进

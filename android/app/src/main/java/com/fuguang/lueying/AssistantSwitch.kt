@@ -1,6 +1,14 @@
 package com.fuguang.lueying
 
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
@@ -49,11 +57,12 @@ internal fun PersonaDot(p: Persona, size: Dp) {
 }
 
 /**
- * 侧栏「切换助理」：右边是现在这一位；点一下，下面长出一张小卡片，列出已经建好的助理。
- * 点一位：✓ 先落到她身上，然后卡片自己收回。最下面「管理助理」去「我的 → 助理」。
+ * 侧栏顶上：现在这一位的名字（每位助理一个分区，下面只列她的对话）。
+ * 点名字，下面长出一张小卡片列出所有助理；点一位：✓ 先落到她身上，卡片自己收回，列表换成她的。
+ * 最下面「管理助理」去「我的 → 助理」。
  */
 @Composable
-internal fun AssistantSwitch(onManage: () -> Unit) {
+internal fun AssistantTitle(history: ConvStore, onSearch: () -> Unit, onManage: () -> Unit) {
     var open by remember { mutableStateOf(false) }
     var picked by remember { mutableStateOf<String?>(null) }
     val haptic = LocalHapticFeedback.current
@@ -61,12 +70,26 @@ internal fun AssistantSwitch(onManage: () -> Unit) {
     LaunchedEffect(picked) { if (picked != null) { delay(260); open = false; picked = null } }
     androidx.activity.compose.BackHandler(enabled = open) { open = false }
     val now = Memory.active
+    val turn by animateFloatAsState(if (open) 180f else 0f, spring(dampingRatio = .8f, stiffness = 420f), label = "chev")
     Column {
-        SideRow(SideIcons.swap, "切换助理", { open = !open }, selected = open) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                PersonaDot(now, 20.dp)
-                Spacer(Modifier.width(7.dp))
-                Txt(now.name, Page.muted, 12.5.sp, Modifier.widthIn(max = 96.dp), maxLines = 1)
+        Row(Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Pressable({ open = !open }, Modifier.weight(1f), label = "切换助理，现在是 ${now.name}") { p ->
+                Row(
+                    Modifier.background(if (open || p) rgba(255, 255, 255, if (p) .05f else .07f) else Color.Transparent, RoundedCornerShape(14.dp))
+                        .padding(start = 8.dp, end = 10.dp, top = 6.dp, bottom = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    AnimatedContent(now, transitionSpec = { (fadeIn(tween(220, 60)) + scaleIn(tween(260, 60, Curves.standard), .8f)) togetherWith (fadeOut(tween(140)) + scaleOut(tween(140), .8f)) }, label = "dot") { PersonaDot(it, 28.dp) }
+                    Spacer(Modifier.width(10.dp))
+                    AnimatedContent(now.name, Modifier.weight(1f, fill = false), transitionSpec = {
+                        (fadeIn(tween(240, 60)) + slideInVertically(tween(280, 60, Curves.standard)) { it / 3 }) togetherWith (fadeOut(tween(140)) + slideOutVertically(tween(160)) { -it / 3 })
+                    }, label = "name") { Txt(it, Page.ink, 19.sp, spacing = ls(2.4f, 19f), family = Serif, maxLines = 1) }
+                    Spacer(Modifier.width(6.dp))
+                    SvgIcon(Ic("M6 9.5l6 6 6-6"), SideFaint, 16.dp, stroke = 1.8f, modifier = Modifier.graphicsLayer { rotationZ = turn })
+                }
+            }
+            Pressable(onSearch, label = "搜索对话") { p ->
+                SvgIcon(SideIcons.search, if (p) Page.ink else SideInk, 21.dp, stroke = 1.5f, modifier = Modifier.padding(8.dp))
             }
         }
         AnimatedVisibility(
@@ -75,7 +98,7 @@ internal fun AssistantSwitch(onManage: () -> Unit) {
             exit = shrinkVertically(tween(220, easing = Curves.standard), shrinkTowards = Alignment.Top) + fadeOut(tween(160)),
         ) {
             Column(
-                Modifier.padding(start = 8.dp, end = 8.dp, top = 6.dp, bottom = 4.dp).fillMaxWidth()
+                Modifier.padding(start = 18.dp, end = 18.dp, bottom = 8.dp).fillMaxWidth()
                     .background(Color(0xFF22262F), RoundedCornerShape(18.dp)).padding(6.dp),
             ) {
                 Memory.all.forEach { p ->
@@ -91,7 +114,8 @@ internal fun AssistantSwitch(onManage: () -> Unit) {
                             Spacer(Modifier.width(12.dp))
                             Column(Modifier.weight(1f)) {
                                 Txt(p.name, Page.ink, 15.sp, maxLines = 1)
-                                Txt(if (p.items.isEmpty()) "还没有记忆" else "${p.items.size} 条记忆", SideFaint, 11.5.sp, Modifier.padding(top = 2.dp), maxLines = 1)
+                                val n = history.of(p.id).size
+                                Txt("${if (n == 0) "还没有对话" else "$n 段对话"} · ${if (p.items.isEmpty()) "还没有记忆" else "${p.items.size} 条记忆"}", SideFaint, 11.5.sp, Modifier.padding(top = 2.dp), maxLines = 1)
                             }
                             if (on) SvgIcon(Ic("M5 12.5l4.5 4.5L19 7.5"), SideWarm, 18.dp, stroke = 1.8f)
                         }

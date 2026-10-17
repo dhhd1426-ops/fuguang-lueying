@@ -254,7 +254,7 @@ private fun ColumnScope.AssistantScreen(compact: Boolean, blur: Dp, nav: MineNav
                     .padding(start = 16.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Txt("已删除 ${undo?.first?.name.orEmpty()}", Page.ink, 13.5.sp, Modifier.weight(1f), maxLines = 1)
+                Txt("已删除 ${undo?.first?.name.orEmpty()} 和她的对话", Page.ink, 13.5.sp, Modifier.weight(1f), maxLines = 1)
                 Pressable({ undo?.let { (p, i, was) -> Memory.restore(p, i, was) }; undo = null }, label = "撤销") { pr ->
                     Txt("撤销", warm, 13.5.sp, Modifier.background(if (pr) rgba(255, 255, 255, .06f) else Color.Transparent, RoundedCornerShape(12.dp)).padding(horizontal = 12.dp, vertical = 9.dp))
                 }

@@ -67,7 +67,7 @@ internal fun convIcon(c: Conv): Ic = when {
 }
 
 /**
- * 聊天页左侧栏（照 Claude App）：标题 + 搜索 → 作品 / 手记 / 切换助理 → 已置顶 → 最近对话 → 查看全部；
+ * 聊天页左侧栏（照 Claude App）：现在这位助理的名字（点开切换）+ 搜索 → 作品 / 手记 → 已置顶 → 她的最近对话 → 查看全部；
  * 底下左边是你的头像（去「我的」），右边「新对话」。长按一条对话：置顶 / 删除。
  */
 @Composable
@@ -107,42 +107,44 @@ private fun SideMain(
     history: ConvStore, current: String?, busy: Boolean, onSearch: () -> Unit, onOpen: (Conv) -> Unit, onNew: () -> Unit,
     onWorks: () -> Unit, onJournal: () -> Unit, onAssistants: () -> Unit,
 ) {
-    val pinned = history.all.filter { it.pinned }
-    val recent = history.all.filter { !it.pinned }.sortedByDescending { it.updated }.take(7)
     var editing by remember { mutableStateOf<String?>(null) }
     Column(Modifier.fillMaxSize().padding(top = 22.dp)) {
-        Row(Modifier.fillMaxWidth().padding(start = 22.dp, end = 12.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-            SvgIcon(Icons.spark, SideWarm, 20.dp, stroke = 1.1f)
-            Spacer(Modifier.width(8.dp))
-            Txt("浮光", Page.ink, 20.sp, Modifier.weight(1f), spacing = ls(6f, 20f), family = Serif)
-            Pressable(onSearch, label = "搜索对话") { p ->
-                SvgIcon(SideIcons.search, if (p) Page.ink else SideInk, 21.dp, stroke = 1.5f, modifier = Modifier.padding(8.dp))
-            }
-        }
+        AssistantTitle(history, onSearch, onAssistants)
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(start = 10.dp, end = 10.dp, bottom = 96.dp)) {
             val works = remember(Works.version) { Works.list().size }
             SideRow(SideIcons.work, "作品", onWorks) { if (works > 0) Txt(works.toString(), SideFaint, 11.5.sp) }
             SideRow(SideIcons.pen, "手记", onJournal, modifier = Modifier.onGloballyPositioned { NoteCard.from = it.boundsInRoot().center })
-            AssistantSwitch(onManage = onAssistants)
             // 一道不碰边的细线
             Box(Modifier.padding(horizontal = 12.dp, vertical = 8.dp).fillMaxWidth().height(1.dp).background(rgba(255, 255, 255, .07f)))
-            if (history.all.isEmpty()) {
-                Txt("还没有对话。点下面「新对话」开始。", SideFaint, 13.sp, Modifier.padding(horizontal = 12.dp, vertical = 16.dp), lineHeight = 22.sp)
-            }
-            if (pinned.isNotEmpty()) {
-                SideLabel("已置顶")
-                pinned.forEach { c -> ConvLine(c, c.id == current, busy && c.id == current, editing == c.id, history, onOpen, { editing = if (editing == c.id) null else c.id }) { if (c.id == current) onNew() } }
-            }
-            if (recent.isNotEmpty()) {
-                SideLabel("最近对话")
-                recent.forEach { c -> ConvLine(c, c.id == current, busy && c.id == current, editing == c.id, history, onOpen, { editing = if (editing == c.id) null else c.id }) { if (c.id == current) onNew() } }
-            }
-            if (history.all.isNotEmpty()) {
-                Pressable(onSearch, label = "查看全部对话") { p ->
-                    Row(Modifier.padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Txt("查看全部", if (p) Page.ink else Page.muted, 13.5.sp)
-                        Spacer(Modifier.width(4.dp))
-                        SvgIcon(SideIcons.next, Page.muted, 13.dp, stroke = 1.8f)
+            // 换了助理：她的对话列表交叉换上来（旧的淡出上移，新的淡入从下浮起）
+            AnimatedContent(
+                Memory.activeId,
+                transitionSpec = { (fadeIn(tween(260, 90)) + androidx.compose.animation.slideInVertically(tween(320, 90, Curves.standard)) { it / 24 }) togetherWith fadeOut(tween(140)) },
+                label = "hers",
+            ) { who ->
+                val hers = history.of(who)
+                val pinnedOf = hers.filter { it.pinned }
+                val recentOf = hers.filter { !it.pinned }.sortedByDescending { it.updated }.take(7)
+                Column {
+                    if (hers.isEmpty()) {
+                        Txt("还没有和${Memory.get(who)?.name.orEmpty()}的对话。点下面「新对话」开始。", SideFaint, 13.sp, Modifier.padding(horizontal = 12.dp, vertical = 16.dp), lineHeight = 22.sp)
+                    }
+                    if (pinnedOf.isNotEmpty()) {
+                        SideLabel("已置顶")
+                        pinnedOf.forEach { c -> ConvLine(c, c.id == current, busy && c.id == current, editing == c.id, history, onOpen, { editing = if (editing == c.id) null else c.id }) { if (c.id == current) onNew() } }
+                    }
+                    if (recentOf.isNotEmpty()) {
+                        SideLabel("最近对话")
+                        recentOf.forEach { c -> ConvLine(c, c.id == current, busy && c.id == current, editing == c.id, history, onOpen, { editing = if (editing == c.id) null else c.id }) { if (c.id == current) onNew() } }
+                    }
+                    if (hers.isNotEmpty()) {
+                        Pressable(onSearch, label = "查看全部对话") { p ->
+                            Row(Modifier.padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Txt("查看全部", if (p) Page.ink else Page.muted, 13.5.sp)
+                                Spacer(Modifier.width(4.dp))
+                                SvgIcon(SideIcons.next, Page.muted, 13.dp, stroke = 1.8f)
+                            }
+                        }
                     }
                 }
             }

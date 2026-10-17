@@ -153,10 +153,11 @@ object Memory {
     /** 第一次用：从已有的对话记录里补上相识时间和次数。 */
     fun seed(history: ConvStore) {
         val a = active
-        if (a.firstAt != 0L || history.all.isEmpty()) return
-        a.firstAt = history.all.minOf { it.created }
-        a.lastAt = history.all.maxOf { it.updated }
-        a.chats = history.all.size
+        val hers = history.of(a.id)
+        if (a.firstAt != 0L || hers.isEmpty()) return
+        a.firstAt = hers.minOf { it.created }
+        a.lastAt = hers.maxOf { it.updated }
+        a.chats = hers.size
         save()
     }
 

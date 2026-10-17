@@ -16,6 +16,8 @@ data class Conv(
     val updated: Long,
     val pinned: Boolean,
     val msgs: List<ChatMsg>,
+    /** 这段对话属于哪位助理（Persona.id）。开始时定下，之后不换。 */
+    val who: String = "",
 ) {
     /** 预览：最后一条回复的第一句。 */
     val preview: String
@@ -44,10 +46,26 @@ class ConvStore(private val prefs: Prefs) {
                             m.optJSONArray("w")?.let { a -> List(a.length()) { a.optString(it) } } ?: emptyList(),
                             m.optJSONArray("s")?.let { a -> List(a.length()) { a.getJSONObject(it).let { s -> ToolStep(s.optInt("a"), s.optString("n"), s.optString("t"), s.optString("d")) } } } ?: emptyList())
                     },
+                    who = o.optString("a"),
                 )
             }
         }
+        // 以前的对话没记归属：归到现在选着的那一位；助理已经删掉的，她的对话也一起清掉
+        if (Memory.all.isNotEmpty()) {
+            val ids = Memory.all.map { it.id }.toSet()
+            val before = all.size
+            var changed = false
+            for (i in all.indices) if (all[i].who.isEmpty()) { all[i] = all[i].copy(who = Memory.activeId); changed = true }
+            all.removeAll { it.who !in ids }
+            if (changed || all.size != before) persist()
+        }
     }
+
+    /** 这位助理的对话（默认是现在选着的那一位）。 */
+    fun of(who: String = Memory.activeId): List<Conv> = all.filter { it.who == who }
+
+    /** 还在的助理的对话（删掉还没撤销的那位，她的对话先藏起来）。 */
+    fun visible(): List<Conv> = all.filter { c -> Memory.all.any { it.id == c.who } }
 
     fun get(id: String?): Conv? = all.firstOrNull { it.id == id }
 
@@ -57,7 +75,7 @@ class ConvStore(private val prefs: Prefs) {
         val now = System.currentTimeMillis()
         val old = get(id)
         val title = old?.title ?: firstSentence(msgs.first { it.role == "user" }.text, 18)
-        val c = Conv(id ?: now.toString(), title, old?.created ?: now, now, old?.pinned ?: false, msgs.toList())
+        val c = Conv(id ?: now.toString(), title, old?.created ?: now, now, old?.pinned ?: false, msgs.toList(), old?.who?.ifEmpty { null } ?: Memory.activeId)
         val i = all.indexOfFirst { it.id == c.id }
         if (i >= 0) all[i] = c else all.add(0, c)
         persist()
@@ -81,7 +99,7 @@ class ConvStore(private val prefs: Prefs) {
         all.sortedByDescending { it.updated }.forEach { c ->
             val ms = JSONArray()
             c.msgs.forEach { m -> ms.put(JSONObject().put("r", m.role).put("x", m.text).apply { if (m.think.isNotEmpty()) put("k", m.think); if (m.imgs.isNotEmpty()) put("i", JSONArray(m.imgs)); if (m.works.isNotEmpty()) put("w", JSONArray(m.works)); if (m.steps.isNotEmpty()) put("s", JSONArray(m.steps.map { s -> JSONObject().put("a", s.at).put("n", s.name).put("t", s.title).put("d", s.detail) })); if (m.at > 0) put("t", m.at) }) }
-            arr.put(JSONObject().put("id", c.id).put("t", c.title).put("c", c.created).put("u", c.updated).put("p", c.pinned).put("m", ms))
+            arr.put(JSONObject().put("id", c.id).put("t", c.title).put("c", c.created).put("u", c.updated).put("p", c.pinned).put("a", c.who).put("m", ms))
         }
         prefs.putString(KEY, arr.toString())
     }

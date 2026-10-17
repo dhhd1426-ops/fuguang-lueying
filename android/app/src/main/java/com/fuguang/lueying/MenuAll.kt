@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -63,11 +64,13 @@ private fun marked(text: String, q: String): AnnotatedString = buildAnnotatedStr
 @Composable
 internal fun AllConvs(history: ConvStore, current: String?, busy: Boolean, onBack: () -> Unit, onOpen: (Conv) -> Unit) {
     var q by remember { mutableStateOf("") }
+    // 默认只看现在这位助理的；点「全部助理」看所有人的（点开别人的对话会换到她那边）
+    var everyone by remember { mutableStateOf(false) }
     val focus = remember { FocusRequester() }
     LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
     val key = q.trim()
-    val rows = remember(key, history.all.size, history.all.firstOrNull()?.updated) {
-        history.all.sortedByDescending { it.updated }.mapNotNull { c ->
+    val rows = remember(key, everyone, Memory.activeId, history.all.size, history.all.firstOrNull()?.updated) {
+        (if (everyone) history.visible() else history.of()).sortedByDescending { it.updated }.mapNotNull { c ->
             if (key.isEmpty() || c.title.contains(key, true)) c to ""
             else c.msgs.firstOrNull { it.text.contains(key, true) }?.let { m ->
                 // 内容里命中：带出命中处前后一小段
@@ -95,6 +98,10 @@ internal fun AllConvs(history: ConvStore, current: String?, busy: Boolean, onBac
                 decorationBox = { inner -> Box { if (q.isEmpty()) Txt("搜索标题和内容", Page.muted, 14.5.sp); inner() } },
             )
         }
+        Row(Modifier.padding(start = 14.dp, end = 14.dp, top = 12.dp), horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(6.dp)) {
+            ScopeChip(!everyone, "只看 ${Memory.active.name}", { PersonaDot(Memory.active, 16.dp) }) { everyone = false }
+            ScopeChip(everyone, "全部助理") { everyone = true }
+        }
         if (rows.isEmpty()) {
             Txt(if (key.isEmpty()) "还没有对话" else "没有找到「$key」", SideFaint, 13.5.sp, Modifier.fillMaxWidth().padding(top = 36.dp).padding(horizontal = 16.dp))
         }
@@ -107,7 +114,9 @@ internal fun AllConvs(history: ConvStore, current: String?, busy: Boolean, onBac
                             .background(if (on) SideWarm.copy(alpha = .13f) else if (p) rgba(255, 255, 255, .05f) else androidx.compose.ui.graphics.Color.Transparent, RoundedCornerShape(12.dp))
                             .padding(horizontal = 12.dp, vertical = 10.dp),
                     ) {
-                        SvgIcon(convIcon(c), if (on) SideWarm else SideFaint, 17.dp, stroke = 1.4f, modifier = Modifier.padding(top = 3.dp))
+                        val owner = if (everyone) Memory.get(c.who) else null
+                        if (owner != null) Box(Modifier.padding(top = 1.dp)) { PersonaDot(owner, 19.dp) }
+                        else SvgIcon(convIcon(c), if (on) SideWarm else SideFaint, 17.dp, stroke = 1.4f, modifier = Modifier.padding(top = 3.dp))
                         Spacer(Modifier.width(12.dp))
                         Column(Modifier.weight(1f)) {
                             androidx.compose.foundation.text.BasicText(
@@ -124,6 +133,21 @@ internal fun AllConvs(history: ConvStore, current: String?, busy: Boolean, onBac
                     }
                 }
             }
+        }
+    }
+}
+
+/** 「查看全部」顶上的范围：只看这一位 / 全部助理。 */
+@Composable
+private fun ScopeChip(on: Boolean, text: String, lead: (@Composable () -> Unit)? = null, onClick: () -> Unit) {
+    Pressable(onClick, label = text) { p ->
+        Row(
+            Modifier.background(if (on) SideWarm.copy(alpha = .16f) else rgba(255, 255, 255, if (p) .09f else .05f), RoundedCornerShape(50))
+                .padding(start = if (lead != null) 5.dp else 13.dp, end = 13.dp, top = 6.dp, bottom = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (lead != null) { lead(); Spacer(Modifier.width(6.dp)) }
+            Txt(text, if (on) Page.ink else Page.muted, 12.5.sp, Modifier.widthIn(max = 150.dp), maxLines = 1)
         }
     }
 }
