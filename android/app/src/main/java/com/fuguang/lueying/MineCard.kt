@@ -94,7 +94,7 @@ fun MineCardLayer(store: AssistantStore, nav: MineNav) {
         MineCard, nav.screen, ::depth,
         onBack = { if (nav.screen == "about") { nav.screen = "mine"; true } else nav.screen != "mine" && nav.back() },
         onClosed = { nav.screen = "mine"; nav.persona = "" },
-        above = { MemoryCardHost() },
+        above = { MemoryCardHost(); AvatarCropHost() },
     ) { screen, rise ->
         when (screen) {
             "mine" -> Column(Modifier.widthIn(max = 560.dp).fillMaxSize().verticalScroll(rememberScrollState())) {
@@ -112,11 +112,7 @@ fun MineCardLayer(store: AssistantStore, nav: MineNav) {
 private fun MineCardBody(t: Float, onGo: (String) -> Unit) {
     val me = Memory.userName.trim()
     Row(Modifier.fillMaxWidth().padding(start = 6.dp, end = 40.dp, bottom = 14.dp).mineRise(0, t), verticalAlignment = Alignment.CenterVertically) {
-        Box(
-            Modifier.size(38.dp)
-                .background(Brush.linearGradient(listOf(warm, Color(0xFFB97F62))), CircleShape),
-            contentAlignment = Alignment.Center,
-        ) { Txt(me.takeLast(1).ifEmpty { "你" }, warmInk, 16.sp, family = Serif) }
+        AvatarFace(Avatars.ME, me.takeLast(1).ifEmpty { "你" }, Brush.linearGradient(listOf(warm, Color(0xFFB97F62))), 38.dp)
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Txt("我的", Page.ink, 19.sp, spacing = ls(2.6f, 19f), family = Serif)

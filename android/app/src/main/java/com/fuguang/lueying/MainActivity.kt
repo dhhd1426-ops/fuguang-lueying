@@ -25,6 +25,7 @@ class MainActivity : ComponentActivity() {
         val prefs = Prefs(this)
         Yu.init(this)
         Works.init(this)
+        Avatars.init(this)
         Memory.init(prefs)
         Mcp.init(prefs)
         Backup.init(prefs)

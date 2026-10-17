@@ -51,9 +51,7 @@ internal fun tintOf(p: Persona): Color = Tints[(Memory.all.indexOf(p).coerceAtLe
 
 @Composable
 internal fun PersonaDot(p: Persona, size: Dp) {
-    Box(Modifier.size(size).background(tintOf(p), CircleShape), contentAlignment = Alignment.Center) {
-        Txt(p.name.trim().take(1).ifEmpty { "?" }, Color(0xFF2A211B), (size.value * .5f).sp, family = Serif, maxLines = 1)
-    }
+    AvatarFace(p.id, p.name.trim().take(1), androidx.compose.ui.graphics.SolidColor(tintOf(p)), size)
 }
 
 /**

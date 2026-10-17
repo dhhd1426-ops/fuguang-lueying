@@ -485,7 +485,7 @@ private fun ColumnScope.BasicTab(store: AssistantStore, p: Persona, blur: Dp, na
     }
 }
 
-/** 名片：助理名称、用户名称并排，宋体大字直接改；停手半秒自动保存，一道杏色细线从左划到右，右上角淡出「已保存」。 */
+/** 名片：她和你并排（头像 + 名字，中间一道心电，见 NamePair.kt），宋体大字直接改；停手半秒自动保存，一道杏色细线从左划到右，右上角淡出「已保存」。 */
 @Composable
 private fun NameCard(p: Persona, blur: Dp) {
     var a by remember(p.id) { mutableStateOf(p.name) }
@@ -504,12 +504,8 @@ private fun NameCard(p: Persona, blur: Dp) {
             launch { tag.snapTo(0f); tag.animateTo(1f, tween(240)); kotlinx.coroutines.delay(900); tag.animateTo(0f, tween(400)) }
         }
     }
-    Box(Modifier.fillMaxWidth().glass(RoundedCornerShape(20.dp), blur, fill = glassFill).height(androidx.compose.foundation.layout.IntrinsicSize.Min)) {
-        Row(Modifier.fillMaxWidth()) {
-            NameField("助理名称", a, "Amor", Modifier.weight(1f)) { a = it.take(16) }
-            Box(Modifier.padding(vertical = 18.dp).width(1.dp).fillMaxHeight().background(rgba(255, 255, 255, .08f)))
-            NameField("用户名称", u, "你希望她怎么叫你", Modifier.weight(1f)) { u = it.take(16) }
-        }
+    Box(Modifier.fillMaxWidth().glass(RoundedCornerShape(20.dp), blur, fill = glassFill)) {
+        NamePair(p, a, u, { a = it.take(16) }, { u = it.take(16) })
         // 保存：杏色细线从左划到右，然后淡掉
         Box(
             Modifier.align(Alignment.BottomStart).fillMaxWidth().height(2.dp)

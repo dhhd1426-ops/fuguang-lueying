@@ -38,6 +38,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -219,9 +220,9 @@ private fun SideFoot(modifier: Modifier, onMine: () -> Unit, onNew: () -> Unit) 
                     .drawBehind {
                         if (MineCard.open) drawCircle(SideWarm.copy(alpha = .55f), size.minDimension / 2 + 4.5.dp.toPx(), style = androidx.compose.ui.graphics.drawscope.Stroke(1.5.dp.toPx()))
                     }
-                    .background(Brush.linearGradient(listOf(SideWarm, Color(0xFFB97F62))), CircleShape),
+                    .graphicsLayer { alpha = if (p) .7f else 1f },
                 contentAlignment = Alignment.Center,
-            ) { Txt(me, Color(0xFF2A211B).copy(alpha = if (p) .6f else 1f), 17.sp, family = Serif) }
+            ) { AvatarFace(Avatars.ME, me, Brush.linearGradient(listOf(SideWarm, Color(0xFFB97F62))), 42.dp) }
         }
         Spacer(Modifier.weight(1f))
         Pressable(onNew, label = "新对话") { p ->
