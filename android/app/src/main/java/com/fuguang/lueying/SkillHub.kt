@@ -51,7 +51,7 @@ object SkillHub {
     }
 
     suspend fun find(query: String): List<SkillCand> = withContext(Dispatchers.IO) {
-        val q = query.trim().ifEmpty { return@withContext emptyList() }
+        val q = query.trim().ifEmpty { return@withContext emptyList<SkillCand>() }
         val words = q.lowercase().split(Regex("[\\s,，、/_-]+")).filter { it.length > 1 }
         val repos = LinkedHashMap<String, String>()
         known.forEach { repos[it] = "" }

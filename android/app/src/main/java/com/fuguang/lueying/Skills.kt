@@ -161,7 +161,7 @@ object Skills {
         }
     }
 
-    suspend fun run(name: String, a: JSONObject): ToolOut = when (name) {
+    suspend fun run(name: String, a: JSONObject): ToolOut { return when (name) {
         OPEN -> {
             val q = a.optString("name").trim()
             val s = of().firstOrNull { it.on && (it.title == q || it.id == q) } ?: of().firstOrNull { it.on && (q in it.title || it.id in q) }
@@ -201,5 +201,5 @@ object Skills {
             }
         }
         else -> ToolOut("没有这个本事。")
-    }
+    } }
 }
