@@ -138,9 +138,9 @@ internal fun NamePair(p: Persona, a: String, u: String, onA: (String) -> Unit, o
             }
         }
         Row(Modifier.fillMaxWidth().padding(start = 10.dp, end = 10.dp, top = 18.dp, bottom = 14.dp)) {
-            Side(Modifier.weight(1f), p.id, p.name.trim().take(1), SolidColor(tintOf(p)), "助理名称", a, onA, her) { ha = it }
+            Side(Modifier.weight(1f), p.id, a.trim().take(1).ifEmpty { "助理" }, SolidColor(tintOf(p)), "助理名称", a, onA, her) { ha = it }
             Spacer(Modifier.width(64.dp))
-            Side(Modifier.weight(1f), Avatars.ME, Memory.userName.trim().takeLast(1).ifEmpty { "你" }, meFill, "用户名称", u, onU, me) { ma = it }
+            Side(Modifier.weight(1f), Avatars.ME, u.trim().takeLast(1).ifEmpty { "用户" }, meFill, "用户名称", u, onU, me) { ma = it }
         }
         if (ha != Rect.Zero) {
             // 线下面两行小字：第几天、聊了几次（在两颗头像中间的空里，不碰相机角标）

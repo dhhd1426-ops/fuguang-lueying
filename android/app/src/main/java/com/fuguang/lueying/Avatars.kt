@@ -74,6 +74,6 @@ internal fun AvatarFace(id: String, letter: String, fill: Brush, size: Dp, modif
     val img = remember(id, v) { Avatars.get(id) }
     Box(modifier.size(size).clip(CircleShape).background(fill), contentAlignment = Alignment.Center) {
         if (img != null) Image(img, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-        else Txt(letter.ifEmpty { "?" }, ink, (size.value * .46f).sp, family = Serif, maxLines = 1)
+        else Txt(letter.ifEmpty { "?" }, ink, (size.value * (if (letter.length > 1) .3f else .46f)).sp, family = Serif, maxLines = 1)
     }
 }

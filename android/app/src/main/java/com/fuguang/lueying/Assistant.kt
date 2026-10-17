@@ -32,6 +32,7 @@ val PROVIDERS = listOf(
     Provider("claude", "Claude", "anthropic", "https://api.anthropic.com/v1", "/messages", "C", note = "Anthropic 接口"),
     Provider("gemini", "Gemini", "openai", "https://generativelanguage.googleapis.com/v1beta/openai", "/chat/completions", "G"),
     Provider("openai", "OpenAI", "openai", "https://api.openai.com/v1", "/chat/completions", "O"),
+    Provider("grok", "Grok", "openai", "https://api.x.ai/v1", "/chat/completions", "X", note = "xAI"),
     Provider("kimi", "月之暗面 Kimi", "openai", "https://api.moonshot.cn/v1", "/chat/completions", "月"),
     Provider("siliconflow", "硅基流动", "openai", "https://api.siliconflow.cn/v1", "/chat/completions", "硅"),
 )
@@ -53,7 +54,17 @@ data class ProviderConfig(
     companion object {
         fun default(p: Provider) = ProviderConfig(
             name = p.name, base = p.base, path = p.path, balance = p.hasBalance,
-            models = if (p.id == "deepseek") listOf("deepseek-flash", "deepseek-v4-pro") else emptyList(),
+            models = DEFAULT_MODELS[p.id].orEmpty(),
+        )
+
+        /** 各家现在的主力型号（2026 年 10 月查的官方文档）；以后有新的，在配置页「获取模型」也能拉到。 */
+        val DEFAULT_MODELS = mapOf(
+            "deepseek" to listOf("deepseek-flash", "deepseek-v4-pro"),
+            "claude" to listOf("claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5", "claude-fable-5-1"),
+            "gemini" to listOf("gemini-4-argon", "gemini-3.8-flash", "gemini-3.5-flash-lite"),
+            "openai" to listOf("gpt-6.1-sol", "gpt-6-luna"),
+            "grok" to listOf("grok-4.7", "grok-4.3"),
+            "kimi" to listOf("kimi-k3", "kimi-k2.6"),
         )
     }
 }
@@ -95,7 +106,8 @@ class AssistantStore(private val prefs: Prefs) {
                     path = c.optString("path", d.path),
                     enabled = c.optBoolean("enabled", false),
                     balance = c.optBoolean("balance", d.balance),
-                    models = c.optJSONArray("models")?.let { a -> List(a.length()) { a.getString(it) } } ?: d.models,
+                    // 以前存的是空列表（那时只有 DeepSeek 带默认型号）：补上现在的默认型号
+                    models = c.optJSONArray("models")?.let { a -> List(a.length()) { a.getString(it) } }?.takeIf { it.isNotEmpty() } ?: d.models,
                 )
             }
         }
