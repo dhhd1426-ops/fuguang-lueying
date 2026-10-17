@@ -86,7 +86,7 @@ object Trail {
     fun detail(n: String, a: JSONObject): String = when (n) {
         Memory.REMEMBER, Memory.FORGET -> a.optString("text")
         Recall.TOOL, "search_notes", WebSearch.TOOL -> a.optString("query")
-        Works.MAKE -> when (a.optString("kind")) { "slides" -> "作品 · 幻灯片"; "doc" -> "作品 · 文档"; else -> "作品 · 网页" }
+        Works.MAKE -> when (a.optString("kind")) { "slides" -> "作品 · 幻灯片"; "doc" -> "作品 · 文档"; "board" -> "作品 · 画板"; else -> "作品 · 网页" }
         else -> ""
     }.trim().replace('\n', ' ').take(80)
 

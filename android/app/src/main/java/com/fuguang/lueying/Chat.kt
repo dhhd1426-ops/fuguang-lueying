@@ -234,7 +234,7 @@ class ChatState(val history: ConvStore) {
                 val extra = buildString {
                     append("\n\n你手边还有这些东西，需要时再用，不需要就不用：")
                     append("\n").append(Memory.toolRule())
-                    append("\n").append(Works.system(Memory.userCall, history))
+                    append("\n").append(Works.system(Memory.userCall, history, who.id))
                     if (web) append("\n").append(WebSearch.system())
                     if (recall) append("\n").append(Recall.system())
                     if (yu) append("\n").append(Yu.system())
@@ -255,7 +255,7 @@ class ChatState(val history: ConvStore) {
                             if (n == Memory.REMEMBER || n == Memory.FORGET) Memory.runTool(who, n, a, cur.orEmpty(), convTitle0)
                             else if (n == Recall.TOOL) Recall.run(store0, cur, a.optString("query"))
                             else if (n == WebSearch.TOOL) WebSearch.run(a.optString("query"))
-                            else if (n == Works.MAKE || n == Works.READ) Works.run(n, a) { id -> made = true; if (id !in pendingWorks) pendingWorks.add(id) }
+                            else if (n == Works.MAKE || n == Works.READ) Works.run(n, a, who.id) { id -> made = true; if (id !in pendingWorks) pendingWorks.add(id) }
                             else if (Mcp.owns(n)) Mcp.run(n, a)
                             else Yu.run(n, a, Yu.vision(p.id)) { refs -> refs.forEach { r -> if (r !in pendingImgs) pendingImgs.add(r) } }
                             } catch (e: kotlinx.coroutines.CancellationException) {

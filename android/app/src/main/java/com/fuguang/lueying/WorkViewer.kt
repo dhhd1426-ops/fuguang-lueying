@@ -68,9 +68,11 @@ private object WorkIcons {
     val page = Ic("M12.5 12.5h7.5v7.5h-7.5Z", circles = listOf(floatArrayOf(9f, 9f, 5f)))
     val slides = Ic("M3.5 5h17v11h-17ZM12 16v3.5M8.5 19.5h7")
     val doc = Ic("M14 3H6v18h12V7ZM14 3v4h4M9 12h6M9 15.5h6M9 9h2.5")
+    // 画板：一大一小两块积木叠着
+    val board = Ic("M4 4h16v6H4ZM4 13h7v7H4ZM14 13h6v7h-6Z")
     val close = Ic("M6 6 18 18M6 18 18 6")
     val share = Ic("M12 3.5v11M8 7.5l4-4 4 4M6 11v8.5h12V11")
-    fun of(kind: String) = when (kind) { "slides" -> slides; "doc" -> doc; else -> page }
+    fun of(kind: String) = when (kind) { "slides" -> slides; "doc" -> doc; "board" -> board; else -> page }
 }
 
 /** 回复下面的作品卡：左边方块图标，右边作品名和种类。点开全屏看。 */
@@ -123,6 +125,9 @@ fun WorkViewer(id: String?, onClose: () -> Unit, onFix: (String) -> Unit = {}) {
     val loaded = remember { mutableStateOf(false) }
     val problem = remember { mutableStateOf("") }
     var web by remember { mutableStateOf<WebView?>(null) }
+    // 画板页面改过时存回原稿：只认正开着的这件画板
+    val boardId = remember { arrayOf<String?>(null) }
+    boardId[0] = if (w?.kind == "board") cur else null
     val ctx = LocalContext.current
     val density = androidx.compose.ui.platform.LocalDensity.current
     val lift = with(density) { 80.dp.toPx() }
@@ -158,6 +163,7 @@ fun WorkViewer(id: String?, onClose: () -> Unit, onFix: (String) -> Unit = {}) {
                                 settings.domStorageEnabled = true
                                 settings.mediaPlaybackRequiresUserGesture = false
                                 settings.allowFileAccess = false
+                                addJavascriptInterface(BoardBridge(boardId), "FG")
                                 // 页面里的 JS 报错记下来，显示在底部，方便排查
                                 webChromeClient = object : android.webkit.WebChromeClient() {
                                     override fun onConsoleMessage(m: android.webkit.ConsoleMessage?): Boolean {
@@ -317,4 +323,10 @@ private fun printPdf(ctx: Context, web: WebView, title: String) {
         val pm = ctx.getSystemService(Context.PRINT_SERVICE) as PrintManager
         pm.print(title, web.createPrintDocumentAdapter(title), PrintAttributes.Builder().build())
     }
+}
+
+/** 画板页面里的 FG.save：他勾了、拖了、改了字，存回原稿。 */
+private class BoardBridge(private val id: Array<String?>) {
+    @android.webkit.JavascriptInterface
+    fun save(json: String, log: String) { id[0]?.let { Board.save(it, json, log) } }
 }
