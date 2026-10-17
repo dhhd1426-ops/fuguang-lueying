@@ -84,7 +84,7 @@ object WebSearch {
     /** 开着、而且选着的那一家能用，才给她这个本事。 */
     val usable: Boolean get() = on && ready(use)
     /** 「功能」那一行：已启用几项。 */
-    val enabledCount: Int get() = if (on) 1 else 0
+    val enabledCount: Int get() = (if (on) 1 else 0) + (if (Skills.on) 1 else 0)
 
     val spec = ToolSpec(
         TOOL,

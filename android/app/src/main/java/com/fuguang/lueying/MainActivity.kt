@@ -31,6 +31,7 @@ class MainActivity : ComponentActivity() {
         Backup.init(prefs)
         ModelFit.init(prefs)
         WebSearch.init(prefs)
+        Skills.init(this, prefs)
         val controller = WindowCompat.getInsetsController(window, window.decorView)
         controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
 

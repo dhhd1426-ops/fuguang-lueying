@@ -50,13 +50,21 @@ private val play = Ic("M8 5.5v13l10.5-6.5Z")
 
 /** 「我的 → 功能」：她会的本事。现在只有联网搜索，以后新加的也放这一页。 */
 @Composable
-internal fun FeaturesPage(onBack: () -> Unit, onSearch: () -> Unit) {
+internal fun FeaturesPage(onBack: () -> Unit, onSearch: () -> Unit, onSkills: () -> Unit) {
     Column(Modifier.widthIn(max = 560.dp).fillMaxSize().verticalScroll(rememberScrollState())) {
         CardPageHead("功能", onBack = onBack)
         val src = WebSearch.source(WebSearch.use)
         MineRow(0, 1f, "联网搜索", if (WebSearch.on) "${src.name} · 最多 ${WebSearch.max} 条" else "关着", onSearch, glyph = { SvgIcon(globe, warm, 19.dp) }) {
             if (WebSearch.on) { Box(Modifier.size(6.dp).background(warm, CircleShape)); Spacer(Modifier.width(7.dp)) }
             Txt(if (WebSearch.on) "开着" else "关着", Page.muted, 13.sp)
+            Spacer(Modifier.width(4.dp))
+            SvgIcon(chevron, Page.muted.copy(alpha = .6f), 15.dp, stroke = 1.8f)
+        }
+        Spacer(Modifier.height(6.dp))
+        val mine = Skills.of(); val on = mine.count { it.on }; val hers = mine.count { it.by == "her" }
+        MineRow(1, 1f, "技能", if (!Skills.on) "关着" else if (mine.isEmpty()) "还没有 · 她能自己找来装" else "$on 个在用" + (if (hers > 0) " · 她自己装了 $hers 个" else ""), onSkills, glyph = { SvgIcon(skillIcon, warm, 19.dp) }) {
+            if (Skills.on) { Box(Modifier.size(6.dp).background(warm, CircleShape)); Spacer(Modifier.width(7.dp)) }
+            Txt(if (Skills.on) "开着" else "关着", Page.muted, 13.sp)
             Spacer(Modifier.width(4.dp))
             SvgIcon(chevron, Page.muted.copy(alpha = .6f), 15.dp, stroke = 1.8f)
         }

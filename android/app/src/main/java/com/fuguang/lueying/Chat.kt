@@ -229,12 +229,14 @@ class ChatState(val history: ConvStore) {
                 val question = history.lastOrNull { it.role == "user" }?.text.orEmpty()
                 val mcp = Mcp.specs
                 val web = WebSearch.usable
-                val specs = Memory.toolSpecs + Works.specs + (if (web) listOf(WebSearch.spec) else emptyList()) + (if (yu) Yu.tools else emptyList()) + (if (recall) listOf(Recall.spec) else emptyList()) + mcp
+                val skills = Skills.specs()
+                val specs = Memory.toolSpecs + Works.specs + skills + (if (web) listOf(WebSearch.spec) else emptyList()) + (if (yu) Yu.tools else emptyList()) + (if (recall) listOf(Recall.spec) else emptyList()) + mcp
                 val convTitle0 = store0.get(cur)?.title ?: firstSentence(question, 18)
                 val extra = buildString {
                     append("\n\n你手边还有这些东西，需要时再用，不需要就不用：")
                     append("\n").append(Memory.toolRule())
                     append("\n").append(Works.system(Memory.userCall, history, who.id))
+                    if (skills.isNotEmpty()) append("\n").append(Skills.system())
                     if (web) append("\n").append(WebSearch.system())
                     if (recall) append("\n").append(Recall.system())
                     if (yu) append("\n").append(Yu.system())
@@ -255,6 +257,7 @@ class ChatState(val history: ConvStore) {
                             if (n == Memory.REMEMBER || n == Memory.FORGET) Memory.runTool(who, n, a, cur.orEmpty(), convTitle0)
                             else if (n == Recall.TOOL) Recall.run(store0, cur, a.optString("query"))
                             else if (n == WebSearch.TOOL) WebSearch.run(a.optString("query"))
+                            else if (n == Skills.OPEN || n == Skills.FIND || n == Skills.LEARN) Skills.run(n, a)
                             else if (n == Works.MAKE || n == Works.READ) Works.run(n, a, who.id) { id -> made = true; if (id !in pendingWorks) pendingWorks.add(id) }
                             else if (Mcp.owns(n)) Mcp.run(n, a)
                             else Yu.run(n, a, Yu.vision(p.id)) { refs -> refs.forEach { r -> if (r !in pendingImgs) pendingImgs.add(r) } }
@@ -638,6 +641,7 @@ private fun Conversation(
                     if (chat.thinkText.isBlank() && steps.isEmpty()) {
                         if (chat.partial.isEmpty()) ThinkingMotion("", Modifier.padding(start = 2.dp, top = 6.dp))   // 没开深度思考也没用工具：只有三点
                     } else ThinkRow(chat.thinkText, steps, trailLive) { onThink(-1) }
+                    SkillAskHost(compact)
                     if (chat.partial.isNotEmpty()) Reply(chat.partial.take(ceil(chat.shown).toInt()), compact, fadeTail = chat.shown < chat.partial.length + 1)
                     NoteImageRow(chat.pendingImgs.toList(), onImage)
                     WorkCards(chat.pendingWorks.toList(), onWork)
