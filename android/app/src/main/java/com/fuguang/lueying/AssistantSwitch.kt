@@ -107,8 +107,8 @@ internal fun AssistantTitle(history: ConvStore, onSearch: () -> Unit, onManage: 
                 onDismissRequest = { if (open) { open = false; shutAt = System.currentTimeMillis() } },
                 properties = PopupProperties(focusable = false, dismissOnClickOutside = true),
             ) {
-                AnimatedVisibility(
-                    shown,
+                androidx.compose.animation.AnimatedVisibility(
+                    visibleState = shown,
                     enter = scaleIn(spring(dampingRatio = .82f, stiffness = 520f), .92f, TransformOrigin(0.1f, 0f)) + fadeIn(tween(180)),
                     exit = scaleOut(tween(150, easing = Curves.accel), .94f, TransformOrigin(0.1f, 0f)) + fadeOut(tween(140)),
                 ) { PickCard(history, now, onPick = { p -> if (p.id != Memory.activeId) { Memory.use(p); haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove) }; picked = p.id }, onManage = { open = false; onManage() }) }
