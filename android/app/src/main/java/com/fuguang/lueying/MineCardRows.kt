@@ -79,15 +79,16 @@ private val warmInk = Color(0xFF2A211B)
 internal fun MineRow(
     i: Int, t: Float, title: String, sub: String, onClick: () -> Unit,
     glyph: @Composable () -> Unit,
+    subSlot: (@Composable () -> Unit)? = null,
     trailing: @Composable () -> Unit,
 ) {
     PressSurface(onClick, Modifier.fillMaxWidth().mineRise(i, t), shape = RoundedCornerShape(16.dp), pressScale = .985f, label = title) {
-        RowBody(title, sub, glyph, trailing)
+        RowBody(title, sub, glyph, trailing, subSlot)
     }
 }
 
 @Composable
-private fun RowBody(title: String, sub: String, glyph: @Composable () -> Unit, trailing: @Composable () -> Unit) {
+private fun RowBody(title: String, sub: String, glyph: @Composable () -> Unit, trailing: @Composable () -> Unit, subSlot: (@Composable () -> Unit)? = null) {
     Row(
         Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -97,7 +98,7 @@ private fun RowBody(title: String, sub: String, glyph: @Composable () -> Unit, t
         Column(Modifier.weight(1f)) {
             Txt(title, Page.ink, 15.sp, maxLines = 1)
             Spacer(Modifier.height(3.dp))
-            Txt(sub, Page.muted, 12.sp, maxLines = 1)
+            if (subSlot != null) subSlot() else Txt(sub, Page.muted, 12.sp, maxLines = 1)
         }
         Spacer(Modifier.width(10.dp))
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.End) { trailing() }

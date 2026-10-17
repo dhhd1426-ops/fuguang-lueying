@@ -151,7 +151,9 @@ private fun MineCardBody(t: Float, onGo: (String) -> Unit) {
         SvgIcon(chevron, Page.muted.copy(alpha = .6f), 15.dp, stroke = 1.8f)
     }
     Txt("其他", Page.muted, 11.sp, Modifier.padding(start = 8.dp, top = 14.dp, bottom = 8.dp).mineRise(5, t), spacing = ls(2.75f, 11f))
-    MineRow(6, t, "关于浮光掠影", "背景作品 · 版权", { onGo("about") }, glyph = { SvgIcon(Icons.spark, warm, 18.dp, stroke = 1.1f) }) {
+    BackupRow(6, t)
+    Spacer(Modifier.height(6.dp))
+    MineRow(7, t, "关于浮光掠影", "背景作品 · 版权", { onGo("about") }, glyph = { SvgIcon(Icons.spark, warm, 18.dp, stroke = 1.1f) }) {
         SvgIcon(chevron, Page.muted.copy(alpha = .6f), 15.dp, stroke = 1.8f)
     }
     Spacer(Modifier.height(8.dp))
