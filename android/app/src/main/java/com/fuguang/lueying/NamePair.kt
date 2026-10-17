@@ -46,6 +46,9 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
@@ -163,18 +166,7 @@ private fun Side(
     Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
         AvatarButton(id, letter, fill, scale, onAt)
         Spacer(Modifier.height(12.dp))
-        BasicTextField(
-            value = value, onValueChange = onChange, singleLine = true,
-            textStyle = TextStyle(color = Page.ink, fontSize = 19.sp, fontFamily = Serif, letterSpacing = 1.sp, textAlign = TextAlign.Center),
-            cursorBrush = SolidColor(warm),
-            modifier = Modifier.fillMaxWidth(),
-            decorationBox = { inner ->
-                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                    if (value.isEmpty()) Txt(hint, Page.muted.copy(alpha = .45f), 15.sp, family = Serif, spacing = ls(2f, 15f), maxLines = 1)
-                    inner()
-                }
-            },
-        )
+        NameEdit(value, hint, onChange)
     }
 }
 
@@ -244,6 +236,53 @@ private fun MenuTile(text: String, icon: Ic, modifier: Modifier, onClick: () -> 
             SvgIcon(icon, warm, 16.dp, stroke = 1.6f)
             Spacer(Modifier.width(8.dp))
             Txt(text, Page.ink, 13.5.sp, maxLines = 1)
+        }
+    }
+}
+
+private val pen = Ic("M13.5 6.5l4 4M5 19l1-4.5L15.5 5a1.5 1.5 0 0 1 2 0l1.5 1.5a1.5 1.5 0 0 1 0 2L9.5 18z")
+private val ok = Ic("M5 12.5l4.5 4.5L19 7.5")
+
+/**
+ * 名字：宋体，按字宽收着、居中，右边一支淡淡的笔。点笔进入编辑并全选；编辑时笔换成杏色 ✓，点 ✓ 或回车收起。
+ * 左边垫一支笔宽的空，名字看起来还在正中。
+ */
+@Composable
+private fun NameEdit(value: String, hint: String, onChange: (String) -> Unit) {
+    val focus = remember { androidx.compose.ui.focus.FocusRequester() }
+    val fm = androidx.compose.ui.platform.LocalFocusManager.current
+    var editing by remember { mutableStateOf(false) }
+    var tf by remember { mutableStateOf(androidx.compose.ui.text.input.TextFieldValue(value)) }
+    LaunchedEffect(value) { if (value != tf.text) tf = tf.copy(text = value) }
+    val style = TextStyle(color = Page.ink, fontSize = 19.sp, fontFamily = Serif, letterSpacing = 1.sp)
+    val measurer = androidx.compose.ui.text.rememberTextMeasurer()
+    val d = LocalDensity.current
+    val w = with(d) { (measurer.measure(tf.text.ifEmpty { hint }, style.copy(fontSize = if (tf.text.isEmpty()) 15.sp else 19.sp)).size.width + 6).toDp() }.coerceAtMost(112.dp)
+    val swap by androidx.compose.animation.core.animateFloatAsState(if (editing) 1f else 0f, spring(dampingRatio = .5f, stiffness = 520f), label = "pen")
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Spacer(Modifier.width(24.dp))
+        BasicTextField(
+            value = tf, onValueChange = { tf = it; if (it.text != value) onChange(it.text) }, singleLine = true,
+            textStyle = style.copy(textAlign = TextAlign.Center),
+            cursorBrush = SolidColor(warm),
+            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Done),
+            keyboardActions = androidx.compose.foundation.text.KeyboardActions(onDone = { fm.clearFocus() }),
+            modifier = Modifier.width(w).focusRequester(focus).onFocusChanged { editing = it.isFocused },
+            decorationBox = { inner ->
+                Box(Modifier.drawBehind { if (editing) drawLine(warm.copy(alpha = .5f), Offset(0f, size.height), Offset(size.width, size.height), 1f) }, contentAlignment = Alignment.Center) {
+                    if (tf.text.isEmpty()) Txt(hint, Page.muted.copy(alpha = .45f), 15.sp, family = Serif, spacing = ls(2f, 15f), maxLines = 1)
+                    inner()
+                }
+            },
+        )
+        Pressable({
+            if (editing) fm.clearFocus()
+            else { tf = tf.copy(selection = androidx.compose.ui.text.TextRange(0, tf.text.length)); runCatching { focus.requestFocus() } }
+        }, Modifier.size(24.dp, 30.dp), label = if (editing) "改好了" else "改名字") { pr ->
+            Box(contentAlignment = Alignment.Center) {
+                SvgIcon(pen, Page.muted.copy(alpha = if (pr) .8f else .45f), 14.dp, stroke = 1.6f, modifier = Modifier.graphicsLayer { val k = 1f - swap * .6f; scaleX = k; scaleY = k; alpha = 1f - swap })
+                SvgIcon(ok, warm, 15.dp, stroke = 2f, modifier = Modifier.graphicsLayer { val k = .4f + .6f * swap; scaleX = k; scaleY = k; alpha = swap.coerceIn(0f, 1f) })
+            }
         }
     }
 }
