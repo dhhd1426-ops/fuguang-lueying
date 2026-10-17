@@ -83,12 +83,12 @@ internal fun MineRow(
     trailing: @Composable () -> Unit,
 ) {
     PressSurface(onClick, Modifier.fillMaxWidth().mineRise(i, t), shape = RoundedCornerShape(16.dp), pressScale = .985f, label = title) {
-        RowBody(title, sub, glyph, trailing, subSlot)
+        RowBody(title, sub, glyph, subSlot, trailing)
     }
 }
 
 @Composable
-private fun RowBody(title: String, sub: String, glyph: @Composable () -> Unit, trailing: @Composable () -> Unit, subSlot: (@Composable () -> Unit)? = null) {
+private fun RowBody(title: String, sub: String, glyph: @Composable () -> Unit, subSlot: (@Composable () -> Unit)? = null, trailing: @Composable () -> Unit) {
     Row(
         Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
