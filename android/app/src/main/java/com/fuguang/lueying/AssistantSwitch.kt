@@ -43,6 +43,14 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
+import androidx.compose.animation.core.MutableTransitionState
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
 
 /** 每位助理一个颜色（按她在列表里的位置）。 */
 private val Tints = listOf(Color(0xFFE9B48E), Color(0xFFB9C7A8), Color(0xFFA9B6CC), Color(0xFFD3A9B4), Color(0xFFC9BC97))
@@ -63,15 +71,22 @@ internal fun PersonaDot(p: Persona, size: Dp) {
 internal fun AssistantTitle(history: ConvStore, onSearch: () -> Unit, onManage: () -> Unit) {
     var open by remember { mutableStateOf(false) }
     var picked by remember { mutableStateOf<String?>(null) }
+    // 点空白收起时，那一下也会落在名字上：刚收起的 250ms 内不再打开
+    var shutAt by remember { mutableStateOf(0L) }
     val haptic = LocalHapticFeedback.current
     // ✓ 落定后再收：先让人看到换成了谁
     LaunchedEffect(picked) { if (picked != null) { delay(260); open = false; picked = null } }
     androidx.activity.compose.BackHandler(enabled = open) { open = false }
     val now = Memory.active
     val turn by animateFloatAsState(if (open) 180f else 0f, spring(dampingRatio = .8f, stiffness = 420f), label = "chev")
-    Column {
-        Row(Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Pressable({ open = !open }, Modifier.weight(1f), label = "切换助理，现在是 ${now.name}") { p ->
+    val shown = remember { MutableTransitionState(false) }
+    shown.targetState = open
+    var titleH by remember { mutableStateOf(0) }
+    val gap = with(LocalDensity.current) { 6.dp.roundToPx() }
+    Row(Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        // 名字靠左上，只占它自己那么宽；卡片从它下面浮出来，不推开下面的列表
+        Box(Modifier.onSizeChanged { titleH = it.height }) {
+            Pressable({ if (System.currentTimeMillis() - shutAt > 250) open = !open }, label = "切换助理，现在是 ${now.name}") { p ->
                 Row(
                     Modifier.background(if (open || p) rgba(255, 255, 255, if (p) .05f else .07f) else Color.Transparent, RoundedCornerShape(14.dp))
                         .padding(start = 8.dp, end = 10.dp, top = 6.dp, bottom = 6.dp),
@@ -79,54 +94,67 @@ internal fun AssistantTitle(history: ConvStore, onSearch: () -> Unit, onManage: 
                 ) {
                     AnimatedContent(now, transitionSpec = { (fadeIn(tween(220, 60)) + scaleIn(tween(260, 60, Curves.standard), .8f)) togetherWith (fadeOut(tween(140)) + scaleOut(tween(140), .8f)) }, label = "dot") { PersonaDot(it, 28.dp) }
                     Spacer(Modifier.width(10.dp))
-                    AnimatedContent(now.name, Modifier.weight(1f, fill = false), transitionSpec = {
+                    AnimatedContent(now.name, Modifier.widthIn(max = 180.dp), transitionSpec = {
                         (fadeIn(tween(240, 60)) + slideInVertically(tween(280, 60, Curves.standard)) { it / 3 }) togetherWith (fadeOut(tween(140)) + slideOutVertically(tween(160)) { -it / 3 })
                     }, label = "name") { Txt(it, Page.ink, 19.sp, spacing = ls(2.4f, 19f), family = Serif, maxLines = 1) }
                     Spacer(Modifier.width(6.dp))
                     SvgIcon(Ic("M6 9.5l6 6 6-6"), SideFaint, 16.dp, stroke = 1.8f, modifier = Modifier.graphicsLayer { rotationZ = turn })
                 }
             }
-            Pressable(onSearch, label = "搜索对话") { p ->
-                SvgIcon(SideIcons.search, if (p) Page.ink else SideInk, 21.dp, stroke = 1.5f, modifier = Modifier.padding(8.dp))
+            if (shown.currentState || shown.targetState) Popup(
+                alignment = Alignment.TopStart,
+                offset = IntOffset(0, titleH + gap),
+                onDismissRequest = { if (open) { open = false; shutAt = System.currentTimeMillis() } },
+                properties = PopupProperties(focusable = false, dismissOnClickOutside = true),
+            ) {
+                AnimatedVisibility(
+                    shown,
+                    enter = scaleIn(spring(dampingRatio = .82f, stiffness = 520f), .92f, TransformOrigin(0.1f, 0f)) + fadeIn(tween(180)),
+                    exit = scaleOut(tween(150, easing = Curves.accel), .94f, TransformOrigin(0.1f, 0f)) + fadeOut(tween(140)),
+                ) { PickCard(history, now, onPick = { p -> if (p.id != Memory.activeId) { Memory.use(p); haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove) }; picked = p.id }, onManage = { open = false; onManage() }) }
             }
         }
-        AnimatedVisibility(
-            open,
-            enter = expandVertically(spring(dampingRatio = .8f, stiffness = 420f), expandFrom = Alignment.Top, initialHeight = { 0 }) + fadeIn(tween(200)),
-            exit = shrinkVertically(tween(220, easing = Curves.standard), shrinkTowards = Alignment.Top) + fadeOut(tween(160)),
-        ) {
-            Column(
-                Modifier.padding(start = 18.dp, end = 18.dp, bottom = 8.dp).fillMaxWidth()
-                    .background(Color(0xFF22262F), RoundedCornerShape(18.dp)).padding(6.dp),
-            ) {
-                Memory.all.forEach { p ->
-                    val on = p.id == Memory.activeId || (Memory.activeId.isEmpty() && p == now)
-                    Pressable({ if (!on) { Memory.use(p); haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove) }; picked = p.id }, Modifier.fillMaxWidth(), label = "换成 ${p.name}") { pr ->
-                        Row(
-                            Modifier.fillMaxWidth()
-                                .background(if (on) SideWarm.copy(alpha = .12f) else if (pr) rgba(255, 255, 255, .06f) else Color.Transparent, RoundedCornerShape(12.dp))
-                                .padding(horizontal = 10.dp, vertical = 10.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            PersonaDot(p, 32.dp)
-                            Spacer(Modifier.width(12.dp))
-                            Column(Modifier.weight(1f)) {
-                                Txt(p.name, Page.ink, 15.sp, maxLines = 1)
-                                val n = history.of(p.id).size
-                                Txt("${if (n == 0) "还没有对话" else "$n 段对话"} · ${if (p.items.isEmpty()) "还没有记忆" else "${p.items.size} 条记忆"}", SideFaint, 11.5.sp, Modifier.padding(top = 2.dp), maxLines = 1)
-                            }
-                            if (on) SvgIcon(Ic("M5 12.5l4.5 4.5L19 7.5"), SideWarm, 18.dp, stroke = 1.8f)
-                        }
+        Spacer(Modifier.weight(1f))
+        Pressable(onSearch, label = "搜索对话") { p ->
+            SvgIcon(SideIcons.search, if (p) Page.ink else SideInk, 21.dp, stroke = 1.5f, modifier = Modifier.padding(8.dp))
+        }
+    }
+}
+
+/** 浮在名字下面的那张小卡片：所有助理 + 管理助理。 */
+@Composable
+private fun PickCard(history: ConvStore, now: Persona, onPick: (Persona) -> Unit, onManage: () -> Unit) {
+    Column(
+        Modifier.widthIn(min = 248.dp, max = 300.dp)
+            .shadow(18.dp, RoundedCornerShape(18.dp), ambientColor = Color.Black, spotColor = Color.Black)
+            .background(Color(0xFF22262F), RoundedCornerShape(18.dp)).padding(6.dp),
+    ) {
+        Memory.all.forEach { p ->
+            val on = p.id == Memory.activeId || (Memory.activeId.isEmpty() && p == now)
+            Pressable({ onPick(p) }, Modifier.fillMaxWidth(), label = "换成 ${p.name}") { pr ->
+                Row(
+                    Modifier.fillMaxWidth()
+                        .background(if (on) SideWarm.copy(alpha = .12f) else if (pr) rgba(255, 255, 255, .06f) else Color.Transparent, RoundedCornerShape(12.dp))
+                        .padding(horizontal = 10.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    PersonaDot(p, 32.dp)
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Txt(p.name, Page.ink, 15.sp, maxLines = 1)
+                        val n = history.of(p.id).size
+                        Txt("${if (n == 0) "还没有对话" else "$n 段对话"} · ${if (p.items.isEmpty()) "还没有记忆" else "${p.items.size} 条记忆"}", SideFaint, 11.5.sp, Modifier.padding(top = 2.dp), maxLines = 1)
                     }
+                    if (on) SvgIcon(Ic("M5 12.5l4.5 4.5L19 7.5"), SideWarm, 18.dp, stroke = 1.8f)
                 }
-                Box(Modifier.padding(horizontal = 10.dp, vertical = 4.dp).fillMaxWidth().height(1.dp).background(rgba(255, 255, 255, .06f)))
-                Pressable({ open = false; onManage() }, Modifier.fillMaxWidth(), label = "管理助理") { pr ->
-                    Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                        SvgIcon(SideIcons.plus, if (pr) Page.ink else Page.muted, 16.dp, stroke = 1.7f)
-                        Spacer(Modifier.width(10.dp))
-                        Txt("管理助理", if (pr) Page.ink else Page.muted, 13.5.sp)
-                    }
-                }
+            }
+        }
+        Box(Modifier.padding(horizontal = 10.dp, vertical = 4.dp).fillMaxWidth().height(1.dp).background(rgba(255, 255, 255, .06f)))
+        Pressable(onManage, Modifier.fillMaxWidth(), label = "管理助理") { pr ->
+            Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                SvgIcon(SideIcons.plus, if (pr) Page.ink else Page.muted, 16.dp, stroke = 1.7f)
+                Spacer(Modifier.width(10.dp))
+                Txt("管理助理", if (pr) Page.ink else Page.muted, 13.5.sp)
             }
         }
     }
