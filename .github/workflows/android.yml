@@ -38,27 +38,6 @@ jobs:
           fonttools varLib.instancer bm.ttf wght=600 opsz=28 -o android/app/src/main/res/font/bodoni_moda_semibold_italic.ttf
           ls -la android/app/src/main/res/font
 
-      - name: Fetch speech engine
-        # 同声翻译的认字引擎（sherpa-onnx 的 Android 包，含 onnxruntime）
-        run: |
-          set -e
-          mkdir -p android/app/libs
-          curl -fsSL --retry 3 -o android/app/libs/sherpa-onnx-1.13.8.aar "https://github.com/k2-fsa/sherpa-onnx/releases/download/v1.13.8/sherpa-onnx-1.13.8.aar"
-          ls -la android/app/libs
-
-      - name: Publish speech model (once)
-        # 认字模型（中英双语流式小模型，只取 int8 那几个文件，约 50 MB）放到本仓库的发布页，App 第一次用时下载
-        if: github.ref != 'refs/heads/check'
-        continue-on-error: true
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          if gh release view asr-model-zh-en >/dev/null 2>&1; then echo "已经有了"; exit 0; fi
-          d=sherpa-onnx-streaming-zipformer-small-bilingual-zh-en-2023-02-16
-          curl -fsSL --retry 3 -o m.tar.bz2 "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/$d.tar.bz2"
-          tar xjf m.tar.bz2 $d/encoder-epoch-99-avg-1.int8.onnx $d/decoder-epoch-99-avg-1.int8.onnx $d/joiner-epoch-99-avg-1.int8.onnx $d/tokens.txt
-          gh release create asr-model-zh-en $d/* --prerelease --title "同声翻译认字模型（中英）" --notes "App 自己下载用，不用手动装。"
-
       - name: Build APK
         working-directory: android
         run: |

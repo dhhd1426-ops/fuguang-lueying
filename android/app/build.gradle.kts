@@ -48,8 +48,6 @@ android {
     // youtubedl-android 要把 python、ffmpeg 解压出来运行，本机库不能压在 APK 里
     packaging {
         jniLibs.useLegacyPackaging = true
-        // 同声翻译只用到 sherpa-onnx 的 JNI 和 onnxruntime，C / C++ 接口那两个库不要
-        jniLibs.excludes += listOf("**/libsherpa-onnx-c-api.so", "**/libsherpa-onnx-cxx-api.so")
         resources { excludes += "/META-INF/{AL2.0,LGPL2.1}" }
     }
 
@@ -73,7 +71,5 @@ dependencies {
     // 下载引擎：yt-dlp + ffmpeg（和开源下载器 Seal 同一套）
     implementation("io.github.junkfood02.youtubedl-android:library:0.17.3")
     implementation("io.github.junkfood02.youtubedl-android:ffmpeg:0.17.3")
-    // 同声翻译的认字：sherpa-onnx（编译前由 Actions 从它的 GitHub 发布页下到 libs/）
-    implementation(files("libs/sherpa-onnx-1.13.8.aar"))
     testImplementation("junit:junit:4.13.2")
 }

@@ -34,7 +34,6 @@ class MainActivity : ComponentActivity() {
         AdBlock.init(this, prefs)
         Downloads.init(this, prefs)
         YtDlp.init(this, prefs)
-        Live.init(prefs)
         if (intent?.getStringExtra("open") == "downloads") Downloads.open = true
         Skills.init(this, prefs)
         val controller = WindowCompat.getInsetsController(window, window.decorView)

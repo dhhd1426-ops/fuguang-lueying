@@ -27,9 +27,6 @@ object YtDlp {
 
     fun init(ctx: Context, p: Prefs) { app = ctx.applicationContext; prefs = p }
 
-    /** 引擎能不能用（第一次会解开，几秒）。 */
-    suspend fun ready(): Boolean = boot()
-
     /** 第一次用时解开（几秒）。 */
     private suspend fun boot(): Boolean = lock.withLock {
         if (ready) return true
