@@ -206,6 +206,8 @@ fun FuguangApp(prefs: Prefs, fullscreen: Boolean, setFullscreen: (Boolean) -> Un
 
         // 「这次用了」里点一样本事：去「我的 → 功能 → 技能」看它
         Skills.show = { id -> mineNav.screen = "skills/$id"; MineCard.open = true }
+        // 同声翻译用现在聊天的模型来翻
+        Live.store = assistant
         // 内置浏览器、下载页：盖在最上面
         InBrowserLayer()
         DownloadsLayer()

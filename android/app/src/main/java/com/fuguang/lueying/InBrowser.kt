@@ -34,6 +34,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -134,6 +135,22 @@ fun InBrowserLayer() {
     var full by remember { mutableStateOf<View?>(null) }
     var fullCb by remember { mutableStateOf<WebChromeClient.CustomViewCallback?>(null) }
     var dlOpen by remember { mutableStateOf(false) }
+    var trOpen by remember { mutableStateOf(false) }
+    // 同声翻译：先要麦克风权限；听网页的声音还要系统的「开始录制」
+    val projLauncher = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()) { r ->
+        if (r.resultCode == Activity.RESULT_OK && r.data != null) Live.start(ctx.applicationContext, r.resultCode, r.data) else toast = "没点「开始录制」，听不到网页的声音"
+    }
+    fun go() {
+        if (Live.src == "page") {
+            val mpm = ctx.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as android.media.projection.MediaProjectionManager
+            runCatching { projLauncher.launch(mpm.createScreenCaptureIntent()) }.onFailure { toast = "这台手机不让录 App 的声音" }
+        } else Live.start(ctx.applicationContext)
+    }
+    val micLauncher = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) { ok ->
+        if (ok) go() else toast = "没给麦克风权限，开不了翻译"
+    }
+    // 关掉浏览器就停
+    LaunchedEffect(target) { if (target == null && Live.on) Live.stop(ctx.applicationContext) }
     var h by remember { mutableIntStateOf(0) }
 
     fun exitFull() {
@@ -146,6 +163,7 @@ fun InBrowserLayer() {
     BackHandler(enabled = target != null) {
         when {
             full != null -> exitFull()
+            trOpen -> trOpen = false
             dlOpen -> dlOpen = false
             menu || shieldOpen -> { menu = false; shieldOpen = false }
             web?.canGoBack() == true -> web?.goBack()
@@ -293,6 +311,11 @@ fun InBrowserLayer() {
             Row(Modifier.fillMaxWidth().background(Bar).windowInsetsPadding(WindowInsets.navigationBars).padding(vertical = 2.dp), horizontalArrangement = androidx.compose.foundation.layout.Arrangement.SpaceAround) {
                 IconBtn(BrIcons.back, "后退", canBack) { web?.goBack() }
                 IconBtn(BrIcons.fwd, "前进", canFwd) { web?.goForward() }
+                // 同声翻译：开着时杏色，点一下停
+                PressSurface({ if (Live.on) { Live.stop(ctx.applicationContext); toast = "翻译关了" } else trOpen = true }, Modifier.size(44.dp), shape = CircleShape,
+                    fill = if (Live.on) Warm.copy(alpha = .12f) else Color.Transparent, pressScale = .88f, label = "同声翻译") {
+                    SvgIcon(TranslateIc, if (Live.on) Warm else Page.ink.copy(alpha = .9f), 20.dp, stroke = 1.7f)
+                }
                 Box {
                     IconBtn(BrIcons.down, "下载") { Downloads.open = true }
                     val n = Downloads.running
@@ -338,12 +361,21 @@ fun InBrowserLayer() {
         if (ta > 0f) Txt(lastToast, Page.ink, 13.sp, Modifier.align(Alignment.BottomCenter).windowInsetsPadding(WindowInsets.navigationBars).padding(bottom = 70.dp)
             .graphicsLayer { alpha = ta; translationY = (1f - ta) * 10.dp.toPx() }.background(Color(0xFF3A404C), RoundedCornerShape(12.dp)).padding(horizontal = 14.dp, vertical = 9.dp), maxLines = 1)
 
+        // 悬浮字幕（全屏视频时画在视频上面，见下面）
+        if (full == null) LiveCaptionOverlay(64.dp + androidx.compose.foundation.layout.WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding())
+        TranslateSheet(trOpen, { trOpen = false }) {
+            trOpen = false
+            if (androidx.core.content.ContextCompat.checkSelfPermission(ctx, android.Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED) go()
+            else micLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
+        }
+
         // 选清晰度
         DownloadSheet(dlOpen, title, web?.url ?: target.orEmpty()) { dlOpen = false; if (it.isNotEmpty()) toast = it }
 
         // 视频全屏
         full?.let { v ->
             AndroidView(factory = { c -> FrameLayout(c).apply { setBackgroundColor(android.graphics.Color.BLACK); (v.parent as? ViewGroup)?.removeView(v); addView(v, FrameLayout.LayoutParams(-1, -1)) } }, modifier = Modifier.fillMaxSize())
+            LiveCaptionOverlay(24.dp)
         }
     }
 }
