@@ -278,12 +278,14 @@ fun InBrowserLayer() {
                 )
                 // 认出视频了：右下角浮一个下载钮
                 val vids = Sniffer.found.size
-                val dv by animateFloatAsState(if (vids > 0) 1f else 0f, tween(320, easing = Curves.decel), label = "dl")
+                // 视频网站（yt-dlp 认得的那些）不等嗅探，直接给下载钮
+                val vsite = Regex("(^|\\.)(bilibili\\.com|b23\\.tv|youtube\\.com|youtu\\.be|douyin\\.com|weibo\\.(com|cn)|xiaohongshu\\.com|ixigua\\.com|kuaishou\\.com|acfun\\.cn|twitter\\.com|x\\.com|vimeo\\.com|tiktok\\.com|instagram\\.com|zhihu\\.com|youku\\.com|iqiyi\\.com|v\\.qq\\.com|mgtv\\.com|huya\\.com|douyu\\.com)$").containsMatchIn(host)
+                val dv by animateFloatAsState(if (vids > 0 || vsite) 1f else 0f, tween(320, easing = Curves.decel), label = "dl")
                 if (dv > 0f) PressSurface({ dlOpen = true }, Modifier.align(Alignment.BottomEnd).padding(14.dp).graphicsLayer { alpha = dv; val s = .6f + .4f * dv; scaleX = s; scaleY = s }.height(40.dp),
                     shape = RoundedCornerShape(20.dp), fill = Color(0xE6262A32), pressScale = .92f, label = "下载视频") {
                     Row(Modifier.padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically) {
                         SvgIcon(BrIcons.down, Warm, 16.dp, stroke = 2f); Spacer(Modifier.width(6.dp))
-                        Txt(if (vids == 1) "下载视频" else "下载 · $vids 个", Page.ink, 13.sp, maxLines = 1)
+                        Txt(if (vids <= 1) "下载视频" else "下载 · $vids 个", Page.ink, 13.sp, maxLines = 1)
                     }
                 }
             }
@@ -337,7 +339,7 @@ fun InBrowserLayer() {
             .graphicsLayer { alpha = ta; translationY = (1f - ta) * 10.dp.toPx() }.background(Color(0xFF3A404C), RoundedCornerShape(12.dp)).padding(horizontal = 14.dp, vertical = 9.dp), maxLines = 1)
 
         // 选清晰度
-        DownloadSheet(dlOpen, title) { dlOpen = false; toast = it }
+        DownloadSheet(dlOpen, title, web?.url ?: target.orEmpty()) { dlOpen = false; if (it.isNotEmpty()) toast = it }
 
         // 视频全屏
         full?.let { v ->

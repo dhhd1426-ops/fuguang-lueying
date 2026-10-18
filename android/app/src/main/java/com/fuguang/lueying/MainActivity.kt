@@ -33,6 +33,7 @@ class MainActivity : ComponentActivity() {
         WebSearch.init(prefs)
         AdBlock.init(this, prefs)
         Downloads.init(this, prefs)
+        YtDlp.init(this, prefs)
         if (intent?.getStringExtra("open") == "downloads") Downloads.open = true
         Skills.init(this, prefs)
         val controller = WindowCompat.getInsetsController(window, window.decorView)

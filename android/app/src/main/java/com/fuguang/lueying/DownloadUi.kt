@@ -64,19 +64,31 @@ private fun mb(b: Long) = if (b <= 0) "" else if (b >= 1 shl 30) "%.2f GB".forma
 
 /** 下载视频：从下面升起，选哪一个（有几个时）、清晰度、存到相册 / 只在 Wi-Fi。 */
 @Composable
-fun DownloadSheet(open: Boolean, title: String, onDone: (String) -> Unit) {
+fun DownloadSheet(open: Boolean, title: String, pageUrl: String, onDone: (String) -> Unit) {
     val k by animateFloatAsState(if (open) 1f else 0f, tween(if (open) 340 else 220, easing = if (open) Curves.decel else Curves.accel), label = "dlsheet")
     if (k <= 0f) return
     val ctx = LocalContext.current
-    val items = Sniffer.found.toList()
+    // 先问 yt-dlp 认不认得这一页（认得就用它：清晰度全、带大小）；同时列出自己嗅探到的
+    var yt by remember(pageUrl) { mutableStateOf<YtDlp.Info?>(null) }
+    var ytAsked by remember(pageUrl) { mutableStateOf(false) }
+    var ytLoading by remember(pageUrl) { mutableStateOf(false) }
+    LaunchedEffect(open, pageUrl) {
+        if (open && !ytAsked && pageUrl.startsWith("http")) { ytAsked = true; ytLoading = true; yt = YtDlp.info(pageUrl, Sniffer.found.firstOrNull()?.headers.orEmpty()); ytLoading = false }
+    }
+    val ytm = yt?.let { Sniffer.Media("ytdlp", pageUrl, headers = Sniffer.found.firstOrNull()?.headers.orEmpty(), page = pageUrl) }
+    val items = listOfNotNull(ytm) + Sniffer.found.toList()
     var pick by remember { mutableIntStateOf(0) }
-    val m = items.getOrNull(pick)
+    val m = items.getOrNull(pick.coerceAtMost((items.size - 1).coerceAtLeast(0)))
     var qs by remember(m) { mutableStateOf<List<Pair<String, String?>>?>(null) }
+    val sizes = remember(yt) { yt?.fmts?.associate { it.label to it.size }.orEmpty() + ("只要声音" to (yt?.audioSize ?: 0L)) }
     var q by remember(m) { mutableIntStateOf(0) }
     var audioOnly by remember(m) { mutableStateOf(false) }
     var gallery by remember { mutableStateOf(true) }
     var wifi by remember { mutableStateOf(false) }
-    LaunchedEffect(m) { if (m != null) qs = Downloads.qualities(m) }
+    LaunchedEffect(m, yt) {
+        if (m == null) return@LaunchedEffect
+        qs = if (m.kind == "ytdlp") yt?.fmts?.map { it.label to it.height.toString() }?.ifEmpty { listOf("最清楚" to "0") } else Downloads.qualities(m)
+    }
     Box(Modifier.fillMaxSize()) {
         Box(Modifier.fillMaxSize().graphicsLayer { alpha = k }.background(Color(0x80000000)).pointerInput(Unit) { detectTapGestures { onDone("") } })
         Column(
@@ -89,15 +101,16 @@ fun DownloadSheet(open: Boolean, title: String, onDone: (String) -> Unit) {
             Box(Modifier.align(Alignment.CenterHorizontally).padding(bottom = 12.dp).size(40.dp, 4.dp).background(Color.White.copy(alpha = .25f), RoundedCornerShape(2.dp)))
             Txt(title.ifBlank { "这一页的视频" }, Page.ink, 16.sp, maxLines = 2)
             if (m == null) {
-                Txt("这一页还没认出能下的视频。先让视频放起来，再点一次。", Page.muted, 13.sp, Modifier.padding(vertical = 18.dp), lineHeight = 21.sp)
+                if (ytLoading) Row(Modifier.padding(vertical = 18.dp), verticalAlignment = Alignment.CenterVertically) { LoadRing(Warm, 15.dp); Spacer(Modifier.width(8.dp)); Txt("在认这一页的视频…", Page.muted, 13.sp) }
+                else Txt("这一页还没认出能下的视频。先让视频放起来，再点一次。", Page.muted, 13.sp, Modifier.padding(vertical = 18.dp), lineHeight = 21.sp)
                 return@Column
             }
             Txt(
-                when (m.kind) { "dash" -> "画面和声音分开传的，下完自动合成一个文件"; "hls" -> "分段视频，下完自动拼成一个文件"; else -> if (m.size > 0) "整段文件 · " + mb(m.size) else "整段文件" },
+                when (m.kind) { "ytdlp" -> "认出来了：${yt?.title?.take(30).orEmpty()} · 画面和声音会合成一个 mp4"; "dash" -> "画面和声音分开传的，下完自动合成一个文件"; "hls" -> "分段视频，下完自动拼成一个文件"; else -> if (m.size > 0) "整段文件 · " + mb(m.size) else "整段文件" },
                 Page.muted, 12.sp, Modifier.padding(top = 2.dp, bottom = 12.dp),
             )
             if (items.size > 1) Row(Modifier.padding(bottom = 10.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                items.take(5).forEachIndexed { i, it2 -> ChoiceChip("视频 ${i + 1}" + if (it2.kind == "hls") " · 分段" else "", pick == i) { pick = i } }
+                items.take(5).forEachIndexed { i, it2 -> ChoiceChip(if (it2.kind == "ytdlp") "智能识别" else "视频 ${i + 1}" + if (it2.kind == "hls") " · 分段" else "", pick == i) { pick = i } }
             }
             val list = qs
             if (list == null) Row(Modifier.padding(vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) { LoadRing(Warm, 15.dp); Spacer(Modifier.width(8.dp)); Txt("在看有哪几档清晰度…", Page.muted, 13.sp) }
@@ -116,7 +129,8 @@ fun DownloadSheet(open: Boolean, title: String, onDone: (String) -> Unit) {
                             }
                             Spacer(Modifier.width(10.dp))
                             Txt(name, Page.ink, 14.sp, Modifier.weight(1f), maxLines = 1)
-                            Txt(when { name == "只要声音" -> "m4a"; i == 0 && list.size > 1 -> "最清楚"; else -> "" }, Page.muted, 12.sp)
+                            val sz = if (m.kind == "ytdlp") sizes[name] ?: 0L else 0L
+                            Txt(listOf(if (sz > 0) "约 " + mb(sz) else "", when { name == "只要声音" -> "m4a"; i == 0 && list.size > 1 -> "最清楚"; else -> "" }).filter { it.isNotEmpty() }.joinToString(" · "), Page.muted, 12.sp)
                         }
                     }
                 }

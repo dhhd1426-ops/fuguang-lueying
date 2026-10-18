@@ -131,9 +131,10 @@ object Downloads {
         run(d)
     }
 
-    fun pause(d: Dl) { d.job?.cancel(); d.state = 5; d.speed = 0 }
+    fun pause(d: Dl) { if (d.media.kind == "ytdlp") YtDlp.stop(d.id); d.job?.cancel(); d.state = 5; d.speed = 0 }
     fun resume(d: Dl) { if (d.state == 5 || d.state == 4) run(d) }
     fun delete(d: Dl) {
+        if (d.media.kind == "ytdlp") YtDlp.stop(d.id)
         d.job?.cancel(); list.remove(d)
         runCatching { work(d).deleteRecursively() }
         if (d.out.startsWith("content://")) runCatching { app.contentResolver.delete(Uri.parse(d.out), null, null) } else if (d.out.isNotEmpty()) File(d.out).delete()
@@ -155,6 +156,22 @@ object Downloads {
                 while (d.wifiOnly && !wifi()) { d.state = 6; delay(10_000) }
                 d.state = 1
                 val w = work(d)
+                // yt-dlp 认得的网站：交给它（它自己合成、转好格式）
+                if (d.media.kind == "ytdlp") {
+                    val f = YtDlp.download(d.id, d.media.url, d.media.headers, d.variant?.toIntOrNull() ?: 0, d.audioOnly, w) { p, line ->
+                        d.frac = p * .97f
+                        Regex("at\\s+([\\d.]+)\\s*([KMG]i?B)/s").find(line)?.let { m -> val v = m.groupValues[1].toDoubleOrNull() ?: 0.0
+                            d.speed = (v * when (m.groupValues[2].first()) { 'G' -> 1073741824.0; 'M' -> 1048576.0; else -> 1024.0 }).toLong() }
+                        Regex("of\\s+~?\\s*([\\d.]+)\\s*([KMG]i?B)").find(line)?.let { m -> val v = m.groupValues[1].toDoubleOrNull() ?: 0.0
+                            d.total = (v * when (m.groupValues[2].first()) { 'G' -> 1073741824.0; 'M' -> 1048576.0; else -> 1024.0 }).toLong(); d.done = (d.total * p).toLong() }
+                        if (line.contains("[Merger]") || line.contains("[ExtractAudio]")) d.state = 2
+                    }
+                    d.state = 2; d.speed = 0
+                    d.total = f.length(); d.done = d.total; d.frac = 1f
+                    d.out = place(d, f); runCatching { w.deleteRecursively() }; d.state = 3
+                    withContext(Dispatchers.Main) { save() }
+                    return@launch
+                }
                 val got: File = when (d.media.kind) {
                     "hls" -> hls(d, w)
                     "dash" -> dash(d, w)
