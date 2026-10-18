@@ -135,6 +135,7 @@ object Materials {
     private class Glance(val note: String, val img: ToolImage?)
 
     private fun glance(u: String, vision: Boolean): Glance {
+        if (Illust.isIllust(u)) return Glance("手绘插画（SVG，放大不糊），颜色就是地址里的 ink（线条）、accent（色块）、paper（头像底色），可以改成作品的颜色", null)
         val local = MaterialStore.localFile(u)
         val (bytes, type) = if (local != null) local.readBytes() to MaterialStore.mimeOf(local.name) else fetch(u, pageOf(u), 20 shl 20)
         if (type.contains("svg")) return Glance("矢量图标（SVG），放大不糊；" + colorsInSvg(String(bytes)), null)

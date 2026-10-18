@@ -68,6 +68,7 @@ dependencies {
     implementation("androidx.media3:media3-exoplayer:1.9.2")
     implementation("dev.chrisbanes.haze:haze:1.7.3")
     implementation("org.jsoup:jsoup:1.18.3")
+    implementation("com.caverock:androidsvg-aar:1.4")
     // 下载引擎：yt-dlp + ffmpeg（和开源下载器 Seal 同一套）
     implementation("io.github.junkfood02.youtubedl-android:library:0.17.3")
     implementation("io.github.junkfood02.youtubedl-android:ffmpeg:0.17.3")

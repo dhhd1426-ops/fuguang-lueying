@@ -27,6 +27,7 @@ class MainActivity : ComponentActivity() {
         Works.init(this)
         MaterialStore.init(this)
         PageGrab.init(this)
+        Illust.init(this)
         Avatars.init(this)
         Memory.init(prefs)
         Mcp.init(prefs)

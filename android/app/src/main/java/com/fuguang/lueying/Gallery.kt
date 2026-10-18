@@ -32,6 +32,7 @@ object Gallery {
     private const val KEY = "gallery"
 
     val sources = listOf(
+        GallerySource("illust", "内置插画", "手绘场景和头像 · 不联网", "绘", 0xFFE9B48E, free = true),
         GallerySource("openverse", "Openverse", "开放授权 · 不要 Key", "O", 0xFF9FB79A, free = true),
         GallerySource("iconify", "Iconify", "图标 30 多万个 · 不要 Key", "I", 0xFFA9B6CC, free = true),
         GallerySource("pexels", "Pexels", "照片和视频 · 免费 Key", "P", 0xFF8FC1B0, "www.pexels.com/api"),
@@ -42,7 +43,7 @@ object Gallery {
     fun source(id: String) = sources.firstOrNull { it.id == id } ?: sources.first()
 
     var on by mutableStateOf(true)
-    var used by mutableStateOf(listOf("openverse", "iconify"))
+    var used by mutableStateOf(listOf("illust", "openverse", "iconify"))
     var keys by mutableStateOf(mapOf<String, String>())
     private var prefs: Prefs? = null
 
@@ -52,12 +53,14 @@ object Gallery {
             val o = JSONObject(p.string(KEY) ?: return@runCatching)
             on = o.optBoolean("on", true)
             o.optJSONArray("used")?.let { a -> used = List(a.length()) { a.getString(it) }.filter { id -> sources.any { it.id == id } } }
+            // 第 185 版加了内置插画：以前存过设置的也补上一次
+            if (o.optInt("v") < 2 && "illust" !in used) used = listOf("illust") + used
             o.optJSONObject("keys")?.let { k -> keys = k.keys().asSequence().associateWith { k.optString(it) } }
         }
     }
 
     fun save() {
-        prefs?.putString(KEY, JSONObject().put("on", on).put("used", JSONArray(used)).put("keys", JSONObject(keys)).toString())
+        prefs?.putString(KEY, JSONObject().put("v", 2).put("on", on).put("used", JSONArray(used)).put("keys", JSONObject(keys)).toString())
     }
 
     fun ready(id: String) = source(id).free || keys[id].orEmpty().isNotBlank()
@@ -82,7 +85,9 @@ object Gallery {
     )
 
     fun system(): String =
-        "你还有一个图库（$TOOL）：高清原图，每张带作者和授权，有照片、插画、图标和视频。一般配图——氛围、背景、风景、物件、食物、人物——先在图库里找；" +
+        "你还有一个图库（$TOOL）：高清原图，每张带作者和授权，有照片、插画、图标和视频。" +
+            "插画里有一套内置的手绘小场景（读书、咖啡、跑步、遛狗、植物……）和手绘头像，不联网也能用，地址里的 ink（线条）、accent（色块）、paper（头像的底色）可以改成作品的颜色（六位色值，不带 #）。" +
+            "一般配图——氛围、背景、风景、物件、食物、人物——先在图库里找；" +
             "讲具体某样东西的（某场展览的海报、某家店的门面），去打开它的网页拿。图标都在图库里找（kind=icon），拿到的是 SVG，颜色可以随作品改。" +
             "用英文词找更准。找到后挑几件看一眼再用；作品里每张图库的图都写上它给的 credit（作者和图库名）。"
 
@@ -94,7 +99,7 @@ object Gallery {
         val kind = a.optString("kind").ifEmpty { "photo" }
         val ori = a.optString("orientation")
         val ids = used.filter { ready(it) }.filter { id ->
-            when (kind) { "icon" -> id == "iconify"; "video" -> id == "pexels" || id == "pixabay"; "illustration" -> id == "pixabay" || id == "openverse"; else -> id != "iconify" }
+            when (kind) { "icon" -> id == "iconify"; "video" -> id == "pexels" || id == "pixabay"; "illustration" -> id == "pixabay" || id == "openverse" || id == "illust"; else -> id != "iconify" && id != "illust" }
         }
         if (ids.isEmpty()) return ToolOut(if (kind == "icon") "图标要开 Iconify，现在没开。" else "能找这类图的图库都没开或没填 Key。")
         val (pics, errs) = coroutineScope {
@@ -117,6 +122,7 @@ object Gallery {
     fun credit(p: Pic) = when (p.from) {
         "Unsplash" -> "Photo by ${p.author} on Unsplash"
         "Iconify" -> "图标：${p.author}（Iconify）"
+        "内置插画" -> "插画：${p.author}（CC0）"
         "Openverse" -> "${p.author.ifBlank { "佚名" }} · ${p.license}（Openverse）"
         else -> "${p.author} / ${p.from}"
     }
@@ -138,6 +144,7 @@ object Gallery {
     suspend fun search(id: String, q: String, kind: String, ori: String, n: Int): List<Pic> = withContext(Dispatchers.IO) {
         val k = keys[id].orEmpty().trim()
         when (id) {
+            "illust" -> Illust.search(q, n)
             "iconify" -> {
                 val o = get("https://api.iconify.design/search?query=${enc(q)}&limit=32", emptyMap())
                 val a = o.optJSONArray("icons") ?: JSONArray()

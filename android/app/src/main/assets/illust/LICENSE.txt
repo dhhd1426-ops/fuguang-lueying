@@ -1,0 +1,7 @@
+内置插画的来源和授权
+
+doodles/  Open Doodles，Pablo Stanley 画，CC0（https://www.opendoodles.com/）。
+          SVG 取自 lunahq/react-open-doodles（MIT），把 ink / accent 颜色换成了 {{ink}} / {{accent}}。
+peeps/    Open Peeps，Pablo Stanley 画，CC0（https://www.openpeeps.com/）。
+          SVG 取自 jenshor/open-peeps 的 packages/open_peeps/assets/atoms（MIT），去掉了注释，
+          黑色换成 {{ink}}、白色换成 {{paper}}；每个文件第一行是原来的 viewBox。

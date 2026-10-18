@@ -161,6 +161,7 @@ internal fun GallerySourcePage(id: String, onBack: () -> Unit) {
         val about = when {
             s.remote -> "它要求直接用它给的链接，图不会存进手机，作品要联网才看得到。"
             id == "iconify" -> "200 多套开源图标，拿到的是 SVG，颜色跟着作品走。"
+            id == "illust" -> "装在 App 里：33 张手绘小场景（读书、咖啡、跑步、遛狗……）和能拼的手绘头像，CC0 授权，不联网也能用，线条和色块的颜色跟着作品改。"
             else -> "用到的图会存进手机，断网也能看。"
         }
         Txt(about, Page.muted, 12.5.sp, Modifier.padding(start = 8.dp, end = 8.dp, top = 4.dp), lineHeight = 20.sp)
@@ -173,7 +174,7 @@ internal fun GallerySourcePage(id: String, onBack: () -> Unit) {
         }
         Label("试搜一下")
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.weight(1f)) { CardField(q, { q = it }, if (id == "iconify") "比如：coffee" else "比如：autumn cafe") }
+            Box(Modifier.weight(1f)) { CardField(q, { q = it }, when (id) { "iconify" -> "比如：coffee"; "illust" -> "比如：咖啡 读书 人"; else -> "比如：autumn cafe" }) }
             Spacer(Modifier.width(8.dp))
             PressSurface(
                 {
@@ -181,7 +182,7 @@ internal fun GallerySourcePage(id: String, onBack: () -> Unit) {
                     if (!Gallery.ready(id)) { err = "还没填 Key，先去拿一个"; return@PressSurface }
                     busy = true; err = ""; pics = null
                     scope.launch {
-                        val word = q.trim().ifEmpty { if (id == "iconify") "coffee" else "autumn cafe" }
+                        val word = q.trim().ifEmpty { when (id) { "iconify" -> "coffee"; "illust" -> "咖啡 读书 人"; else -> "autumn cafe" } }
                         runCatching { Gallery.search(id, word, if (id == "iconify") "icon" else "photo", "", 6) }
                             .onSuccess { pics = it; if (it.isEmpty()) err = "没找到，换个英文词试试" }
                             .onFailure { err = it.message ?: "没连上" }
@@ -211,22 +212,38 @@ internal fun GallerySourcePage(id: String, onBack: () -> Unit) {
 /** 试搜的一格：小图解出来就浮上来（240ms，一格晚 40ms）；图标没有小图，写它的名字。 */
 @Composable
 private fun PicTile(p: Pic, i: Int, modifier: Modifier) {
-    val bmp by produceState<Bitmap?>(null, p.thumb) { value = if (p.thumb.isEmpty()) null else loadThumb(p.thumb) }
+    val bmp by produceState<Bitmap?>(null, p.thumb, p.url) { value = if (p.thumb.isNotEmpty()) loadThumb(p.thumb) else if (p.url.contains(".svg")) loadSvg(p.url) else null }
     var shown by remember { mutableStateOf(false) }
     androidx.compose.runtime.LaunchedEffect(Unit) { delay(i * 40L); shown = true }
-    val t by animateFloatAsState(if (shown && (bmp != null || p.thumb.isEmpty())) 1f else 0f, tween(240, easing = Curves.decel), label = "tile")
+    val t by animateFloatAsState(if (shown && (bmp != null || !p.url.contains(".svg") && p.thumb.isEmpty())) 1f else 0f, tween(240, easing = Curves.decel), label = "tile")
     Box(
         modifier.aspectRatio(if (p.kind == "图标") 1f else .75f).graphicsLayer { alpha = t; scaleX = .94f + .06f * t; scaleY = .94f + .06f * t }
             .clip(RoundedCornerShape(10.dp)).background(CardBlock),
         contentAlignment = Alignment.Center,
     ) {
         bmp?.let { Image(it.asImageBitmap(), p.author, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
-        if (p.thumb.isEmpty()) Txt(p.author.substringAfter(':'), warm, 11.sp, Modifier.padding(6.dp), maxLines = 2)
+        if (p.thumb.isEmpty() && bmp == null) Txt(p.author.substringAfter(':'), warm, 11.sp, Modifier.padding(6.dp), maxLines = 2)
         else if (p.author.isNotBlank()) Txt(
             p.author, Color.White.copy(alpha = .92f), 10.sp,
             Modifier.align(Alignment.BottomStart).fillMaxWidth().background(rgba(0, 0, 0, .45f)).padding(horizontal = 6.dp, vertical = 3.dp), maxLines = 1,
         )
     }
+}
+
+/** SVG（图标、内置插画）画成小图：内置插画现拼，图标从网上拿；浅底上看得清。 */
+private suspend fun loadSvg(u: String): Bitmap? = withContext(Dispatchers.IO) {
+    runCatching {
+        val text = if (Illust.isIllust(u)) Illust.render(android.net.Uri.parse(u))!!
+        else (URL(u).openConnection() as HttpURLConnection).run { connectTimeout = 8000; readTimeout = 12000; try { inputStream.bufferedReader().use { it.readText() } } finally { disconnect() } }
+        val svg = com.caverock.androidsvg.SVG.getFromString(text.replace("currentColor", "#e9b48e"))
+        val px = 240
+        svg.setDocumentWidth("100%"); svg.setDocumentHeight("100%")
+        val b = Bitmap.createBitmap(px, px, Bitmap.Config.ARGB_8888)
+        val c = android.graphics.Canvas(b)
+        if (Illust.isIllust(u)) c.drawColor(0xFFF2EDE6.toInt())
+        svg.renderToCanvas(c, android.graphics.RectF(px * .08f, px * .08f, px * .92f, px * .92f))
+        b
+    }.getOrNull()
 }
 
 private suspend fun loadThumb(u: String): Bitmap? = withContext(Dispatchers.IO) {

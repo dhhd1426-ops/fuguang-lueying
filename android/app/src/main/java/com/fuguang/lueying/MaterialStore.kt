@@ -96,7 +96,7 @@ object MaterialStore {
         texts.forEach { t ->
             URL_TOKEN.findAll(t).forEach { m ->
                 val u = m.value.trimEnd('.', ',', ';', ')')
-                if (u.startsWith(PREFIX)) return@forEach
+                if (u.startsWith("https://$HOST/")) return@forEach
                 // Unsplash 要求直接用它的链接：不存，只告诉它一声
                 if (Gallery.keepRemote(u)) { Gallery.used(u); return@forEach }
                 val before = t.substring(maxOf(0, m.range.first - 120), m.range.first)
@@ -147,7 +147,11 @@ object MaterialStore {
     /** WorkViewer 的 shouldInterceptRequest 调：本地素材从这里给，视频支持拖动（Range）。 */
     fun serve(req: WebResourceRequest?): WebResourceResponse? {
         val u = req?.url ?: return null
-        if (u.host != HOST || u.path?.startsWith("/media/") != true) return null
+        if (u.host != HOST) return null
+        // 内置插画：现拼现给
+        if (u.path?.startsWith("/illust/") == true) return Illust.render(u)?.let { WebResourceResponse("image/svg+xml", "utf-8", 200, "OK", mapOf("Access-Control-Allow-Origin" to "*"), it.byteInputStream()) }
+            ?: WebResourceResponse("text/plain", "utf-8", 404, "Not Found", emptyMap(), null)
+        if (u.path?.startsWith("/media/") != true) return null
         val f = dir?.let { File(it, u.lastPathSegment.orEmpty()) }?.takeIf { it.exists() } ?: return WebResourceResponse("text/plain", "utf-8", 404, "Not Found", emptyMap(), null)
         val mime = mimeOf(f.name)
         val headers = HashMap<String, String>().apply { put("Access-Control-Allow-Origin", "*"); put("Accept-Ranges", "bytes"); put("Cache-Control", "max-age=31536000") }
@@ -181,7 +185,11 @@ object MaterialStore {
         val d = dir ?: return html
         var budget = 40L shl 20
         val back = used.associate { it.file to it.from }
-        return Regex(Regex.escape(PREFIX) + "([0-9a-f]{16}\\.[a-z0-9]+)").replace(html) { m ->
+        // 内置插画换成 data:，发给谁都看得到
+        val withIllust = Regex(Regex.escape("https://$HOST/illust/") + "[^\"'\\s)<>]+").replace(html) { m ->
+            Illust.render(android.net.Uri.parse(m.value.replace("&amp;", "&")))?.let { "data:image/svg+xml;base64," + Base64.encodeToString(it.toByteArray(), Base64.NO_WRAP) } ?: m.value
+        }
+        return Regex(Regex.escape(PREFIX) + "([0-9a-f]{16}\\.[a-z0-9]+)").replace(withIllust) { m ->
             val name = m.groupValues[1]; val f = File(d, name)
             if (f.exists() && f.length() <= (8L shl 20) && f.length() <= budget && !mimeOf(name).startsWith("video")) {
                 budget -= f.length(); "data:${mimeOf(name)};base64," + Base64.encodeToString(f.readBytes(), Base64.NO_WRAP)
