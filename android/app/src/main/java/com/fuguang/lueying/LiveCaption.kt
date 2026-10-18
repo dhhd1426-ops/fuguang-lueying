@@ -140,7 +140,14 @@ object Live {
         if (transJob?.isActive != true) transJob = scope.launch { for (s in queue) translate(s) }
     }
 
-    fun stop(app: Context?) { on = false; trackJob?.cancel(); mode = ""; app?.let { runCatching { it.stopService(Intent(it, LiveService::class.java)) } }; orig = ""; trans = ""; status = "" }
+    /** 从网页里接声音认字（PageAudio）：不用起服务，状态和录音认字一样。 */
+    fun beginTap() {
+        error = ""; orig = ""; trans = ""; folded = false; on = true; ctx.clear(); mode = "asr"; silent = false; level = 0f; log.clear()
+        status = "在接网页里的声音…"
+        if (transJob?.isActive != true) transJob = scope.launch { for (s in queue) translate(s) }
+    }
+
+    fun stop(app: Context?) { on = false; trackJob?.cancel(); PageAudio.stop(); mode = ""; app?.let { runCatching { it.stopService(Intent(it, LiveService::class.java)) } }; orig = ""; trans = ""; status = "" }
     fun fail(msg: String) { error = msg; status = msg }
 
     /** 认出一句完整的话：先换上原文，翻译排队。 */

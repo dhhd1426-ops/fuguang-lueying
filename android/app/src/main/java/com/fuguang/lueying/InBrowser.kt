@@ -164,7 +164,13 @@ fun InBrowserLayer() {
                 val got = runCatching { CaptionTrack.fetch(ctx.applicationContext, page, Live.to) }.getOrNull()
                 if (!Live.on) return@launch
                 if (got != null) Live.startTrack(page, got.first, got.second) { videoTime() }
-                else { Live.status = "这个视频没有字幕，改成听声音认字"; record() }
+                else {
+                    // 没字幕：从网页里直接接视频的声音（戴耳机也行）；接不上再录声音
+                    Live.beginTap()
+                    val why = web?.let { PageAudio.start(ctx.applicationContext, it) } ?: "这一页没找到视频"
+                    // 接不上：录「系统内部声音」录不到 App 自己放的声音，不用再试；给「换成麦克风听」
+                    if (why != null && Live.on) { Live.silent = true; Live.status = why }
+                }
             }
         } else Live.start(ctx.applicationContext)
     }
@@ -247,6 +253,8 @@ fun InBrowserLayer() {
                             settings.displayZoomControls = false
                             settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
                             settings.setSupportMultipleWindows(false)
+                            // 同声翻译：网页里接出来的声音从这里递给 App 认字（PageAudio.kt）
+                            addJavascriptInterface(PageAudio.Bridge(), "FGLive")
                             CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
                             webChromeClient = object : WebChromeClient() {
                                 override fun onProgressChanged(view: WebView?, p: Int) { progress = p }
