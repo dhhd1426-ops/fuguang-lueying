@@ -58,6 +58,7 @@ internal object SideIcons {
     val next = Ic("M9.5 6l6 6-6 6")
     val back = Ic("M14.5 6l-6 6 6 6")
     val plus = Ic("M12 5v14M5 12h14")
+    val board = Ic("M4 4h16v6H4ZM4 13h7v7H4ZM14 13h6v7h-6Z")
 }
 
 /** 这段对话的图标：置顶是四角星，做过作品是作品图标，其余是对话气泡。 */
@@ -79,6 +80,7 @@ fun HistoryMenu(
     onOpen: (Conv) -> Unit,
     onNew: () -> Unit,
     onWorks: () -> Unit,
+    onBoards: () -> Unit,
     onJournal: () -> Unit,
     onMine: () -> Unit,
     onAssistants: () -> Unit,
@@ -97,7 +99,7 @@ fun HistoryMenu(
             label = "side",
         ) { showAll ->
             if (showAll) AllConvs(history, current, busy, onBack = { all = false }, onOpen = onOpen)
-            else SideMain(history, current, busy, onSearch = { all = true }, onOpen, onNew, onWorks, onJournal, onAssistants)
+            else SideMain(history, current, busy, onSearch = { all = true }, onOpen, onNew, onWorks, onBoards, onJournal, onAssistants)
         }
         SideFoot(Modifier.align(Alignment.BottomCenter), onMine, onNew)
     }
@@ -106,14 +108,21 @@ fun HistoryMenu(
 @Composable
 private fun SideMain(
     history: ConvStore, current: String?, busy: Boolean, onSearch: () -> Unit, onOpen: (Conv) -> Unit, onNew: () -> Unit,
-    onWorks: () -> Unit, onJournal: () -> Unit, onAssistants: () -> Unit,
+    onWorks: () -> Unit, onBoards: () -> Unit, onJournal: () -> Unit, onAssistants: () -> Unit,
 ) {
     var editing by remember { mutableStateOf<String?>(null) }
     Column(Modifier.fillMaxSize().padding(top = 22.dp)) {
         AssistantTitle(history, onSearch, onAssistants)
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(start = 10.dp, end = 10.dp, bottom = 96.dp)) {
-            val works = remember(Works.version) { Works.list().size }
+            val all = remember(Works.version) { Works.list() }
+            val works = all.count { it.kind != "board" }
+            val boards = remember(Works.version) { Boards.list() }
             SideRow(SideIcons.work, "作品", onWorks) { if (works > 0) Txt(works.toString(), SideFaint, 11.5.sp) }
+            // 画板：计划、安排、日程。你改过、她还没读的，数字前亮一个杏色小点
+            SideRow(SideIcons.board, "画板", onBoards) {
+                if (boards.any { it.edits > 0 }) { Box(Modifier.size(6.dp).background(css("#e9b48e"), androidx.compose.foundation.shape.CircleShape)); Spacer(Modifier.width(8.dp)) }
+                if (boards.isNotEmpty()) Txt(boards.size.toString(), SideFaint, 11.5.sp)
+            }
             SideRow(SideIcons.pen, "手记", onJournal, modifier = Modifier.onGloballyPositioned { NoteCard.from = it.boundsInRoot().center })
             // 一道不碰边的细线
             Box(Modifier.padding(horizontal = 12.dp, vertical = 8.dp).fillMaxWidth().height(1.dp).background(rgba(255, 255, 255, .07f)))

@@ -107,6 +107,7 @@ object Works {
         val made = history.flatMap { it.works }.distinct().mapNotNull { get(it) }
         val own = if (pid.isEmpty()) emptyList() else Board.names(pid)
         return "你还有一支能做东西的笔（$MAKE）：网页、动画、动效、小游戏、小工具，演示文稿，排好版的文档，还有一块画板，都能做出来，做好后回复下面会出现一张作品卡，$who 点开就能看，" +
+            "作品和画板分开放：写代码、做动画、特效、动效、小游戏、小工具、幻灯片、文档，是作品；做计划、安排、日程、清单、行程、要盯着办的事，搭画板（kind=board），它在侧栏「画板」里，$who 会反复回来勾和改。" +
             "画板是你的地方：想理清的事画导图，要去的地方排时间线，要盯的计划摆看板，封面、颜色、怎么排都由你，$who 点开能勾、能挪、能改字。" +
             (if (own.isEmpty()) "" else "你自己做过的积木：" + own.joinToString("、") { "「$it」" } + "，画板里写 {type:\"own\",name:…} 就能再用。") +
             "幻灯片能导出成 PPT，文档能导出成 Word，也都能存成 PDF。$who 想看个东西、要一份 PPT 或文档的时候，可以动手做；做不做、做成什么样，你自己判断。" +

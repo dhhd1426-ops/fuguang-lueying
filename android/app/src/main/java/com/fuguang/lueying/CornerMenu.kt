@@ -44,7 +44,7 @@ import androidx.compose.ui.unit.sp
 
 /**
  * 聊天页右上角圆钮：点开从钮里长出一张小卡片——上面「手记」（浮光 / 掠影 / 绯句都在里面），
- * 下面暗度、虚化、只看画面；点空白或选完缩回钮里。卡片画在 App 最上层。
+ * 下面暗度、虚化（「只看画面」去掉了：停手一阵自动沉浸，见 Zen.kt）；点空白或选完缩回钮里。卡片画在 App 最上层。
  */
 object CornerMenu {
     var open by mutableStateOf(false)
@@ -77,7 +77,7 @@ fun CornerMenuButton(compact: Boolean) {
 
 /** 卡片本体。「我的」不在这里：从聊天侧栏底部的头像进。 */
 @Composable
-fun CornerMenuLayer(dim: Int, blur: Int, onDim: (Int) -> Unit, onBlur: (Int) -> Unit, onNote: () -> Unit, onZen: () -> Unit) {
+fun CornerMenuLayer(dim: Int, blur: Int, onDim: (Int) -> Unit, onBlur: (Int) -> Unit, onNote: () -> Unit) {
     val open = CornerMenu.open
     BackHandler(enabled = open) { CornerMenu.open = false }
     val t by animateFloatAsState(
@@ -113,7 +113,7 @@ fun CornerMenuLayer(dim: Int, blur: Int, onDim: (Int) -> Unit, onBlur: (Int) -> 
             Txt("显示", rgba(250, 245, 238, .34f), 11.sp, Modifier.rise().padding(start = 14.dp, bottom = 6.dp), spacing = ls(3f, 11f))
             MenuSlider("暗度", dim, 0, 60, Modifier.rise(), onDim)
             MenuSlider("虚化", blur, 0, 24, Modifier.rise(), onBlur)
-            MenuRow("只看画面", "轻点任意处回来", false, Modifier.rise(), small = true) { close(); onZen() }
+            Spacer(Modifier.height(6.dp))
         }
     }
 }

@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -406,6 +407,9 @@ fun ChatPage(
     // 侧栏「作品」：所有做过的作品
     var shelf by remember { mutableStateOf(false) }
     androidx.activity.compose.BackHandler(enabled = shelf) { shelf = false }
+    // 侧栏「画板」：计划、安排、日程
+    var boards by remember { mutableStateOf(false) }
+    androidx.activity.compose.BackHandler(enabled = boards) { boards = false }
     // 长按菜单、选择文字、小提示
     var press by remember { mutableStateOf<MsgPress?>(null) }
     var selectText by remember { mutableStateOf<String?>(null) }
@@ -422,6 +426,10 @@ fun ChatPage(
         if (menu) 1f else 0f, tween(320, easing = androidx.compose.animation.core.CubicBezierEasing(.2f, .8f, .2f, 1f)), label = "menu",
     )
     val density = LocalDensity.current
+    val imeOpen = WindowInsets.ime.getBottom(density) > 0
+    androidx.compose.runtime.SideEffect {
+        Zen.held = menu || shelf || boards || workOpen != null || thinkOpen || picker || press != null || viewing != null || selectText != null || chat.draft.isNotBlank() || imeOpen
+    }
     val menuW = min(width.value * .86f, 340f).dp
     val menuPx = with(density) { menuW.toPx() }
     Box(Modifier.fillMaxSize().background(rgba(14, 17, 23, .38f))) {
@@ -474,6 +482,7 @@ fun ChatPage(
                     onOpen = { if (!chat.busy) chat.open(it); menu = false },
                     onNew = { if (!chat.busy) chat.reset(); menu = false },
                     onWorks = { menu = false; shelf = true },
+                    onBoards = { menu = false; boards = true },
                     onJournal = { menu = false; NoteCard.open = true },
                     onMine = { onMine() },
                     onAssistants = { menu = false; onAssistants() },
@@ -491,6 +500,12 @@ fun ChatPage(
             onClose = { thinkOpen = false },
         )
         WorksShelf(shelf, onClose = { shelf = false }) { shelf = false; workOpen = it }
+        BoardShelf(boards, onClose = { boards = false }, onOpen = { workOpen = it }) {
+            // 「让她搭一块」：新开一个对话，输入框里写好开头
+            boards = false
+            if (!chat.busy) chat.reset()
+            chat.draft = "帮我搭一块画板："; chat.focusTick++
+        }
         NoteImageViewer(viewing) { viewing = null }
         WorkViewer(workOpen, onClose = { workOpen = null }, onFix = { msg ->
             // 关掉作品页，把问题当作一条消息发给她，她自己读原稿改

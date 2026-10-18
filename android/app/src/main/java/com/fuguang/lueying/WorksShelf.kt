@@ -27,12 +27,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-/** 侧栏「作品」：做过的所有作品，新的在前；点一件全屏看。从下面升上来，点空白落回去。 */
+/** 侧栏「作品」：网页、动画、动效、幻灯片、文档（画板另在「画板」里），新的在前；点一件全屏看。从下面升上来，点空白落回去。 */
 @Composable
 fun WorksShelf(open: Boolean, onClose: () -> Unit, onOpen: (String) -> Unit) {
     val t by animateFloatAsState(if (open) 1f else 0f, tween(if (open) 320 else 220, easing = Curves.standard), label = "shelf")
     if (t <= 0f) return
-    val ids = remember(open, Works.version) { Works.list().map { it.id } }
+    val ids = remember(open, Works.version) { Works.list().filter { it.kind != "board" }.map { it.id } }
     BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
         val h = maxHeight
         Box(Modifier.fillMaxSize().graphicsLayer { alpha = t }.background(rgba(6, 9, 14, .5f)).pointerInput(Unit) { detectTapGestures { onClose() } })

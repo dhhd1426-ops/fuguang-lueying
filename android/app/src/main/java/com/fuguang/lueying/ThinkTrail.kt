@@ -79,7 +79,7 @@ object Trail {
         Memory.REMEMBER -> "记下了一条"; Memory.FORGET -> "忘掉了一些"; Recall.TOOL -> "翻了以前的聊天"; WebSearch.TOOL -> "上网查了「${a.optString("query").trim().take(16)}」"
         Skills.OPEN -> "翻开了「${a.optString("name").trim().take(12)}」"; Skills.FIND -> "在 GitHub 上找了「${a.optString("query").trim().take(16)}」"
         Skills.LEARN -> if (Skills.has(SkillHub.cand(a.optString("repo"), a.optString("path")))) "学会了「${a.optString("title").trim().take(12)}」" else "没学「${a.optString("title").trim().take(12)}」"
-        Works.MAKE -> "做好了作品「${a.optString("title").trim().ifEmpty { "未命名" }.take(20)}」"
+        Works.MAKE -> (if (a.optString("kind") == "board") "搭好了画板" else "做好了作品") + "「${a.optString("title").trim().ifEmpty { "未命名" }.take(20)}」"
         Works.READ -> "看了原稿"; "list_todos" -> "看了羽的待办"; "read_note" -> "读了一篇羽的笔记"
         else -> if (Mcp.owns(n)) Mcp.note(n).replace("正在用", "用了").trimEnd('…') else "查了羽的笔记"
     }
@@ -90,7 +90,7 @@ object Trail {
         Memory.REMEMBER, Memory.FORGET -> a.optString("text")
         Recall.TOOL, "search_notes", WebSearch.TOOL, Skills.FIND -> a.optString("query")
         Skills.LEARN -> a.optString("repo") + "/" + a.optString("path")
-        Works.MAKE -> when (a.optString("kind")) { "slides" -> "作品 · 幻灯片"; "doc" -> "作品 · 文档"; "board" -> "作品 · 画板"; else -> "作品 · 网页" }
+        Works.MAKE -> when (a.optString("kind")) { "slides" -> "作品 · 幻灯片"; "doc" -> "作品 · 文档"; "board" -> "画板"; else -> "作品 · 网页" }
         else -> ""
     }.trim().replace('\n', ' ').take(80)
 

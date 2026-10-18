@@ -118,10 +118,11 @@ private fun Placed(x: Dp, y: Dp, w: Dp, h: Dp, content: @Composable () -> Unit) 
 /** 网站的 .shade：左侧与底部渐暗，再叠一层可调的整体暗度。 */
 @Composable
 fun Shade(dim: Float, compact: Boolean, zen: Boolean) {
+    val a by androidx.compose.animation.core.animateFloatAsState(if (zen) .35f else 1f, androidx.compose.animation.core.tween(if (zen) 1100 else 260), label = "shadeZen")
     Box(
         Modifier
             .fillMaxSize()
-            .alpha(if (zen) .35f else 1f)
+            .alpha(a)
             .background(
                 if (compact) Brush.horizontalGradient(listOf(css("#11182066"), Color.Transparent))
                 else Brush.horizontalGradient(0f to rgba(15, 21, 29, .38f), .65f to Color.Transparent),

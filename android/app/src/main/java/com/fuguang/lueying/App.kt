@@ -48,6 +48,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.geometry.Offset
@@ -109,11 +111,34 @@ fun FuguangApp(prefs: Prefs, fullscreen: Boolean, setFullscreen: (Boolean) -> Un
     var now by remember { mutableStateOf(Date()) }
     LaunchedEffect(Unit) { while (true) { now = Date(); delay(30_000) } }
 
-    BackHandler(enabled = zen) { zen = false }
+    BackHandler(enabled = zen) { zen = false; Zen.touch() }
+
+    // 自动沉浸：停手 1 分钟进；最后 5 秒界面先淡一点。有东西开着、她在回答时一直从头算。
+    var soon by remember { mutableStateOf(false) }
+    val held = Zen.held || chatState.busy || MineCard.open || NoteCard.open || CornerMenu.open || !foreground
+    LaunchedEffect(held, Zen.touchedAt, zen) {
+        soon = false
+        if (held || zen) { if (held) Zen.touch(); return@LaunchedEffect }
+        val left = Zen.IDLE_MS - (System.currentTimeMillis() - Zen.touchedAt)
+        delay((left - Zen.WARN_MS).coerceAtLeast(0))
+        soon = true
+        delay(Zen.WARN_MS.coerceAtMost(left.coerceAtLeast(0)))
+        soon = false; zen = true
+    }
+    // 沉浸时连状态栏、底部横条一起收起
+    LaunchedEffect(zen) { setFullscreen(zen) }
 
     val haze = rememberHazeState()
 
-    BoxWithConstraints(Modifier.fillMaxSize().background(Page.ground)) {
+    BoxWithConstraints(
+        Modifier.fillMaxSize().background(Page.ground)
+            // 任何一次碰屏幕（点、滑、拖）都从头计时；只看不拦
+            .pointerInput(Unit) {
+                awaitPointerEventScope {
+                    while (true) { awaitPointerEvent(androidx.compose.ui.input.pointer.PointerEventPass.Initial); Zen.touch() }
+                }
+            },
+    ) {
         val screenW = maxWidth
         val compact = screenW < 750.dp
         val tiny = maxWidth < 370.dp
@@ -126,6 +151,8 @@ fun FuguangApp(prefs: Prefs, fullscreen: Boolean, setFullscreen: (Boolean) -> Un
                 chatState.messages.isEmpty() && !chatState.busy -> 0.dp
                 else -> 18.dp
             },
+            // 退开时慢慢变清楚（1.1 秒），回来时快
+            androidx.compose.animation.core.tween(if (zen) 1100 else 300, easing = Curves.standard),
             label = "backdrop",
         )
         Box(Modifier.fillMaxSize().blur(backBlur)) {
@@ -140,7 +167,11 @@ fun FuguangApp(prefs: Prefs, fullscreen: Boolean, setFullscreen: (Boolean) -> Un
         }
 
         CompositionLocalProvider(LocalHaze provides haze) {
-            val chatAlpha = appear(!zen, 260)
+            // 退开：1.1 秒慢慢淡掉；回来：0.26 秒。进之前最后 5 秒先淡到 82%
+            val chatAlpha by androidx.compose.animation.core.animateFloatAsState(
+                when { zen -> 0f; soon -> .82f; else -> 1f },
+                androidx.compose.animation.core.tween(if (zen) 1100 else if (soon) 900 else 260, easing = Curves.standard), label = "zen",
+            )
             if (chatAlpha > 0f) {
                 Box(Modifier.fillMaxSize().pageIn(chatAlpha)) {
                     ChatPage(
@@ -157,11 +188,16 @@ fun FuguangApp(prefs: Prefs, fullscreen: Boolean, setFullscreen: (Boolean) -> Un
                     )
                 }
             }
-            // 沉浸时轻点任意处就回来
-            if (zen) Box(Modifier.fillMaxSize().pointerInput(Unit) { detectTapGestures { zen = false } })
-            AnimatedVisibility(zen, enter = fadeIn(), exit = fadeOut(), modifier = Modifier.align(Alignment.BottomCenter)) {
-                ShowUiButton(blur.dp) { zen = false }
-            }
+            // 沉浸时轻点任意处就回来：点的地方漾开一圈，这一下不传给下面
+            var wakeAt by remember { mutableStateOf<Offset?>(null) }
+            if (zen) Box(Modifier.fillMaxSize().pointerInput(Unit) {
+                awaitEachGesture {
+                    val d = awaitFirstDown(requireUnconsumed = false); d.consume()
+                    wakeAt = d.position; zen = false; Zen.touch()
+                    do { val e = awaitPointerEvent(); e.changes.forEach { it.consume() } } while (e.changes.any { it.pressed })
+                }
+            })
+            wakeAt?.let { at -> WakeRing(at) { wakeAt = null } }
         }
 
         // 悬浮卡片：在页面之上、圆钮卡片之下
@@ -173,11 +209,21 @@ fun FuguangApp(prefs: Prefs, fullscreen: Boolean, setFullscreen: (Boolean) -> Un
             onDim = { dim = it; prefs.dim = it },
             onBlur = { blur = it; prefs.blur = it },
             onNote = { NoteCard.from = CornerMenu.anchor.center; NoteCard.open = true },
-            onZen = { zen = true },
         )
     }
 }
 
+/** 叫醒时那一圈：从指尖漾开 0.5 秒。 */
+@Composable
+private fun WakeRing(at: Offset, onEnd: () -> Unit) {
+    val k = remember(at) { androidx.compose.animation.core.Animatable(0f) }
+    LaunchedEffect(at) { k.animateTo(1f, androidx.compose.animation.core.tween(500, easing = Curves.decel)); onEnd() }
+    androidx.compose.foundation.Canvas(Modifier.fillMaxSize()) {
+        drawCircle(Page.ink.copy(alpha = .6f * (1f - k.value)), 6.dp.toPx() + 26.dp.toPx() * k.value, at, style = androidx.compose.ui.graphics.drawscope.Stroke(1.5.dp.toPx()))
+    }
+}
+
+@Suppress("unused")
 @Composable
 private fun ShowUiButton(blur: Dp, onClick: () -> Unit) {
     Pressable(onClick, Modifier.navigationBarsPadding().padding(bottom = 25.dp), label = "显示界面") { pressed ->

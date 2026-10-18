@@ -98,7 +98,7 @@ fun WorkCards(ids: List<String>, onOpen: (String) -> Unit) {
                     Column(Modifier.weight(1f)) {
                         Txt(w.title, Page.ink, 16.sp, family = Serif, maxLines = 1)
                         Spacer(Modifier.height(4.dp))
-                        Txt("作品 · ${w.kindName}", Page.muted, 12.5.sp, maxLines = 1)
+                        Txt(if (w.kind == "board") "画板" else "作品 · ${w.kindName}", Page.muted, 12.5.sp, maxLines = 1)
                     }
                 }
             }
