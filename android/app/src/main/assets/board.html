@@ -109,6 +109,11 @@ b,strong{color:var(--acc);font-weight:500}
 .gc{border-radius:14px;background:var(--glass);overflow:hidden}
 .gc .band{height:48px;background:linear-gradient(135deg,color-mix(in srgb,var(--acc) 40%,transparent),color-mix(in srgb,var(--acc) 8%,transparent));display:flex;align-items:flex-end;padding:6px 10px;font-family:var(--serif);font-size:20px;color:color-mix(in srgb,var(--acc) 85%,white)}
 .gc .gt{padding:8px 10px 10px;font-size:13.5px}
+.gc .gi{display:block;width:100%;aspect-ratio:4/3;object-fit:cover;background:color-mix(in srgb,var(--acc) 12%,transparent)}
+.b-cover.has-img{min-height:180px}
+.b-cover .cv{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:0}
+.b-cover.has-img::before{content:"";position:absolute;inset:0;background:linear-gradient(180deg,transparent 30%,rgba(10,12,16,.82));z-index:1}
+.b-cover.has-img h1,.b-cover.has-img p{z-index:2;color:#f4efe8;-webkit-text-fill-color:currentColor;background:none}
 .gc .gt small{display:block;color:var(--mute);font-size:11.5px;margin-top:2px}
 .wk{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px}
 .wk .d{text-align:center;font-size:11.5px;color:var(--mute);padding-bottom:2px}
@@ -250,7 +255,7 @@ function blockEl(b) {
   el.className = 'blk'; el._b = b;
   const t = String(b.type || 'text');
   if (t === 'cover') {
-    el.innerHTML = `<div class="b-cover"><span class="gl" aria-hidden="true">${esc([...(b.glyph || plain(b.title || board.title || ''))][0] || '')}</span></div>`;
+    el.innerHTML = `<div class="b-cover${b.img ? ' has-img' : ''}">${b.img ? `<img class="cv" src="${esc(b.img)}" alt="" onerror="this.remove()">` : ''}<span class="gl" aria-hidden="true">${b.img ? '' : esc([...(b.glyph || plain(b.title || board.title || ''))][0] || '')}</span></div>`;
     const c = el.firstChild;
     c.appendChild(ed('h1', '', esc(b.title || board.title), () => b.title || board.title, v => b.title = v));
     if (b.sub) c.appendChild(ed('p', '', esc(b.sub), () => b.sub, v => b.sub = v));
@@ -323,7 +328,7 @@ function blockEl(b) {
     const g = document.createElement('div'); g.className = 'gal';
     (b.cards || []).forEach(c => {
       const d = document.createElement('div'); d.className = 'gc';
-      d.innerHTML = `<div class="band" aria-hidden="true">${esc([...(c.g || plain(txt(c)))][0] || '')}</div><div class="gt"></div>`;
+      d.innerHTML = (c.img ? `<img class="gi" src="${esc(c.img)}" alt="${esc(plain(txt(c)))}" onerror="this.outerHTML='<div class=&quot;band&quot;></div>'">` : `<div class="band" aria-hidden="true">${esc([...(c.g || plain(txt(c)))][0] || '')}</div>`) + `<div class="gt"></div>`;
       d.lastChild.appendChild(ed('span', '', esc(txt(c)), () => txt(c), v => c.t = v));
       if (c.s) d.lastChild.insertAdjacentHTML('beforeend', `<small>${esc(c.s)}</small>`);
       g.appendChild(d);

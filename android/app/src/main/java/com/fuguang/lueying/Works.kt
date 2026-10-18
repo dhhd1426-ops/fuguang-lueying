@@ -56,8 +56,8 @@ object Works {
         return List(a.length()) { i ->
             val s = a.optJSONObject(i) ?: JSONObject()
             val pts = s.optJSONArray("points") ?: JSONArray()
-            Slide(s.optString("title"), List(pts.length()) { pts.optString(it) }.filter { it.isNotBlank() })
-        }.filter { it.title.isNotBlank() || it.points.isNotEmpty() }
+            Slide(s.optString("title"), List(pts.length()) { pts.optString(it) }.filter { it.isNotBlank() }, s.optString("image").trim())
+        }.filter { it.title.isNotBlank() || it.points.isNotEmpty() || it.image.isNotEmpty() }
     }
 
     /* ---------- 给模型 ---------- */
@@ -74,8 +74,9 @@ object Works {
                 "要确认的事——data-dialog=\"一句话\" data-title=\"…\" data-ok=\"好\" data-cancel=\"取消\"，或 fg.dialog({title,text,ok,cancel}).then(ok=>…)；" +
                 "复制——data-copy=\"要复制的字\"；小提示——fg.toast(\"一句话\")；页签——<div class=\"fg-tabs\"><button data-tab=\"a\">…</button></div> 配 <div data-panel=\"a\">…</div>；" +
                 "外链直接写 <a href>，会在 App 的内置浏览器打开；图片点了自动放大看（不想放大加 data-no-zoom），加载不出来会自动换成带 alt 字的占位，所以图片位只放 <img alt=\"名字\">，别在底下垫「海报」之类的占位字；能点的卡片加 class=\"fg-card\"，按下有反馈。" +
-                "kind=slides：演示文稿，填 slides，每页一个 title 和几条 points（第一页是封面，points 写副标题；要点里两个空格开头是次级要点；**加粗**会用杏色强调），可以导出成 PPT。" +
-                "kind=doc：文档，把正文写成 Markdown 放进 markdown（# 标题、- 列表、1. 编号、> 引用、| 表格 |），可以导出成 Word。" +
+                "kind=slides：演示文稿，填 slides，每页一个 title 和几条 points（第一页是封面，points 写副标题；要点里两个空格开头是次级要点；**加粗**会用杏色强调），每页可以配一张图 image（封面的图铺满做底，其他页放在右边），可以导出成 PPT。" +
+                "kind=doc：文档，把正文写成 Markdown 放进 markdown（# 标题、- 列表、1. 编号、> 引用、| 表格 |，单独一行 ![说明](图片地址) 插图），可以导出成 Word。" +
+                "网上的图片、视频直接写原地址，做好时会存进这台手机，作品里换成本地的。" +
                 Board.GUIDE +
                 "改以前的作品：带上它的 id，整份重写，会替换原来那张卡的内容。",
             JSONObject().put("type", "object").put(
@@ -91,7 +92,8 @@ object Works {
                             JSONObject().put("type", "object").put(
                                 "properties",
                                 JSONObject().put("title", JSONObject().put("type", "string"))
-                                    .put("points", JSONObject().put("type", "array").put("items", JSONObject().put("type", "string"))),
+                                    .put("points", JSONObject().put("type", "array").put("items", JSONObject().put("type", "string")))
+                                    .put("image", JSONObject().put("type", "string").put("description", "这一页配的图的地址，可以不填")),
                             ),
                         ),
                     )
@@ -141,9 +143,12 @@ object Works {
         val old = a.optString("id").trim().takeIf { it.isNotEmpty() && File(d, "$it.json").exists() }
         val id = old ?: (System.currentTimeMillis().toString(36) + (100..999).random())
         val o = JSONObject().put("title", title).put("kind", kind).put("updated", System.currentTimeMillis())
+        // 用到的网上素材：存进手机，原稿里换成本地地址
+        val mats = ArrayList<Pair<List<StoredMat>, List<String>>>()
         val page = when (kind) {
             "slides" -> {
                 val arr = a.optJSONArray("slides") ?: return@withContext ToolOut("幻灯片没有内容：slides 是空的，可能写太长被截断了，分得精简一点再做一次。")
+                mats.add(MaterialStore.localizeJson(arr))
                 o.put("slides", arr)
                 val sl = slidesOf(o)
                 if (sl.isEmpty()) return@withContext ToolOut("幻灯片没有内容。")
@@ -152,25 +157,38 @@ object Works {
             "board" -> {
                 val (b, why) = Board.prepare(pid, a.optJSONObject("board"))
                 if (b == null) return@withContext ToolOut(why ?: "画板没搭成。")
+                mats.add(MaterialStore.localizeJson(b))
                 o.put("board", b)
                 Board.page(title, b)
             }
             "doc" -> {
-                val md = a.optString("markdown").trim()
-                if (md.isEmpty()) return@withContext ToolOut("文档没有内容：markdown 是空的，可能写太长被截断了，精简一点再做一次。")
+                val md0 = a.optString("markdown").trim()
+                if (md0.isEmpty()) return@withContext ToolOut("文档没有内容：markdown 是空的，可能写太长被截断了，精简一点再做一次。")
+                val r = MaterialStore.localize(md0); mats.add(r.used to r.missed)
+                val md = r.text
                 o.put("markdown", md)
                 Preview.doc(title, md)
             }
             else -> {
-                val h = a.optString("html").trim()
-                if (h.isEmpty()) return@withContext ToolOut("网页没有内容：html 是空的，可能写太长被截断了，写得紧凑一点再做一次。")
+                val h0 = a.optString("html").trim()
+                if (h0.isEmpty()) return@withContext ToolOut("网页没有内容：html 是空的，可能写太长被截断了，写得紧凑一点再做一次。")
+                val r = MaterialStore.localize(h0); mats.add(r.used to r.missed)
+                val h = r.text
                 o.put("html", h)
                 Preview.page(h)
             }
         }
+        val prior = old?.let { source(it) }?.let { MaterialStore.usedOf(it) }.orEmpty()
+        val used = MaterialStore.refs(page.replace("\\/", "/"), mats.flatMap { it.first } + prior)
+        val missed = mats.flatMap { it.second }
+        if (used.isNotEmpty()) o.put("materials", MaterialStore.toJson(used))
         File(d, "$id.json").writeText(o.toString())
         File(d, "$id.html").writeText(page)
         withContext(Dispatchers.Main) { version++; onMade(id) }
-        ToolOut((if (old != null) "改好了" else "做好了") + "：《$title》，id=$id。作品卡会显示在你这条回复下面，不用贴代码，说一两句就好。")
+        ToolOut(
+            (if (old != null) "改好了" else "做好了") + "：《$title》，id=$id。作品卡会显示在你这条回复下面，不用贴代码，说一两句就好。" +
+                (if (used.isEmpty()) "" else "用到的 ${used.size} 件素材已经存进手机。") +
+                (if (missed.isEmpty()) "" else "有 ${missed.size} 件素材没拿到（网站不给或打不开），作品里那几处会显示成带名字的占位：" + missed.take(5).joinToString("、") + "。可以换别的素材再做一次，或者如实告诉对方。"),
+        )
     }
 }

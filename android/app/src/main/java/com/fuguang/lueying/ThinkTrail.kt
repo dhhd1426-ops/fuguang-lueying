@@ -71,6 +71,7 @@ object Trail {
     fun liveTitle(n: String): String = when (n) {
         Memory.REMEMBER -> "正在记下"; Memory.FORGET -> "正在忘掉"; Recall.TOOL -> "正在翻看以前的聊天"; WebSearch.TOOL -> "正在上网查"
         Skills.OPEN -> "正在翻开本事"; Skills.FIND -> "正在 GitHub 上找本事"; Skills.LEARN -> "等你点头"
+        Materials.OPEN -> "正在打开网页"; Materials.LOOK -> "正在看素材"
         Works.MAKE -> "正在动手做"; Works.READ -> "正在看原稿"; "list_todos" -> "正在查看羽的待办"; "read_note" -> "正在读羽的笔记"
         else -> if (Mcp.owns(n)) Mcp.note(n).trimEnd('…') else "正在查阅羽的笔记"
     }
@@ -80,6 +81,8 @@ object Trail {
         Skills.OPEN -> a.optJSONArray("names")?.takeIf { it.length() > 1 }?.let { arr -> "翻开了 ${arr.length()} 样本事，合成一种做法" } ?: "翻开了「${(a.optJSONArray("names")?.optString(0) ?: a.optString("name")).trim().take(12)}」"; Skills.FIND -> "在 GitHub 上找了「${a.optString("query").trim().take(16)}」"
         Skills.LEARN -> if (Skills.has(SkillHub.cand(a.optString("repo"), a.optString("path")))) "学会了「${a.optString("title").trim().take(12)}」" else "没学「${a.optString("title").trim().take(12)}」"
         Works.MAKE -> (if (a.optString("kind") == "board") "搭好了画板" else "做好了作品") + "「${a.optString("title").trim().ifEmpty { "未命名" }.take(20)}」"
+        Materials.OPEN -> Materials.doneTitle(a.optString("url"))
+        Materials.LOOK -> "看了 ${a.optJSONArray("urls")?.length() ?: 0} 件素材"
         Works.READ -> "看了原稿"; "list_todos" -> "看了羽的待办"; "read_note" -> "读了一篇羽的笔记"
         else -> if (Mcp.owns(n)) Mcp.note(n).replace("正在用", "用了").trimEnd('…') else "查了羽的笔记"
     }
@@ -91,13 +94,14 @@ object Trail {
         Recall.TOOL, "search_notes", WebSearch.TOOL, Skills.FIND -> a.optString("query")
         Skills.OPEN -> a.optJSONArray("names")?.let { arr -> (0 until arr.length()).joinToString("、") { arr.optString(it) } } ?: a.optString("name")
         Skills.LEARN -> a.optString("repo") + "/" + a.optString("path")
+        Materials.OPEN -> a.optString("url")
         Works.MAKE -> when (a.optString("kind")) { "slides" -> "作品 · 幻灯片"; "doc" -> "作品 · 文档"; "board" -> "画板"; else -> "作品 · 网页" }
         else -> ""
     }.trim().replace('\n', ' ').take(80)
 
     /** 作品用和作品卡同一个图标（圆 + 方）。 */
     fun icon(n: String): Ic = when (n) {
-        Memory.REMEMBER -> bookmark; Memory.FORGET -> eraser; Recall.TOOL -> bubble; WebSearch.TOOL -> globe
+        Memory.REMEMBER -> bookmark; Memory.FORGET -> eraser; Recall.TOOL -> bubble; WebSearch.TOOL, Materials.OPEN -> globe; Materials.LOOK -> picture
         Skills.OPEN, Skills.FIND, Skills.LEARN -> skillIcon
         Works.MAKE -> shapes; Works.READ -> page; "list_todos" -> todo
         else -> if (Mcp.owns(n)) plug else feather
@@ -106,6 +110,7 @@ object Trail {
     val clock = Ic("M3.5 12a8.5 8.5 0 1 0 2.6-6.1M3.5 4.5v3.7h3.7M12 7.5V12l3 2")
     val chevron = Ic("M9.5 6l6 6-6 6")
     private val globe = Ic("M4 12h16M12 4c2.4 2.5 2.4 13.5 0 16M12 4c-2.4 2.5-2.4 13.5 0 16", circles = listOf(floatArrayOf(12f, 12f, 8f)))
+    private val picture = Ic("M4 5h16v14H4ZM4 16l4.5-4 3.5 3 3-2.5L20 16", circles = listOf(floatArrayOf(9f, 9.5f, 1.6f)))
     private val bookmark = Ic("M7 4h10a1 1 0 0 1 1 1v15l-6-3.5L6 20V5a1 1 0 0 1 1-1Z")
     private val eraser = Ic("M8.5 19.5h11M4.8 14.7l9.9-9.9a1.5 1.5 0 0 1 2.1 0l2.4 2.4a1.5 1.5 0 0 1 0 2.1L10.3 18.2a1.5 1.5 0 0 1-2.1 0l-3.4-3.4ZM9.6 9.9l4.5 4.5")
     private val bubble = Ic("M5 5.5h14v10H10l-4 3v-3H5ZM9 10.5h6")

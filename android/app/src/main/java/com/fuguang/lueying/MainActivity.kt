@@ -25,6 +25,8 @@ class MainActivity : ComponentActivity() {
         val prefs = Prefs(this)
         Yu.init(this)
         Works.init(this)
+        MaterialStore.init(this)
+        PageGrab.init(this)
         Avatars.init(this)
         Memory.init(prefs)
         Mcp.init(prefs)

@@ -83,6 +83,8 @@ fun WorkCards(ids: List<String>, onOpen: (String) -> Unit) {
     Column(Modifier.padding(top = 10.dp, bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         ids.forEach { id ->
             val w = remember(id, v) { Works.get(id) } ?: return@forEach
+            val used = remember(id, v) { Works.source(id)?.let { MaterialStore.usedOf(it) }.orEmpty() }
+            val faces = remember(used) { MaterialStore.faces(used) }
             Pressable({ onOpen(id) }, Modifier.widthIn(max = 440.dp).fillMaxWidth(), label = "打开作品 ${w.title}") { pressed ->
                 Row(
                     Modifier.fillMaxWidth()
@@ -90,7 +92,8 @@ fun WorkCards(ids: List<String>, onOpen: (String) -> Unit) {
                         .padding(10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Box(
+                    if (faces.isNotEmpty()) MaterialStack(faces)
+                    else Box(
                         Modifier.size(56.dp).background(Apricot.copy(alpha = .13f), RoundedCornerShape(11.dp)),
                         contentAlignment = Alignment.Center,
                     ) { SvgIcon(WorkIcons.of(w.kind), Apricot, 24.dp, stroke = 1.5f) }
@@ -98,7 +101,8 @@ fun WorkCards(ids: List<String>, onOpen: (String) -> Unit) {
                     Column(Modifier.weight(1f)) {
                         Txt(w.title, Page.ink, 16.sp, family = Serif, maxLines = 1)
                         Spacer(Modifier.height(4.dp))
-                        Txt(if (w.kind == "board") "画板" else "作品 · ${w.kindName}", Page.muted, 12.5.sp, maxLines = 1)
+                        val kind = if (w.kind == "board") "画板" else if (used.isEmpty()) "作品 · ${w.kindName}" else w.kindName
+                        Txt(kind + (if (used.isEmpty()) "" else " · 用了网页里 ${used.size} 件素材"), Page.muted, 12.5.sp, maxLines = 1)
                     }
                 }
             }
@@ -197,6 +201,8 @@ fun WorkViewer(id: String?, onClose: () -> Unit, onFix: (String) -> Unit = {}) {
                                         val img = req?.requestHeaders?.get("Accept")?.startsWith("image") == true || Regex("\\.(png|jpe?g|gif|webp|svg|avif|ico)(\\?|$)", RegexOption.IGNORE_CASE).containsMatchIn(u)
                                         if (req?.isForMainFrame == false && !img && problem.value.isEmpty()) problem.value = "有个文件没加载上：" + u.take(120)
                                     }
+                                    // 存进手机的素材从本地给
+                                    override fun shouldInterceptRequest(view: WebView?, req: WebResourceRequest?): android.webkit.WebResourceResponse? = MaterialStore.serve(req)
                                     override fun shouldOverrideUrlLoading(view: WebView?, req: WebResourceRequest?): Boolean {
                                         val u = req?.url ?: return false
                                         // 页内跳转留在页里；点到外面的链接交给浏览器
@@ -256,7 +262,7 @@ fun WorkViewer(id: String?, onClose: () -> Unit, onFix: (String) -> Unit = {}) {
                 Box(Modifier.align(Alignment.CenterHorizontally).size(36.dp, 4.dp).clip(RoundedCornerShape(2.dp)).background(rgba(255, 255, 255, .16f)))
                 Spacer(Modifier.height(10.dp))
                 val items = ArrayList<Triple<String, String, () -> Unit>>()
-                items += Triple("分享网页文件", ".html，发给谁都能用浏览器打开", { shareBytes(ctx, "${w.title}.html", html.orEmpty().toByteArray(), "text/html") })
+                items += Triple("分享网页文件", ".html，发给谁都能用浏览器打开", { shareBytes(ctx, "${w.title}.html", MaterialStore.inline(html.orEmpty(), Works.source(cur)?.let { MaterialStore.usedOf(it) }.orEmpty()).toByteArray(), "text/html") })
                 items += Triple("存成 PDF", "用系统打印，选「另存为 PDF」", { web?.let { printPdf(ctx, it, w.title) }; Unit })
                 if (w.kind == "slides") items += Triple("导出 PPT", ".pptx，PowerPoint 和 WPS 都能打开", {
                     Works.source(cur)?.let { o -> shareBytes(ctx, "${w.title}.pptx", Pptx.build(w.title, Works.slidesOf(o)), "application/vnd.openxmlformats-officedocument.presentationml.presentation") }; Unit
@@ -280,7 +286,7 @@ fun WorkViewer(id: String?, onClose: () -> Unit, onFix: (String) -> Unit = {}) {
     }
 }
 
-private const val BASE_HOST = "work.fuguang.local"
+private const val BASE_HOST = MaterialStore.HOST
 
 /** 已经量好尺寸就马上执行，否则等第一次布局完再执行。 */
 private fun android.view.View.doOnLayoutReady(block: () -> Unit) {

@@ -25,11 +25,11 @@ object Board {
         "style 是画风，不只是颜色，字、纸面、装饰、动效都跟着变：paper 纸笺（暖纸、宋体、红线小票，勾完盖个「好」字印，适合菜谱、手账、清单）、" +
         "night 夜墨（深色、标题渐变、进度发光，适合计划、日程、目标）、grid 方格（蓝图格子纸、等宽编号、刻度进度，适合装修、旅行、工程、预算）；按内容挑，别总用一种。" +
         "tone 是这块画板的颜色，你自己挑：apricot 杏、sea 海、moss 苔、rose 蔷薇、dusk 暮紫、sand 沙、mist 雾，或者直接写 #rrggbb。" +
-        "积木（type）：cover 封面（title、sub、glyph 一个大字）；heading 标题（text、note）；text 段落（text，**加粗**）；callout 提示（mark 一个字、text）；" +
+        "积木（type）：cover 封面（title、sub、glyph 一个大字，img 一张图铺满做底）；heading 标题（text、note）；text 段落（text，**加粗**）；callout 提示（mark 一个字、text）；" +
         "quote 引用（text、by）；divider 分隔；todo 待办（items:[{t,done}]）；toggle 折叠（title、note、open、children:[积木]）；" +
         "columns 分栏（cols:[[积木],[积木]]，最多三栏，手机上窄了会叠起来）；table 表格（head、rows，total:true 末列合计）；" +
         "kanban 看板（cols:[{name,cards:[{t,tag}]}]，最后一列算做完）；timeline 时间线（items:[{tm,t,s}]）；" +
-        "progress 进度（label；from:kanban 或 todo 自己数，或者写 value）；gallery 卡片墙（cards:[{g 一个字,t,s}]）；" +
+        "progress 进度（label；from:kanban 或 todo 自己数，或者写 value）；gallery 卡片墙（cards:[{g 一个字,t,s,img 一张图（有图就不显示那个字）}]）；" +
         "week 周历（cells：七天各一组短字，today 是今天 0–6）；mindmap 导图（root、kids:[{t,kids:[…]}]，几层都行）；" +
         "own 你自己做的积木（name、html：一小段自包含的 HTML/CSS/JS，背景透明，颜色可用 var(--acc) var(--ink) var(--glass)；起过名字的，以后只写 name 就能再用）。" +
         "搭什么、用哪几块、怎么排、什么画风和颜色，都看你；同一块画板里积木要有轻重：一张封面、几段标题分开，要点放提示，长说明收进折叠，别一路平铺。" +

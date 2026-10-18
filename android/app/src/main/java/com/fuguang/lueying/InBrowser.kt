@@ -327,7 +327,13 @@ fun InBrowserLayer() {
                 menu = false
                 (ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(ClipData.newPlainText("链接", u)); toast = "链接已复制"
             }
-            if (InBrowser.ask != null) MenuItem(BrIcons.chat, "让她看看这页") { menu = false; InBrowser.close(); InBrowser.ask?.invoke("帮我看看这页：" + (title.takeIf { it.isNotBlank() }?.let { "《$it》" } ?: "") + u) }
+            if (InBrowser.ask != null) MenuItem(BrIcons.chat, "让她看看这页") {
+                menu = false
+                val say = "帮我看看这页：" + (title.takeIf { it.isNotBlank() }?.let { "《$it》" } ?: "") + u
+                // 先把这页的正文和素材留一份（登录后才看得到的也在），她打开时直接用
+                val wv = web
+                if (wv == null) { InBrowser.close(); InBrowser.ask?.invoke(say) } else PageGrab.remember(wv) { InBrowser.close(); InBrowser.ask?.invoke(say) }
+            }
             MenuItem(BrIcons.out, "用系统浏览器打开") { menu = false; runCatching { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(u)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) } }
         }
 

@@ -23,9 +23,11 @@ sealed class Block {
     data class Quote(val runs: List<Run>) : Block()
     data class Table(val rows: List<List<List<Run>>>) : Block()
     object Rule : Block()
+    /** 单独一行的 ![说明](地址)。 */
+    data class Image(val alt: String, val url: String) : Block()
 }
 
-data class Slide(val title: String, val points: List<String>)
+data class Slide(val title: String, val points: List<String>, val image: String = "")
 
 object Md {
     /** **粗** *斜* `代码`，其余原样。 */
@@ -62,6 +64,7 @@ object Md {
             val isRow = t.startsWith("|") && t.endsWith("|") && t.length > 1
             if (!isRow) flushTable()
             val num = Regex("""^\d+[.、)]\s+(.*)$""").find(t)
+            val pic = Regex("""^!\[([^\]]*)]\((\S+?)\)$""").find(t)
             if (num == null && t.isNotEmpty()) inNumbered = false
             when {
                 t.isEmpty() -> flushPara()
@@ -71,6 +74,7 @@ object Md {
                     if (cells.all { it.matches(Regex(":?-{2,}:?")) }) return@forEach
                     table.add(cells.map { inline(it) })
                 }
+                pic != null -> { flushPara(); out.add(Block.Image(pic.groupValues[1].trim(), pic.groupValues[2])) }
                 t.startsWith("#") -> {
                     flushPara()
                     val lv = t.takeWhile { it == '#' }.length.coerceIn(1, 3)
@@ -135,6 +139,7 @@ object Preview {
                         is Block.Para -> body.append("<p>${runs(b.runs)}</p>")
                         is Block.Quote -> body.append("<blockquote>${runs(b.runs)}</blockquote>")
                         is Block.Rule -> body.append("<hr>")
+                        is Block.Image -> body.append("<figure><img src=\"${esc(b.url)}\" alt=\"${esc(b.alt)}\">" + (if (b.alt.isNotBlank()) "<figcaption>${esc(b.alt)}</figcaption>" else "") + "</figure>")
                         is Block.Table -> {
                             body.append("<div class=\"tw\"><table>")
                             b.rows.forEachIndexed { i, row ->
@@ -161,6 +166,7 @@ ul,ol{margin:0 0 14px;padding-left:1.3em}li{margin:4px 0}li.l1{margin-left:1.2em
 li::marker{color:var(--apricot)}strong{color:var(--ink)}code{font-size:.9em;background:var(--card);padding:1px 5px;border-radius:5px}
 blockquote{margin:16px 0;padding:12px 16px;background:var(--card);border-radius:12px;color:var(--muted);line-height:1.8}
 hr{border:0;height:1px;background:#ffffff1a;margin:28px 0}
+figure{margin:20px 0 22px}figure img{display:block;width:100%;border-radius:12px;background:var(--card)}figcaption{font-size:13px;color:var(--muted);margin-top:8px;text-align:center}
 .tw{overflow-x:auto;margin:6px 0 18px}table{border-collapse:collapse;font-size:14.5px;min-width:100%}
 th,td{padding:9px 12px;text-align:left;line-height:1.6}th{background:var(--card);font-weight:600}tr:nth-child(even) td{background:#ffffff06}
 @media print{:root{--bg:#fff;--card:#f3efe9;--ink:#1b1b1b;--muted:#555}p,li{color:#222}main{max-width:none}}
@@ -170,8 +176,9 @@ th,td{padding:9px 12px;text-align:left;line-height:1.6}th{background:var(--card)
     fun slides(title: String, slides: List<Slide>): String {
         val n = slides.size
         val body = slides.mapIndexed { i, s ->
-            if (i == 0) """<section class="s cover"><div class="in"><h1>${esc(s.title)}</h1><div class="mark"></div>${s.points.joinToString("") { "<p>${runs(Md.inline(it))}</p>" }}</div><span class="no">1 / $n</span></section>"""
-            else """<section class="s"><div class="in"><h2>${esc(s.title)}</h2><div class="mark"></div><ul>${s.points.joinToString("") { p ->
+            val pic = if (s.image.isEmpty()) "" else """<img class="ph" src="${esc(s.image)}" alt="" data-no-zoom>"""
+            if (i == 0) """<section class="s cover${if (pic.isEmpty()) "" else " pic"}">$pic<div class="in"><h1>${esc(s.title)}</h1><div class="mark"></div>${s.points.joinToString("") { "<p>${runs(Md.inline(it))}</p>" }}</div><span class="no">1 / $n</span></section>"""
+            else """<section class="s${if (pic.isEmpty()) "" else " pic"}">$pic<div class="in"><h2>${esc(s.title)}</h2><div class="mark"></div><ul>${s.points.joinToString("") { p ->
                 val sub = p.startsWith("  ") || p.trimStart().startsWith("- ")
                 "<li${if (sub) " class=\"sub\"" else ""}>${runs(Md.inline(p.trim().removePrefix("- ")))}</li>"
             }}</ul></div><span class="no">${i + 1} / $n</span></section>"""
@@ -181,6 +188,11 @@ th,td{padding:9px 12px;text-align:left;line-height:1.6}th{background:var(--card)
 .s{position:relative;width:100%;max-width:960px;aspect-ratio:16/9;background:linear-gradient(160deg,#20262c,#171b20);border-radius:12px;container-type:inline-size;overflow:hidden}
 .in{position:absolute;inset:7cqw 7cqw 6cqw}
 .cover .in{display:flex;flex-direction:column;justify-content:center}
+.ph{position:absolute;top:0;right:0;bottom:0;width:40%;height:100%;object-fit:cover;background:#ffffff08}
+.s.pic:not(.cover) .in{right:46cqw}
+.cover.pic .ph{width:100%;opacity:.62}
+.cover.pic::after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,#14181ccc 20%,#14181c40 75%)}
+.cover.pic .in{z-index:1}
 h1{font-family:var(--serif);font-weight:600;font-size:7cqw;line-height:1.25;margin:0}
 h2{font-family:var(--serif);font-weight:600;font-size:5.2cqw;margin:0}
 .mark{width:5cqw;height:.4cqw;background:var(--apricot);margin:2.2cqw 0 2.8cqw}
@@ -254,6 +266,7 @@ object Docx {
                     is Block.Bullet -> p("ListParagraph", b.runs, 1, b.level)
                     is Block.Numbered -> p("ListParagraph", b.runs, numIdOf[b.list] ?: 2)
                     is Block.Quote -> p("Quote", b.runs)
+                    is Block.Image -> p(null, listOf(Run("（图：" + b.alt.ifBlank { "网页素材" } + "）", italic = true)))
                     is Block.Rule -> "<w:p><w:pPr><w:pBdr><w:bottom w:val=\"single\" w:sz=\"4\" w:space=\"1\" w:color=\"D9CFC4\"/></w:pBdr></w:pPr></w:p>"
                     is Block.Table -> {
                         val cols = b.rows.maxOf { it.size }
