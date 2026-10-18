@@ -27,6 +27,8 @@ object Materials {
     private val from = HashMap<String, String>()
     fun pageOf(u: String): String? = synchronized(from) { from[u] }
     fun seen(u: String): Boolean = synchronized(from) { u in from }
+    /** 图库给的图也记下来：做作品时一样存进手机。 */
+    fun mark(u: String, page: String) { synchronized(from) { from[u] = page } }
 
     /** 时间线上那一句：读了哪页、拿到几件。 */
     private val said = HashMap<String, String>()

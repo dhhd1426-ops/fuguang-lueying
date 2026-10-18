@@ -97,6 +97,8 @@ object MaterialStore {
             URL_TOKEN.findAll(t).forEach { m ->
                 val u = m.value.trimEnd('.', ',', ';', ')')
                 if (u.startsWith(PREFIX)) return@forEach
+                // Unsplash 要求直接用它的链接：不存，只告诉它一声
+                if (Gallery.keepRemote(u)) { Gallery.used(u); return@forEach }
                 val before = t.substring(maxOf(0, m.range.first - 120), m.range.first)
                 val tag = before.substringAfterLast('<', "").substringBefore(' ').lowercase()
                 if (tag in setOf("script", "link", "a", "iframe", "form", "meta")) return@forEach

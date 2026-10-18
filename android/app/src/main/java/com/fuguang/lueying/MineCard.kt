@@ -83,8 +83,8 @@ private val warmInk = Color(0xFF2A211B)
 private fun depth(s: String) = when {
     s == "mine" -> 0
     s == "assistant" || s == "mcp" || s == "about" || s == "features" -> 1
-    s == "persona" || s.startsWith("mcp/") || s == "search" || s == "skills" -> 2
-    s.startsWith("search/") || s.startsWith("skills/") -> 3
+    s == "persona" || s.startsWith("mcp/") || s == "search" || s == "skills" || s == "gallery" -> 2
+    s.startsWith("search/") || s.startsWith("skills/") || s.startsWith("gallery/") -> 3
     s == "providers" -> 3
     else -> 4
 }
@@ -103,11 +103,13 @@ fun MineCardLayer(store: AssistantStore, nav: MineNav) {
                 MineCardBody(rise) { nav.screen = it }
             }
             "about" -> AboutPage { nav.screen = "mine" }
-            "features" -> FeaturesPage({ nav.screen = "mine" }, { nav.screen = "search" }) { nav.screen = "skills" }
+            "features" -> FeaturesPage({ nav.screen = "mine" }, { nav.screen = "search" }, { nav.screen = "gallery" }) { nav.screen = "skills" }
+            "gallery" -> GalleryPage({ nav.screen = "features" }) { nav.screen = "gallery/$it" }
             "skills" -> SkillsPage({ nav.screen = "features" }) { nav.screen = "skills/$it" }
             "search" -> SearchPage({ nav.screen = "features" }) { nav.screen = "search/$it" }
             else -> if (screen.startsWith("skills/")) SkillDetailPage(screen.removePrefix("skills/")) { nav.screen = "skills" }
             else if (screen.startsWith("search/")) SearchSourcePage(screen.removePrefix("search/")) { nav.screen = "search" }
+            else if (screen.startsWith("gallery/")) GallerySourcePage(screen.removePrefix("gallery/")) { nav.screen = "gallery" }
             else Column(Modifier.widthIn(max = 720.dp).fillMaxSize()) {
                 CompositionLocalProvider(LocalTitleEnd provides 36.dp) { MineSub(store, screen, true, 0.dp, nav) }
             }

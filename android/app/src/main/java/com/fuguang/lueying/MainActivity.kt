@@ -33,6 +33,7 @@ class MainActivity : ComponentActivity() {
         Backup.init(prefs)
         ModelFit.init(prefs)
         WebSearch.init(prefs)
+        Gallery.init(prefs)
         AdBlock.init(this, prefs)
         Downloads.init(this, prefs)
         YtDlp.init(this, prefs)

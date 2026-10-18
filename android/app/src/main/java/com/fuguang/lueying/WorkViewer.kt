@@ -102,7 +102,7 @@ fun WorkCards(ids: List<String>, onOpen: (String) -> Unit) {
                         Txt(w.title, Page.ink, 16.sp, family = Serif, maxLines = 1)
                         Spacer(Modifier.height(4.dp))
                         val kind = if (w.kind == "board") "画板" else if (used.isEmpty()) "作品 · ${w.kindName}" else w.kindName
-                        Txt(kind + (if (used.isEmpty()) "" else " · 用了网页里 ${used.size} 件素材"), Page.muted, 12.5.sp, maxLines = 1)
+                        Txt(kind + (if (used.isEmpty()) "" else " · 用了 ${used.size} 件素材"), Page.muted, 12.5.sp, maxLines = 1)
                     }
                 }
             }

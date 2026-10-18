@@ -92,7 +92,8 @@ class MineNav {
         screen = when {
             screen.startsWith("provider/") -> "providers"
             screen.startsWith("search/") -> "search"
-            screen == "search" || screen == "skills" -> "features"
+            screen.startsWith("gallery/") -> "gallery"
+            screen == "search" || screen == "skills" || screen == "gallery" -> "features"
             screen.startsWith("skills/") -> "skills"
             screen == "features" -> "mine"
             screen.startsWith("mcp/") -> "mcp"

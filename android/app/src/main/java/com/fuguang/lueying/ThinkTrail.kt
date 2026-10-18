@@ -71,7 +71,7 @@ object Trail {
     fun liveTitle(n: String): String = when (n) {
         Memory.REMEMBER -> "正在记下"; Memory.FORGET -> "正在忘掉"; Recall.TOOL -> "正在翻看以前的聊天"; WebSearch.TOOL -> "正在上网查"
         Skills.OPEN -> "正在翻开本事"; Skills.FIND -> "正在 GitHub 上找本事"; Skills.LEARN -> "等你点头"
-        Materials.OPEN -> "正在打开网页"; Materials.LOOK -> "正在看素材"
+        Materials.OPEN -> "正在打开网页"; Materials.LOOK -> "正在看素材"; Gallery.TOOL -> "正在图库里找"
         Works.MAKE -> "正在动手做"; Works.READ -> "正在看原稿"; "list_todos" -> "正在查看羽的待办"; "read_note" -> "正在读羽的笔记"
         else -> if (Mcp.owns(n)) Mcp.note(n).trimEnd('…') else "正在查阅羽的笔记"
     }
@@ -82,6 +82,7 @@ object Trail {
         Skills.LEARN -> if (Skills.has(SkillHub.cand(a.optString("repo"), a.optString("path")))) "学会了「${a.optString("title").trim().take(12)}」" else "没学「${a.optString("title").trim().take(12)}」"
         Works.MAKE -> (if (a.optString("kind") == "board") "搭好了画板" else "做好了作品") + "「${a.optString("title").trim().ifEmpty { "未命名" }.take(20)}」"
         Materials.OPEN -> Materials.doneTitle(a.optString("url"))
+        Gallery.TOOL -> Gallery.doneTitle(a.optString("query"))
         Materials.LOOK -> "看了 ${a.optJSONArray("urls")?.length() ?: 0} 件素材"
         Works.READ -> "看了原稿"; "list_todos" -> "看了羽的待办"; "read_note" -> "读了一篇羽的笔记"
         else -> if (Mcp.owns(n)) Mcp.note(n).replace("正在用", "用了").trimEnd('…') else "查了羽的笔记"
@@ -95,13 +96,14 @@ object Trail {
         Skills.OPEN -> a.optJSONArray("names")?.let { arr -> (0 until arr.length()).joinToString("、") { arr.optString(it) } } ?: a.optString("name")
         Skills.LEARN -> a.optString("repo") + "/" + a.optString("path")
         Materials.OPEN -> a.optString("url")
+        Gallery.TOOL -> a.optString("query")
         Works.MAKE -> when (a.optString("kind")) { "slides" -> "作品 · 幻灯片"; "doc" -> "作品 · 文档"; "board" -> "画板"; else -> "作品 · 网页" }
         else -> ""
     }.trim().replace('\n', ' ').take(80)
 
     /** 作品用和作品卡同一个图标（圆 + 方）。 */
     fun icon(n: String): Ic = when (n) {
-        Memory.REMEMBER -> bookmark; Memory.FORGET -> eraser; Recall.TOOL -> bubble; WebSearch.TOOL, Materials.OPEN -> globe; Materials.LOOK -> picture
+        Memory.REMEMBER -> bookmark; Memory.FORGET -> eraser; Recall.TOOL -> bubble; WebSearch.TOOL, Materials.OPEN -> globe; Materials.LOOK, Gallery.TOOL -> picture
         Skills.OPEN, Skills.FIND, Skills.LEARN -> skillIcon
         Works.MAKE -> shapes; Works.READ -> page; "list_todos" -> todo
         else -> if (Mcp.owns(n)) plug else feather
