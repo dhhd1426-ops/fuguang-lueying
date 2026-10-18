@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <paths>
     <cache-path name="share" path="share/" />
+    <!-- 没存到相册的下载：播放、分享时交给别的 App -->
+    <files-path name="downloads" path="downloads/" />
 </paths>

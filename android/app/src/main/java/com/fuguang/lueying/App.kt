@@ -115,7 +115,7 @@ fun FuguangApp(prefs: Prefs, fullscreen: Boolean, setFullscreen: (Boolean) -> Un
 
     // 自动沉浸：停手 1 分钟进；最后 5 秒界面先淡一点。有东西开着、她在回答时一直从头算。
     var soon by remember { mutableStateOf(false) }
-    val held = Zen.held || chatState.busy || MineCard.open || NoteCard.open || CornerMenu.open || !foreground
+    val held = Zen.held || chatState.busy || MineCard.open || NoteCard.open || CornerMenu.open || !foreground || InBrowser.url != null || Downloads.open
     LaunchedEffect(held, Zen.touchedAt, zen) {
         soon = false
         if (held || zen) { if (held) Zen.touch(); return@LaunchedEffect }
@@ -203,6 +203,12 @@ fun FuguangApp(prefs: Prefs, fullscreen: Boolean, setFullscreen: (Boolean) -> Un
         // 悬浮卡片：在页面之上、圆钮卡片之下
         if (!zen) MineCardLayer(assistant, mineNav)
         if (!zen) NoteCardLayer(store, prefs)
+
+        // 「这次用了」里点一样本事：去「我的 → 功能 → 技能」看它
+        Skills.show = { id -> mineNav.screen = "skills/$id"; MineCard.open = true }
+        // 内置浏览器、下载页：盖在最上面
+        InBrowserLayer()
+        DownloadsLayer()
 
         if (!zen) CornerMenuLayer(
             dim = dim, blur = blur,

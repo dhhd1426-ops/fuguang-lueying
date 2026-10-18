@@ -45,6 +45,8 @@ object Skills {
     var lists by mutableStateOf(mapOf<String, List<Skill>>())
     /** 正等你点头的那一个（聊天里显示「装上 / 先不用」）。 */
     var asking by mutableStateOf<SkillAsk?>(null)
+    /** 点「这次用了」里的一样：去「我的 → 功能 → 技能」看它（App 里接上）。 */
+    var show: ((String) -> Unit)? = null
     private var prefs: Prefs? = null
     private lateinit var root: File
 
@@ -133,8 +135,11 @@ object Skills {
     fun specs(): List<ToolSpec> {
         if (!on) return emptyList()
         val l = mutableListOf<ToolSpec>()
-        if (of().any { it.on }) l += ToolSpec(OPEN, "翻开你会的一样本事，看它怎么做。用得上时先翻开再动手。file 空着是整份说明，也可以翻它附带的文件。",
-            obj("name" to "本事的名字（列表里的那个）", "file" to "附带文件的路径，可以空着", req = listOf("name")))
+        if (of().any { it.on }) l += ToolSpec(OPEN, "翻开你会的本事，看它怎么做。用得上时先翻开再动手。一次可以翻好几样：names 写几个名字，一起翻开（做设计、写东西这类事，翻两三样相关的比一比）。file 空着是整份说明，也可以翻它附带的文件。",
+            JSONObject().put("type", "object").put("properties", JSONObject()
+                .put("name", JSONObject().put("type", "string").put("description", "本事的名字（列表里的那个）"))
+                .put("names", JSONObject().put("type", "array").put("items", JSONObject().put("type", "string")).put("description", "一次翻开几样时写这里"))
+                .put("file", JSONObject().put("type", "string").put("description", "附带文件的路径，可以空着"))))
         if (self) {
             l += ToolSpec(FIND, "去 GitHub 上找别人写好的本事。用英文短词搜，比如 poster、meeting notes、pdf。",
                 obj("query" to "要找的本事，英文短词", req = listOf("query")))
@@ -150,7 +155,7 @@ object Skills {
         val mine = of().filter { it.on }
         return buildString {
             if (mine.isNotEmpty()) {
-                append("你会这些本事，用得上时先翻开（$OPEN）看怎么做，再照着做：")
+                append("你会这些本事，用得上时先翻开（$OPEN）看怎么做再动手。做设计、排版、写东西这类事，一次翻开两三样相关的，比一比，各取最好的那一段——这样的版式、那样的配色、另一样的字——融成你自己的一种做法，像中西交融那样浑然一体，别照搬其中一样，也别拼盘：")
                 mine.forEach { append("\n- ").append(it.title).append("：").append(it.shown.take(200)) }
             }
             if (self) {
@@ -163,7 +168,12 @@ object Skills {
 
     suspend fun run(name: String, a: JSONObject): ToolOut { return when (name) {
         OPEN -> {
-            val q = a.optString("name").trim()
+            val many = a.optJSONArray("names")?.let { arr -> (0 until arr.length()).map { arr.optString(it).trim() }.filter { it.isNotEmpty() } }.orEmpty()
+            if (many.size > 1) {
+                val parts = many.distinct().take(5).map { n -> n to run(OPEN, JSONObject().put("name", n)).text }
+                return ToolOut(parts.joinToString("\n\n") { (n, t) -> "【$n】\n" + t.take(12_000) } + "\n\n（几样都翻开了：比一比，各取最好的一段，融成一种做法。）")
+            }
+            val q = (many.firstOrNull() ?: a.optString("name")).trim()
             val s = of().firstOrNull { it.on && (it.title == q || it.id == q) } ?: of().firstOrNull { it.on && (q in it.title || it.id in q) }
             if (s == null) ToolOut("你会的里没有「$q」。")
             else {

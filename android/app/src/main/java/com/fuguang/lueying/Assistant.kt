@@ -6,6 +6,8 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.ensureActive
@@ -386,9 +388,11 @@ object ChatApi {
             if (anthropic) {
                 msgs.put(JSONObject().put("role", "assistant").put("content", r.blocks))
                 val results = JSONArray()
-                r.calls.forEach { call ->
-                    tools.onUse(call.name.toString())
-                    val out = tools.run(call.name.toString(), args(call))
+                val outs: List<ToolOut> = if (r.calls.size > 1 && r.calls.all { it.name.toString() in READ_ONLY }) coroutineScope {
+                    r.calls.map { call -> async { tools.onUse(call.name.toString()); tools.run(call.name.toString(), args(call)) } }.map { it.await() }
+                } else r.calls.map { call -> tools.onUse(call.name.toString()); tools.run(call.name.toString(), args(call)) }
+                r.calls.forEachIndexed { k, call ->
+                    val out = outs[k]
                     val content: Any = if (out.images.isEmpty()) out.text else JSONArray().apply {
                         put(JSONObject().put("type", "text").put("text", out.text))
                         out.images.forEach { im ->
@@ -414,9 +418,12 @@ object ChatApi {
                 msgs.put(am)
                 // 工具消息只能放文字，图片另起一条放在后面给模型看
                 val pics = JSONArray()
-                r.calls.forEach { call ->
-                    tools.onUse(call.name.toString())
-                    val out = tools.run(call.name.toString(), args(call))
+                // 只读的事（翻本事、找本事、上网查、翻聊天、看原稿）几件一起做；要动东西、要你点头的还是一件件来
+                val outs: List<ToolOut> = if (r.calls.size > 1 && r.calls.all { it.name.toString() in READ_ONLY }) coroutineScope {
+                    r.calls.map { call -> async { tools.onUse(call.name.toString()); tools.run(call.name.toString(), args(call)) } }.map { it.await() }
+                } else r.calls.map { call -> tools.onUse(call.name.toString()); tools.run(call.name.toString(), args(call)) }
+                r.calls.forEachIndexed { k, call ->
+                    val out = outs[k]
                     msgs.put(JSONObject().put("role", "tool").put("tool_call_id", call.id).put("content", out.text))
                     out.images.forEach { im ->
                         pics.put(JSONObject().put("type", "image_url").put("image_url", JSONObject().put("url", "data:${im.mime};base64,${im.base64}")))
@@ -465,6 +472,9 @@ object ChatApi {
             } else o.optJSONArray("choices")?.optJSONObject(0)?.optJSONObject("message")?.optString("content").orEmpty()
         } finally { runCatching { conn.disconnect() } }
     }
+
+    /** 能一起并发着做的工具（只读、不问人）。 */
+    private val READ_ONLY = setOf(Skills.OPEN, Skills.FIND, WebSearch.TOOL, Recall.TOOL, Works.READ)
 
     private fun args(call: Call) = runCatching { JSONObject(call.args.toString().ifBlank { "{}" }) }.getOrDefault(JSONObject())
 

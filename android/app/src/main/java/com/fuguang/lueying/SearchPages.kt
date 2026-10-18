@@ -208,7 +208,7 @@ internal fun SearchSourcePage(id: String, onBack: () -> Unit) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { s.opts.forEachIndexed { i, (name, _) -> ChoiceChip(name, c.opt == i) { put(c.copy(opt = i)) } } }
             if (s.optHint.isNotEmpty()) Txt(s.optHint, Page.muted.copy(alpha = .55f), 11.5.sp, Modifier.padding(start = 8.dp, top = 6.dp))
         }
-        if (s.site.isNotEmpty()) Pressable({ runCatching { uri.openUri("https://${s.site}") } }, label = "去 ${s.site} 拿 Key") { pr ->
+        if (s.site.isNotEmpty()) Pressable({ InBrowser.open("https://${s.site}") }, label = "去 ${s.site} 拿 Key") { pr ->
             Txt("去 ${s.site.substringBefore('/')} 拿 Key ↗", warm.copy(alpha = if (pr) .7f else 1f), 12.5.sp, Modifier.padding(start = 8.dp, top = 12.dp))
         }
         Label("试搜一下")

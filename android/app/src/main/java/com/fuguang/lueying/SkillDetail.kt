@@ -78,7 +78,7 @@ internal fun SkillDetailPage(id: String, onBack: () -> Unit) {
         Column(Modifier.padding(horizontal = 6.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             SkillTile(s.id, s.title, 52.dp)
             Txt(s.title, Page.ink, 21.sp, Modifier.padding(top = 2.dp), spacing = ls(2f, 21f), family = Serif, maxLines = 2)
-            Pressable({ runCatching { uri.openUri("https://github.com/${s.repo}" + if (s.path.isEmpty()) "" else "/tree/HEAD/${s.path}") } }, label = "在 GitHub 上看") { pr ->
+            Pressable({ InBrowser.open("https://github.com/${s.repo}" + if (s.path.isEmpty()) "" else "/tree/HEAD/${s.path}") }, label = "在 GitHub 上看") { pr ->
                 Txt("${s.repo}${if (s.path.isEmpty()) "" else "/" + s.path} ↗", Page.muted.copy(alpha = if (pr) .4f else .6f), 11.5.sp, maxLines = 2)
             }
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {

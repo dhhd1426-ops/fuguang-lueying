@@ -31,6 +31,9 @@ class MainActivity : ComponentActivity() {
         Backup.init(prefs)
         ModelFit.init(prefs)
         WebSearch.init(prefs)
+        AdBlock.init(this, prefs)
+        Downloads.init(this, prefs)
+        if (intent?.getStringExtra("open") == "downloads") Downloads.open = true
         Skills.init(this, prefs)
         val controller = WindowCompat.getInsetsController(window, window.decorView)
         controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
@@ -47,5 +50,11 @@ class MainActivity : ComponentActivity() {
                 },
             )
         }
+    }
+
+    // 点通知栏「下好了」回到 App：打开下载页
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        if (intent.getStringExtra("open") == "downloads") Downloads.open = true
     }
 }

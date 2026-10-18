@@ -427,6 +427,11 @@ fun ChatPage(
     )
     val density = LocalDensity.current
     val imeOpen = WindowInsets.ime.getBottom(density) > 0
+    // 内置浏览器里「让她看看这页」：写进输入框
+    androidx.compose.runtime.DisposableEffect(chat) {
+        InBrowser.ask = { t -> if (chat.busy) chat.draft = t else { chat.draft = t }; chat.focusTick++ }
+        onDispose { InBrowser.ask = null }
+    }
     androidx.compose.runtime.SideEffect {
         Zen.held = menu || shelf || boards || workOpen != null || thinkOpen || picker || press != null || viewing != null || selectText != null || chat.draft.isNotBlank() || imeOpen
     }
@@ -644,6 +649,7 @@ private fun Conversation(
                     } else {
                         ThinkRow(m.think, m.steps, live = false) { onThink(i) }
                         Box(Modifier.fillMaxWidth().longPressMsg(i, pressed == i, onLong)) { Reply(remember(m.text) { ToolText.clean(m.text) }, compact, fadeTail = false) }
+                        UsedSkills(m.steps)
                         NoteImageRow(m.imgs, onImage)
                         WorkCards(m.works, onWork)
                     }
@@ -753,7 +759,9 @@ private fun inline(block: String, fade: Int): AnnotatedString {
             else -> l
         }
     }
-    val src = lines.joinToString("\n")
+    // 链接：[字](网址) 先换成「\u0001字\u0002」，网址按顺序记下，最后变成能点的（在内置浏览器开）
+    val urls = ArrayList<String>()
+    val src = Regex("\\[([^\\]\\n]{1,80})]\\((https?://[^)\\s]+)\\)").replace(lines.joinToString("\n")) { m -> urls += m.groupValues[2]; "\u0001" + m.groupValues[1] + "\u0002" }
     // 先算出纯文字和粗体区间
     val plain = StringBuilder()
     val bold = mutableListOf<IntRange>()
@@ -765,10 +773,23 @@ private fun inline(block: String, fade: Int): AnnotatedString {
             i += 2
         } else { plain.append(src[i]); i++ }
     }
-    val s = plain.toString().replace(Regex("`([^`]*)`"), "$1")
+    val s0 = plain.toString().replace(Regex("`([^`]*)`"), "$1")
+    // 去掉链接记号，同时把粗体区间挪到新位置
+    val map = IntArray(s0.length + 1); val sb = StringBuilder(); val links = ArrayList<Triple<Int, Int, String>>(); var open = -1; var li = 0
+    for (k in s0.indices) {
+        map[k] = sb.length
+        when (s0[k]) { '\u0001' -> open = sb.length; '\u0002' -> { if (open >= 0 && li < urls.size) links += Triple(open, sb.length, urls[li]); li++; open = -1 }; else -> sb.append(s0[k]) }
+    }
+    map[s0.length] = sb.length
+    val s = sb.toString()
+    // 光秃秃的网址也能点
+    Regex("https?://[A-Za-z0-9._~:/?#\\[\\]@!$&'*+,;=%-]+").findAll(s).forEach { m -> if (links.none { m.range.first in it.first until it.second }) links += Triple(m.range.first, m.range.last + 1, m.value.trimEnd('.', ',', ')', ';')) }
     return buildAnnotatedString {
         append(s)
-        bold.forEach { r -> if (r.first < s.length) addStyle(SpanStyle(fontWeight = FontWeight.SemiBold, color = Page.ink), r.first, min(r.last + 1, s.length)) }
+        bold.forEach { r -> val a = map[min(r.first, s0.length)]; val b = map[min(r.last + 1, s0.length)]; if (a < b) addStyle(SpanStyle(fontWeight = FontWeight.SemiBold, color = Page.ink), a, b) }
+        links.forEach { (a, b, u) ->
+            addLink(androidx.compose.ui.text.LinkAnnotation.Clickable(u, androidx.compose.ui.text.TextLinkStyles(SpanStyle(color = css("#e9b48e"), textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline))) { InBrowser.open(u) }, a, b)
+        }
         if (fade > 0) {
             val n = min(fade, s.length)
             for (k in 0 until n) {
@@ -1028,6 +1049,31 @@ private fun DrawerRow(text: String, selected: Boolean, dim: Boolean = false, onC
         ) {
             Txt(text, if (selected) Page.ink else if (dim) Page.muted else Page.ink.copy(alpha = .78f), 15.sp, Modifier.weight(1f), maxLines = 1)
             if (selected) SvgIcon(Ic("M5 12.5l4.5 4.5L19 7.5"), rgba(233, 180, 142, 1f), 18.dp, stroke = 1.8f)
+        }
+    }
+}
+
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+/** 回答下面「这次用了」：这一轮翻开过的本事，一样一个小标签，点了去看它。 */
+@Composable
+private fun UsedSkills(steps: List<ToolStep>) {
+    val names = remember(steps) { steps.filter { it.name == Skills.OPEN }.flatMap { it.detail.split('、') }.map { it.trim() }.filter { it.isNotEmpty() }.distinct() }
+    if (names.isEmpty()) return
+    androidx.compose.foundation.layout.FlowRow(
+        Modifier.padding(top = 2.dp, bottom = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp),
+        itemVerticalAlignment = Alignment.CenterVertically,
+    ) {
+        Txt("这次用了", Page.muted.copy(alpha = .55f), 11.5.sp, Modifier.padding(end = 2.dp))
+        names.forEach { n ->
+            val s = Skills.of().firstOrNull { it.title == n || it.id == n }
+            PressSurface({ s?.let { Skills.show?.invoke(it.id) } }, Modifier.height(28.dp), shape = RoundedCornerShape(50), fill = rgba(255, 255, 255, .06f), pressScale = .94f, label = n) {
+                Row(Modifier.padding(start = 4.dp, end = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    SkillTile(s?.id ?: n, n, 20.dp)
+                    Spacer(Modifier.width(6.dp))
+                    Txt(n, Page.ink.copy(alpha = .86f), 12.sp, maxLines = 1)
+                }
+            }
         }
     }
 }

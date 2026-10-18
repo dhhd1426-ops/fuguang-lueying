@@ -22,6 +22,8 @@ object Board {
 
     /** 给工具说明的一段：她手边有哪些积木。 */
     const val GUIDE = "kind=board：画板，一本能动手的小本子，像 Notion 那样用积木一块块往下搭，放进 board：{tone, blocks}。" +
+        "style 是画风，不只是颜色，字、纸面、装饰、动效都跟着变：paper 纸笺（暖纸、宋体、红线小票，勾完盖个「好」字印，适合菜谱、手账、清单）、" +
+        "night 夜墨（深色、标题渐变、进度发光，适合计划、日程、目标）、grid 方格（蓝图格子纸、等宽编号、刻度进度，适合装修、旅行、工程、预算）；按内容挑，别总用一种。" +
         "tone 是这块画板的颜色，你自己挑：apricot 杏、sea 海、moss 苔、rose 蔷薇、dusk 暮紫、sand 沙、mist 雾，或者直接写 #rrggbb。" +
         "积木（type）：cover 封面（title、sub、glyph 一个大字）；heading 标题（text、note）；text 段落（text，**加粗**）；callout 提示（mark 一个字、text）；" +
         "quote 引用（text、by）；divider 分隔；todo 待办（items:[{t,done}]）；toggle 折叠（title、note、open、children:[积木]）；" +
@@ -30,13 +32,15 @@ object Board {
         "progress 进度（label；from:kanban 或 todo 自己数，或者写 value）；gallery 卡片墙（cards:[{g 一个字,t,s}]）；" +
         "week 周历（cells：七天各一组短字，today 是今天 0–6）；mindmap 导图（root、kids:[{t,kids:[…]}]，几层都行）；" +
         "own 你自己做的积木（name、html：一小段自包含的 HTML/CSS/JS，背景透明，颜色可用 var(--acc) var(--ink) var(--glass)；起过名字的，以后只写 name 就能再用）。" +
-        "搭什么、用哪几块、怎么排、什么颜色，都看你。他能在上面勾、拖看板、改字，他改过的地方你用 read_work 看得到。"
+        "搭什么、用哪几块、怎么排、什么画风和颜色，都看你；同一块画板里积木要有轻重：一张封面、几段标题分开，要点放提示，长说明收进折叠，别一路平铺。" +
+        "他打开时先是只看：点一下勾掉、展开；要改字点「编辑」或长按。他改过的地方你用 read_work 看得到。"
 
     val schema: JSONObject get() = JSONObject().put("type", "object").put("description", "kind=board 时：画板原稿")
         .put(
             "properties",
             JSONObject()
                 .put("tone", JSONObject().put("type", "string"))
+                .put("style", JSONObject().put("type", "string").put("enum", JSONArray(listOf("paper", "night", "grid"))))
                 .put("blocks", JSONObject().put("type", "array").put("items", JSONObject().put("type", "object").put("properties", JSONObject().put("type", JSONObject().put("type", "string"))))),
         )
 
@@ -66,7 +70,7 @@ object Board {
         walk(blocks)
         if (missing.isNotEmpty()) return null to "这几块你自己的积木还没做过：${missing.joinToString("、")}。第一次用要连 html 一起写。"
         saveLibrary(pid, mine)
-        return JSONObject().put("tone", raw.optString("tone", "apricot")).put("blocks", blocks) to null
+        return JSONObject().put("tone", raw.optString("tone", "apricot")).put("style", raw.optString("style", "night").takeIf { it in setOf("paper", "night", "grid") } ?: "night").put("blocks", blocks) to null
     }
 
     /** 画成页面：把原稿塞进模板。 */

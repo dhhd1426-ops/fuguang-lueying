@@ -82,8 +82,11 @@ jobs:
           mkdir -p out
           cp android/app/build/outputs/apk/release/app-release.apk "out/fuguang-lueying-${{ github.run_number }}.apk"
 
+      # 安装包已经发到 Releases；这份副本只是方便在 Actions 页面下载。存储额度满了也不要挡住发版
       - uses: actions/upload-artifact@v4
+        continue-on-error: true
         with:
+          retention-days: 3
           name: fuguang-lueying-apk
           path: out/*.apk
 

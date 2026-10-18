@@ -115,7 +115,12 @@ fun WorkViewer(id: String?, onClose: () -> Unit, onFix: (String) -> Unit = {}) {
     val shown by animateFloatAsState(if (id != null) 1f else 0f, tween(if (id != null) 320 else 240, easing = Ease), label = "work")
     var sheet by remember { mutableStateOf(false) }
     androidx.activity.compose.BackHandler(enabled = id != null && sheet) { sheet = false }
-    androidx.activity.compose.BackHandler(enabled = id != null && !sheet) { onClose() }
+    // 返回键：作品里开着详情、弹窗、大图时先关它们（fg.back），都没开才关作品
+    var webRef by remember { mutableStateOf<WebView?>(null) }
+    androidx.activity.compose.BackHandler(enabled = id != null && !sheet) {
+        val wv = webRef
+        if (wv == null) onClose() else wv.evaluateJavascript("(window.fg&&fg.back())?'1':'0'") { r -> if (r?.contains("1") != true) onClose() }
+    }
     if (shown <= 0f || last == null) { sheet = false; return }
     val cur = last!!
     val v = Works.version
@@ -164,6 +169,8 @@ fun WorkViewer(id: String?, onClose: () -> Unit, onFix: (String) -> Unit = {}) {
                                 settings.mediaPlaybackRequiresUserGesture = false
                                 settings.allowFileAccess = false
                                 addJavascriptInterface(BoardBridge(boardId), "FG")
+                                // 作品套件（fgkit.js）用：外链在内置浏览器开、复制
+                                addJavascriptInterface(KitBridge(c), "FGApp")
                                 // 页面里的 JS 报错记下来，显示在底部，方便排查
                                 webChromeClient = object : android.webkit.WebChromeClient() {
                                     override fun onConsoleMessage(m: android.webkit.ConsoleMessage?): Boolean {
@@ -186,19 +193,21 @@ fun WorkViewer(id: String?, onClose: () -> Unit, onFix: (String) -> Unit = {}) {
                                     }
                                     override fun onReceivedError(view: WebView?, req: WebResourceRequest?, err: android.webkit.WebResourceError?) {
                                         val u = req?.url?.toString().orEmpty()
-                                        // 站点图标是 WebView 自己去要的，没有也不影响
-                                        if (req?.isForMainFrame == false && !u.endsWith("favicon.ico") && problem.value.isEmpty()) problem.value = "有个文件没加载上：" + u.take(120)
+                                        // 站点图标是 WebView 自己去要的，没有也不影响；图片坏了作品套件会换成占位，不用再提
+                                        val img = req?.requestHeaders?.get("Accept")?.startsWith("image") == true || Regex("\\.(png|jpe?g|gif|webp|svg|avif|ico)(\\?|$)", RegexOption.IGNORE_CASE).containsMatchIn(u)
+                                        if (req?.isForMainFrame == false && !img && problem.value.isEmpty()) problem.value = "有个文件没加载上：" + u.take(120)
                                     }
                                     override fun shouldOverrideUrlLoading(view: WebView?, req: WebResourceRequest?): Boolean {
                                         val u = req?.url ?: return false
                                         // 页内跳转留在页里；点到外面的链接交给浏览器
                                         if (!req.isForMainFrame || u.host == BASE_HOST) return false
                                         if (u.scheme in setOf("about", "data", "blob")) return false
-                                        if (u.scheme == "http" || u.scheme == "https") runCatching { c.startActivity(Intent(Intent.ACTION_VIEW, u).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+                                        if (u.scheme == "http" || u.scheme == "https") InBrowser.open(u.toString())
+                                        else if (u.scheme == "tel" || u.scheme == "mailto") runCatching { c.startActivity(Intent(Intent.ACTION_VIEW, u).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
                                         return true
                                     }
                                 }
-                                web = this
+                                web = this; webRef = this
                             }
                         },
                         update = { wv ->
@@ -208,10 +217,11 @@ fun WorkViewer(id: String?, onClose: () -> Unit, onFix: (String) -> Unit = {}) {
                             if (wv.tag != key) {
                                 wv.tag = key; loaded.value = false; problem.value = ""
                                 // 量好尺寸再加载：页面脚本一开始读到的宽高才是真的
-                                wv.doOnLayoutReady { wv.loadDataWithBaseURL("https://$BASE_HOST/", html, "text/html", "utf-8", null) }
+                                val page = if (w?.kind == "page") Kit.inject(wv.context, html) else html
+                                wv.doOnLayoutReady { wv.loadDataWithBaseURL("https://$BASE_HOST/", page, "text/html", "utf-8", null) }
                             }
                         },
-                        onRelease = { it.tag = null; it.stopLoading(); it.destroy(); web = null },
+                        onRelease = { it.tag = null; it.stopLoading(); it.destroy(); web = null; webRef = null },
                         modifier = Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.navigationBars),
                     )
                     // 页面有问题：底部一条提示，点「让她修」把问题交回给她
@@ -329,4 +339,27 @@ private fun printPdf(ctx: Context, web: WebView, title: String) {
 private class BoardBridge(private val id: Array<String?>) {
     @android.webkit.JavascriptInterface
     fun save(json: String, log: String) { id[0]?.let { Board.save(it, json, log) } }
+}
+
+/** 作品套件：每件网页作品打开时塞进去（assets/fgkit.js）。 */
+object Kit {
+    private var js: String? = null
+    fun inject(ctx: Context, html: String): String {
+        val k = js ?: runCatching { ctx.assets.open("fgkit.js").bufferedReader().use { it.readText() } }.getOrDefault("").also { js = it }
+        if (k.isEmpty() || html.contains("id='fg-kit'") ) return html
+        val tag = "<script>" + k.replace("</script", "<\\/script") + "</script>"
+        Regex("<head[^>]*>", RegexOption.IGNORE_CASE).find(html)?.let { return html.substring(0, it.range.last + 1) + tag + html.substring(it.range.last + 1) }
+        Regex("<html[^>]*>", RegexOption.IGNORE_CASE).find(html)?.let { return html.substring(0, it.range.last + 1) + "<head>" + tag + "</head>" + html.substring(it.range.last + 1) }
+        Regex("<!doctype[^>]*>", RegexOption.IGNORE_CASE).find(html)?.let { return html.substring(0, it.range.last + 1) + tag + html.substring(it.range.last + 1) }
+        return tag + html
+    }
+}
+
+/** 作品页面里的 FGApp：外链交给内置浏览器，复制交给剪贴板。 */
+private class KitBridge(private val ctx: Context) {
+    private val main = android.os.Handler(android.os.Looper.getMainLooper())
+    @android.webkit.JavascriptInterface
+    fun open(url: String) { main.post { InBrowser.open(url) } }
+    @android.webkit.JavascriptInterface
+    fun copy(text: String) { main.post { (ctx.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager).setPrimaryClip(android.content.ClipData.newPlainText("作品", text)) } }
 }

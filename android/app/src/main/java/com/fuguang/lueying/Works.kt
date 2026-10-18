@@ -68,6 +68,12 @@ object Works {
             "做一件作品，做好后在你这条回复下面出现一张作品卡，点开全屏看。" +
                 "kind=page：网页、动画、动效、小游戏、小工具、图表，写成一整张自包含的 HTML 放进 html（CSS 和 JS 都写在里面；要用库就从 cdnjs 或 jsdelivr 引，写死版本号；图片用 data: 或网上能直接打开的地址）。" +
                 "手机竖屏全屏打开，深色背景为宜，留出安全区，不要横向滚动。" +
+                "网页作品要像能交出去的成品：打开就是完整的样子，内容是真的，没有占位字、没有坏链接；一屏放不下的，列表只放要点，细节放进详情；每个能点的东西都点得动、点了有结果；字不小于 13px；做完自己从头检查一遍图片、链接、按钮。" +
+                "页面里已经带好一套交互（fg），照着写属性就行，不用自己造：" +
+                "点了弹出详情——卡片写 data-sheet=\"#d1\" data-title=\"标题\"，详情内容放在 <template id=\"d1\">…</template>（详情从下面升起，能往下拖关掉）；" +
+                "要确认的事——data-dialog=\"一句话\" data-title=\"…\" data-ok=\"好\" data-cancel=\"取消\"，或 fg.dialog({title,text,ok,cancel}).then(ok=>…)；" +
+                "复制——data-copy=\"要复制的字\"；小提示——fg.toast(\"一句话\")；页签——<div class=\"fg-tabs\"><button data-tab=\"a\">…</button></div> 配 <div data-panel=\"a\">…</div>；" +
+                "外链直接写 <a href>，会在 App 的内置浏览器打开；图片点了自动放大看（不想放大加 data-no-zoom），加载不出来会自动换成带 alt 字的占位，所以图片位只放 <img alt=\"名字\">，别在底下垫「海报」之类的占位字；能点的卡片加 class=\"fg-card\"，按下有反馈。" +
                 "kind=slides：演示文稿，填 slides，每页一个 title 和几条 points（第一页是封面，points 写副标题；要点里两个空格开头是次级要点；**加粗**会用杏色强调），可以导出成 PPT。" +
                 "kind=doc：文档，把正文写成 Markdown 放进 markdown（# 标题、- 列表、1. 编号、> 引用、| 表格 |），可以导出成 Word。" +
                 Board.GUIDE +

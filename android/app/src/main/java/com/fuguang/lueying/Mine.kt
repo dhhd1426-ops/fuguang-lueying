@@ -1338,7 +1338,7 @@ private fun ColumnScope.McpServerScreen(key: String, compact: Boolean, blur: Dp,
         }
         if (item != null && item.help.isNotEmpty()) {
             Spacer(Modifier.height(10.dp))
-            Pressable({ runCatching { uriHandler.openUri(item.helpUrl) } }, label = "怎么拿") { pressed ->
+            Pressable({ InBrowser.open(item.helpUrl) }, label = "怎么拿") { pressed ->
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 4.dp)) {
                     Txt(item.help, if (pressed) warm.copy(alpha = .7f) else warm, 12.5.sp, Modifier.weight(1f), lineHeight = 18.sp)
                     Spacer(Modifier.width(6.dp))

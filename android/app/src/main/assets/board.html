@@ -28,8 +28,19 @@ button:active{transform:scale(.96);transition-duration:70ms}
 .blk.wait{border-radius:12px;min-height:28px;background:linear-gradient(90deg,var(--glass) 30%,var(--glass2) 50%,var(--glass) 70%);background-size:220% 100%;animation:shim 1.2s infinite linear}
 .blk.wait>*{visibility:hidden}
 @keyframes shim{from{background-position:120% 0}to{background-position:-120% 0}}
-[contenteditable]{outline:none;border-radius:4px;transition:background-color 160ms var(--std)}
-[contenteditable]:focus{background:color-mix(in srgb,var(--acc) 12%,transparent);box-shadow:0 1px 0 var(--acc)}
+/* 默认只看：字不能改，点一下是勾、是展开；点「编辑」或长按一处才改，能改的地方出现下划线 */
+.ed{border-radius:4px;transition:background-color 160ms var(--std),box-shadow 160ms var(--std)}
+.editing .ed{outline:none;box-shadow:inset 0 -1px 0 color-mix(in srgb,var(--acc) 70%,transparent);background:color-mix(in srgb,var(--acc) 6%,transparent);cursor:text}
+.editing .ed:focus{background:color-mix(in srgb,var(--acc) 14%,transparent);box-shadow:inset 0 -1.5px 0 var(--acc)}
+body:not(.editing) .ed{-webkit-user-select:none;user-select:none}
+.ti{cursor:pointer;transition:transform 180ms var(--std),background-color 200ms var(--std)}
+body:not(.editing) .ti:active{transform:scale(.985);transition-duration:70ms}
+.fab{position:fixed;right:16px;bottom:calc(16px + env(safe-area-inset-bottom));height:44px;padding:0 16px;border-radius:22px;display:flex;align-items:center;gap:8px;font-size:13.5px;
+  background:color-mix(in srgb,var(--bg) 70%,#fff 8%);color:var(--ink);box-shadow:0 8px 24px rgba(0,0,0,.25),inset 0 0 0 1px var(--glass2);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);z-index:5;transition:background-color 220ms var(--std),color 220ms var(--std),transform 180ms var(--std)}
+.editing .fab{background:var(--acc);color:#1e1a17;box-shadow:0 8px 24px rgba(0,0,0,.25)}
+.hint{position:fixed;left:50%;top:calc(10px + env(safe-area-inset-top));transform:translate(-50%,-160%);padding:8px 14px;border-radius:12px;background:var(--acc);color:#1e1a17;font-size:12.5px;white-space:nowrap;z-index:6;transition:transform 320ms var(--decel)}
+.editing .hint{transform:translate(-50%,0)}
+.page{padding-bottom:calc(90px + env(safe-area-inset-bottom))!important}
 
 .b-cover{position:relative;border-radius:18px;padding:22px 18px 18px;min-height:132px;display:flex;flex-direction:column;justify-content:flex-end;overflow:hidden;
   background:radial-gradient(120% 120% at 100% 0%,color-mix(in srgb,var(--acc) 45%,transparent) 0%,transparent 60%),linear-gradient(160deg,color-mix(in srgb,var(--acc) 22%,#141820),#12161d)}
@@ -119,12 +130,49 @@ b,strong{color:var(--acc);font-weight:500}
 .own{display:block;width:100%;border:0;border-radius:14px;background:transparent;height:120px;transition:height 220ms var(--std)}
 .toast{position:fixed;left:50%;bottom:calc(16px + env(safe-area-inset-bottom));transform:translate(-50%,8px);opacity:0;padding:8px 14px;border-radius:14px;background:#262a31;color:var(--acc);font-size:12.5px;transition:opacity 220ms var(--std),transform 260ms var(--decel);pointer-events:none;white-space:nowrap}
 .toast.on{opacity:1;transform:translate(-50%,0)}
+/* ———— 画风：纸笺（暖纸、宋体、墨色、红线小票，勾完盖个「好」字印） ———— */
+body.s-paper{--bg:#efe6d6;--ink:#2b2420;--mute:rgba(43,36,32,.6);--faint:rgba(43,36,32,.32);--glass:rgba(80,50,20,.05);--glass2:rgba(80,50,20,.1);color-scheme:light;
+  background:#efe6d6 radial-gradient(rgba(120,90,60,.08) 1px,transparent 1.2px) 0 0/5px 5px}
+.s-paper .b-cover{background:transparent;border-radius:0;border-bottom:1.5px solid var(--ink);padding:26px 4px 16px;min-height:0}
+.s-paper .b-cover .gl{color:var(--acc);opacity:.16;font-size:120px;top:-6px}
+.s-paper .b-cover h1{font-size:32px;letter-spacing:.1em}
+.s-paper .b-cover::after{content:"";position:absolute;right:10px;bottom:14px;width:40px;height:40px;border:2px solid var(--acc);border-radius:6px;transform:rotate(-8deg);opacity:.7}
+.s-paper b,.s-paper strong{color:var(--acc)}
+.s-paper .ti{background:transparent;border-radius:0;border-bottom:1px dashed var(--glass2);padding:11px 2px;position:relative}
+.s-paper .ti.done::after{content:"好";position:absolute;right:4px;top:50%;width:24px;height:24px;margin-top:-12px;border:1.5px solid var(--acc);color:var(--acc);border-radius:50%;display:grid;place-items:center;font-family:var(--serif);font-size:11px;transform:rotate(-12deg);animation:stamp 420ms var(--decel) both}
+@keyframes stamp{from{transform:rotate(-12deg) scale(1.8);opacity:0}}
+.s-paper .ck{box-shadow:inset 0 0 0 1.4px var(--mute)}
+.s-paper .ck path{stroke:#efe6d6}
+.s-paper .b-callout{border-radius:2px;background:var(--glass) linear-gradient(90deg,transparent 18px,color-mix(in srgb,var(--acc) 35%,transparent) 18px,color-mix(in srgb,var(--acc) 35%,transparent) 19px,transparent 19px);padding-left:30px}
+.s-paper .b-quote{background:transparent;border-left:3px solid var(--acc);border-radius:0}
+.s-paper .pg .bar{height:2px;border-radius:0}
+.s-paper .tbl,.s-paper .kb,.s-paper .tl{filter:sepia(.1)}
+/* ———— 画风：夜墨（深色、标题渐变、进度发光） ———— */
+body.s-night{background:radial-gradient(120% 60% at 90% -10%,color-mix(in srgb,var(--acc) 18%,transparent),transparent 60%),var(--bg)}
+.s-night .b-cover h1{background:linear-gradient(90deg,var(--ink),var(--acc));-webkit-background-clip:text;background-clip:text;color:transparent}
+.s-night .pg .bar i{box-shadow:0 0 12px var(--acc)}
+.s-night .ti.done .ck{box-shadow:0 0 10px color-mix(in srgb,var(--acc) 60%,transparent)}
+/* ———— 画风：方格（蓝图格子纸、等宽编号、刻度进度、批注） ———— */
+body.s-grid{--bg:#14263f;--ink:#e7eef8;--mute:rgba(231,238,248,.62);--faint:rgba(231,238,248,.32);--glass:rgba(255,255,255,.04);--glass2:rgba(160,195,240,.18);--serif:ui-monospace,"SF Mono",Menlo,monospace;
+  background:#14263f linear-gradient(rgba(160,195,240,.08) 1px,transparent 1px) 0 0/22px 22px,linear-gradient(90deg,rgba(160,195,240,.08) 1px,transparent 1px) 0 0/22px 22px;counter-reset:sec}
+.s-grid .b-cover{background:transparent;border:1px solid var(--glass2);border-radius:4px}
+.s-grid .b-cover h1{text-transform:uppercase;letter-spacing:.04em}
+.s-grid .b-cover p::before{content:"// ";color:var(--acc)}
+.s-grid .b-h::before{counter-increment:sec;content:"0" counter(sec);color:var(--acc);font-size:12px}
+.s-grid .ti{border-radius:2px;border-left:2px solid var(--glass2)}
+.s-grid .ti.done{border-left-color:var(--acc)}
+.s-grid .b-callout,.s-grid .b-quote{border-radius:2px;border:1px dashed var(--glass2);background:transparent}
+.s-grid .pg .bar{height:10px;border-radius:0;background:repeating-linear-gradient(90deg,var(--glass2) 0 1px,transparent 1px 10%)}
+.s-grid .pg .bar i{border-radius:0;opacity:.8}
+.s-grid .b-cover .gl{font-family:var(--serif);opacity:.25}
 @media (prefers-reduced-motion:reduce){*{transition-duration:1ms!important;animation:none!important}}
 </style>
 </head>
 <body>
 <div class="page" id="page"></div>
 <div class="toast" id="toast" role="status"></div>
+<div class="hint" id="hint">在编辑：点字就能改，改完点「好了」</div>
+<button class="fab" id="fab" aria-pressed="false"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M13.5 6.5l4 4M5 19l1-4.5L15.5 5a1.5 1.5 0 0 1 2 0l1.5 1.5a1.5 1.5 0 0 1 0 2L9.5 18z"/></svg><span>编辑</span></button>
 <script>
 window.__BOARD__ = /*BOARD*/null;
 </script>
@@ -136,6 +184,8 @@ const TONE = { apricot: '#e9b48e', sea: '#8fb8dc', moss: '#a8c49a', rose: '#dba3
 const tone = String(board.tone || 'apricot');
 document.documentElement.style.setProperty('--acc', /^#[0-9a-f]{6}$/i.test(tone) ? tone : (TONE[tone] || TONE.apricot));
 document.title = board.title || '画板';
+const STYLE = ['paper', 'night', 'grid'].includes(board.style) ? board.style : 'night';
+document.body.classList.add('s-' + STYLE);
 const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
@@ -161,8 +211,26 @@ function toast(s) { const t = $('#toast'); t.textContent = s; t.classList.add('o
 function haptic() { try { navigator.vibrate && navigator.vibrate(8); } catch (_) {} }
 
 /* 可以直接改的字：改完写回原稿里的那一格 */
+let editing = false;
+function setEdit(on, focus) {
+  editing = on; document.body.classList.toggle('editing', on);
+  $('#fab').setAttribute('aria-pressed', on); $('#fab span').textContent = on ? '好了' : '编辑';
+  document.querySelectorAll('.ed').forEach(n => { n.contentEditable = on ? 'true' : 'false'; });
+  if (on && focus) { focus.focus(); const r = document.createRange(); r.selectNodeContents(focus); r.collapse(false); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); }
+  if (!on && document.activeElement && document.activeElement.blur) document.activeElement.blur();
+  haptic();
+}
+$('#fab').onclick = () => setEdit(!editing);
+// 长按一处字：直接进编辑，改那一处
+(() => {
+  let t = 0, x = 0, y = 0, target = null;
+  document.addEventListener('pointerdown', e => { if (editing) return; target = e.target.closest && e.target.closest('.ed'); if (!target) return; x = e.clientX; y = e.clientY; t = setTimeout(() => { t = 0; setEdit(true, target); }, 450); });
+  document.addEventListener('pointermove', e => { if (t && Math.hypot(e.clientX - x, e.clientY - y) > 8) { clearTimeout(t); t = 0; } });
+  const stop = () => { if (t) { clearTimeout(t); t = 0; } };
+  document.addEventListener('pointerup', stop); document.addEventListener('pointercancel', stop);
+})();
 function editable(node, get, set) {
-  node.contentEditable = 'true'; node.spellcheck = false;
+  node.classList.add('ed'); node.contentEditable = 'false'; node.spellcheck = false;
   node.addEventListener('focus', () => { node.dataset.v = node.textContent; });
   node.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); node.blur(); } });
   node.addEventListener('blur', () => {
@@ -208,6 +276,8 @@ function blockEl(b) {
       ck.onclick = () => { it.done = !it.done; row.classList.toggle('done', it.done); haptic(); syncProgress(); changed(it.done ? `勾掉了「${plain(txt(it))}」` : `把「${plain(txt(it))}」改回没做`); };
       row.appendChild(ck);
       row.appendChild(ed('span', 'tx', esc(txt(it)), () => txt(it), v => it.t = v));
+      // 只看的时候点整行就是勾
+      row.addEventListener('click', e => { if (editing || e.target.closest('.ck')) return; ck.click(); });
       box.appendChild(row);
     });
     el.appendChild(box);
