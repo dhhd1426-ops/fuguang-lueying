@@ -238,6 +238,7 @@ class ChatState(val history: ConvStore) {
                     append("\n").append(Memory.toolRule())
                     append("\n").append(Works.system(Memory.userCall, history, who.id))
                     append("\n").append(Materials.system())
+                    append("\n\n").append(Craft.system())
                     if (skills.isNotEmpty()) append("\n").append(Skills.system())
                     if (web) append("\n").append(WebSearch.system())
                     if (recall) append("\n").append(Recall.system())
