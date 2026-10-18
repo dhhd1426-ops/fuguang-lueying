@@ -168,7 +168,7 @@ object Downloads {
                     }
                     d.state = 2; d.speed = 0
                     d.total = f.length(); d.done = d.total; d.frac = 1f
-                    d.out = place(d, f); runCatching { w.deleteRecursively() }; d.state = 3
+                    d.out = place(d, f); subs(d); runCatching { w.deleteRecursively() }; d.state = 3
                     withContext(Dispatchers.Main) { save() }
                     return@launch
                 }
@@ -195,7 +195,7 @@ object Downloads {
                 }
                 val result = File(w, "out.mp4").takeIf { it.exists() && !d.audioOnly } ?: final
                 d.total = result.length(); d.done = d.total; d.frac = 1f
-                d.out = place(d, result)
+                d.out = place(d, result); subs(d)
                 runCatching { w.deleteRecursively() }
                 d.state = 3
                 withContext(Dispatchers.Main) { save() }
@@ -245,6 +245,21 @@ object Downloads {
             app.contentResolver.openOutputStream(uri)!!.use { o -> f.inputStream().use { it.copyTo(o, 1 shl 16) } }
             f.delete(); uri.toString()
         }.getOrElse { val dst = File(dir(), "${d.id}-$name"); f.copyTo(dst, true); f.delete(); dst.absolutePath }
+    }
+
+    /** 这个视频翻过字幕（同声翻译用的是视频自带字幕）：一起存一份双语 .srt，放在「下载/浮光掠影」。 */
+    private fun subs(d: Dl) {
+        val cues = Live.cues
+        if (d.audioOnly || cues.isEmpty() || (Live.cuesPage != d.media.page && Live.cuesPage != d.media.url) || cues.none { it.trans.isNotEmpty() }) return
+        val name = d.title.replace(Regex("[\\\\/:*?\"<>|\\n]"), "_").take(60) + ".srt"
+        runCatching {
+            val cv = ContentValues().apply {
+                put(MediaStore.MediaColumns.DISPLAY_NAME, name); put(MediaStore.MediaColumns.MIME_TYPE, "application/x-subrip")
+                put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/浮光掠影")
+            }
+            val uri = app.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, cv)!!
+            app.contentResolver.openOutputStream(uri)!!.use { it.write(CaptionTrack.srt(cues).toByteArray()) }
+        }
     }
 
     private fun wifi(): Boolean {

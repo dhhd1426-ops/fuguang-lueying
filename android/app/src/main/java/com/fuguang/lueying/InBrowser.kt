@@ -68,6 +68,7 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import java.io.ByteArrayInputStream
 
 /**
@@ -138,12 +139,33 @@ fun InBrowserLayer() {
     var trOpen by remember { mutableStateOf(false) }
     // 同声翻译：先要麦克风权限；听网页的声音还要系统的「开始录制」
     val projLauncher = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()) { r ->
-        if (r.resultCode == Activity.RESULT_OK && r.data != null) Live.start(ctx.applicationContext, r.resultCode, r.data) else toast = "没点「开始录制」，听不到网页的声音"
+        if (r.resultCode == Activity.RESULT_OK && r.data != null) Live.start(ctx.applicationContext, r.resultCode, r.data) else { Live.stop(null); toast = "没点「开始录制」，听不到网页的声音" }
+    }
+    val bscope = androidx.compose.runtime.rememberCoroutineScope()
+    /** 网页里正在放的视频放到第几秒（没有视频给 null）。 */
+    suspend fun videoTime(): Double? = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+        val w = web ?: return@withContext null
+        kotlinx.coroutines.suspendCancellableCoroutine { cont ->
+            w.evaluateJavascript("(function(){var vs=document.querySelectorAll('video');if(!vs.length)return '';var v=vs[0];vs.forEach(function(x){if(!x.paused)v=x});return String(v.currentTime)})()") { r ->
+                if (cont.isActive) cont.resume(r?.trim('"')?.toDoubleOrNull()) { }
+            }
+        }
+    }
+    fun record() {
+        val mpm = ctx.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as android.media.projection.MediaProjectionManager
+        runCatching { projLauncher.launch(mpm.createScreenCaptureIntent()) }.onFailure { toast = "这台手机不让录 App 的声音" }
     }
     fun go() {
         if (Live.src == "page") {
-            val mpm = ctx.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as android.media.projection.MediaProjectionManager
-            runCatching { projLauncher.launch(mpm.createScreenCaptureIntent()) }.onFailure { toast = "这台手机不让录 App 的声音" }
+            // 先找视频自己的字幕（准、没延迟、不用录）；找不到再录声音认字
+            val page = web?.url ?: target.orEmpty()
+            Live.on = true; Live.mode = ""; Live.orig = ""; Live.trans = ""; Live.status = "在找这个视频的字幕…"
+            bscope.launch {
+                val got = runCatching { CaptionTrack.fetch(ctx.applicationContext, page, Live.to) }.getOrNull()
+                if (!Live.on) return@launch
+                if (got != null) Live.startTrack(page, got.first, got.second) { videoTime() }
+                else { Live.status = "这个视频没有字幕，改成听声音认字"; record() }
+            }
         } else Live.start(ctx.applicationContext)
     }
     val micLauncher = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) { ok ->
@@ -362,7 +384,21 @@ fun InBrowserLayer() {
             .graphicsLayer { alpha = ta; translationY = (1f - ta) * 10.dp.toPx() }.background(Color(0xFF3A404C), RoundedCornerShape(12.dp)).padding(horizontal = 14.dp, vertical = 9.dp), maxLines = 1)
 
         // 悬浮字幕（全屏视频时画在视频上面，见下面）
-        if (full == null) LiveCaptionOverlay(64.dp + androidx.compose.foundation.layout.WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding())
+        if (full == null) LiveCaptionOverlay(
+            64.dp + androidx.compose.foundation.layout.WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding(),
+            onAsk = {
+                // 「问她」：把最近几分钟说了什么交给她
+                bscope.launch {
+                    val t = Live.transcript(videoTime())
+                    val text = "帮我看看这段讲了什么" + (title.takeIf { it.isNotBlank() }?.let { "（《$it》）" } ?: "") + "：\n" + t.take(4000)
+                    Live.stop(ctx.applicationContext); InBrowser.close(); InBrowser.ask?.invoke(text)
+                }
+            },
+            onMic = {
+                // 录不到网页的声音：换成麦克风听（外放的声音也能听到）
+                Live.stop(ctx.applicationContext); Live.src = "mic"; Live.save(); Live.start(ctx.applicationContext)
+            },
+        )
         TranslateSheet(trOpen, { trOpen = false }) {
             trOpen = false
             if (androidx.core.content.ContextCompat.checkSelfPermission(ctx, android.Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED) go()
@@ -375,7 +411,7 @@ fun InBrowserLayer() {
         // 视频全屏
         full?.let { v ->
             AndroidView(factory = { c -> FrameLayout(c).apply { setBackgroundColor(android.graphics.Color.BLACK); (v.parent as? ViewGroup)?.removeView(v); addView(v, FrameLayout.LayoutParams(-1, -1)) } }, modifier = Modifier.fillMaxSize())
-            LiveCaptionOverlay(24.dp)
+            LiveCaptionOverlay(24.dp, onAsk = {}, onMic = {})
         }
     }
 }

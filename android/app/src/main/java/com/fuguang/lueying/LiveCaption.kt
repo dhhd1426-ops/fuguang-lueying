@@ -63,6 +63,17 @@ object Live {
     var status by mutableStateOf("")
     var prep by mutableFloatStateOf(-1f)        // 下载模型进度：-1 不在下
     var error by mutableStateOf("")
+    /** 声音大小 0–1（录声音认字时，字幕旁边一个小音量条；一直是 0 就是录不到）。 */
+    var level by mutableFloatStateOf(0f)
+    var silent by mutableStateOf(false)
+    /** 用的哪条路：track 视频自己的字幕 · asr 录声音认字。 */
+    var mode by mutableStateOf("")
+    /** 视频自己的字幕（track 模式）和它属于哪一页（下载时一起存双语字幕）。 */
+    var cues: List<CaptionTrack.Cue> = emptyList()
+    var cuesPage = ""
+    private var trackJob: Job? = null
+    /** 认出来的话（asr 模式），「问她」时交给她。 */
+    private val log = ArrayDeque<Pair<String, String>>()
     var store: AssistantStore? = null
     private var prefs: Prefs? = null
     internal val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -76,8 +87,52 @@ object Live {
     }
     fun save() { prefs?.putString("live", listOf(src, to, if (showO) "1" else "0", if (band) "1" else "0", "$fz").joinToString("|")) }
 
+    /**
+     * 视频自己的字幕：按 video.currentTime 显示，后台提前一批批翻好。time() 回到当前播放秒数（拿不到给 null）。
+     */
+    fun startTrack(page: String, list: List<CaptionTrack.Cue>, native: Boolean, time: suspend () -> Double?) {
+        error = ""; orig = ""; trans = ""; folded = false; on = true; mode = "track"; silent = false
+        cues = list; cuesPage = page
+        if (native) list.forEach { it.trans = it.text }
+        status = "用的是视频自带的字幕，放视频就开始…"
+        trackJob?.cancel()
+        trackJob = scope.launch {
+            // 翻译：从当前播放的位置往后，一次 20 句
+            launch {
+                if (native) return@launch
+                while (isActive && on) {
+                    val now = time() ?: 0.0
+                    val from = list.indexOfFirst { it.end >= now && it.trans.isEmpty() }.takeIf { it >= 0 } ?: list.indexOfFirst { it.trans.isEmpty() }
+                    if (from < 0) break
+                    val batch = list.subList(from, minOf(list.size, from + 20))
+                    val before = list.subList(maxOf(0, from - 3), from).joinToString(" ") { it.text }
+                    CaptionTrack.translate(batch, to, before)
+                    if (batch.all { it.trans.isEmpty() }) delay(3000)   // 没翻出来：歇一下再试
+                }
+            }
+            // 跟着播放换句
+            var shown: CaptionTrack.Cue? = null
+            while (isActive && on) {
+                val now = withContext(Dispatchers.Main) { time() }
+                val cur = now?.let { t -> list.lastOrNull { it.start <= t + .15 && t < it.end + .6 } }
+                withContext(Dispatchers.Main) {
+                    if (cur !== shown) { shown = cur; if (cur != null) { seq++; orig = cur.text; trans = cur.trans } else if (orig.isNotEmpty()) { seq++; orig = ""; trans = "" } }
+                    else if (cur != null && trans != cur.trans) trans = cur.trans
+                    if (cur == null && orig.isEmpty()) status = if (now == null) "用的是视频自带的字幕，放视频就开始…" else "（这一段没人说话）"
+                }
+                delay(200)
+            }
+        }
+    }
+
+    /** 「问她」：最近几分钟说了什么（原文 + 译文），交给聊天。 */
+    fun transcript(now: Double?): String = if (mode == "track") {
+        val t = now ?: Double.MAX_VALUE
+        cues.filter { it.start <= t && it.start >= t - 300 }.joinToString("\n") { if (it.trans.isNotEmpty() && it.trans != it.text) "${it.text}（${it.trans}）" else it.text }
+    } else log.joinToString("\n") { (o, t) -> if (t.isNotEmpty() && t != o) "$o（$t）" else o }
+
     fun start(app: Context, resultCode: Int = 0, data: Intent? = null) {
-        error = ""; orig = ""; trans = ""; folded = false; on = true; ctx.clear()
+        error = ""; orig = ""; trans = ""; folded = false; on = true; ctx.clear(); mode = "asr"; silent = false; level = 0f; log.clear()
         status = if (src == "page") "放视频就开始…" else "对着手机说话…"
         val i = Intent(app, LiveService::class.java).putExtra("src", src).putExtra("code", resultCode)
         if (data != null) i.putExtra("data", data)
@@ -85,7 +140,7 @@ object Live {
         if (transJob?.isActive != true) transJob = scope.launch { for (s in queue) translate(s) }
     }
 
-    fun stop(app: Context?) { on = false; app?.let { runCatching { it.stopService(Intent(it, LiveService::class.java)) } }; orig = ""; trans = ""; status = "" }
+    fun stop(app: Context?) { on = false; trackJob?.cancel(); mode = ""; app?.let { runCatching { it.stopService(Intent(it, LiveService::class.java)) } }; orig = ""; trans = ""; status = "" }
     fun fail(msg: String) { error = msg; status = msg }
 
     /** 认出一句完整的话：先换上原文，翻译排队。 */
@@ -114,6 +169,7 @@ object Live {
             .trim().trim('"', '“', '”').lineSequence().firstOrNull { it.isNotBlank() }.orEmpty()
         if (out.isEmpty()) return
         ctx.addLast(s to out); while (ctx.size > 4) ctx.removeFirst()
+        log.addLast(s to out); while (log.size > 60) log.removeFirst()
         // 还是这一句：一个字一个字写出来；已经换句了就不追了
         if (orig != s || !on) return
         withContext(Dispatchers.Main) {
@@ -246,7 +302,8 @@ class LiveService : Service() {
                 Live.status = if (page) "放视频就开始…" else "对着手机说话…"
                 val r = AsrModel.recognizer(this@LiveService)
                 val stream = r.createStream()
-                val rate = 16000
+                // 录网页的声音用 48k（有的手机按 16k 录出来全是静音），sherpa-onnx 自己重采样到 16k
+                val rate = if (page) 48000 else 16000
                 val size = maxOf(AudioRecord.getMinBufferSize(rate, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT), rate / 5 * 2)
                 val ar = if (page) {
                     val mpm = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
@@ -264,10 +321,17 @@ class LiveService : Service() {
                 val buf = ShortArray(rate / 10)
                 val f = FloatArray(buf.size)
                 var lastPartial = ""
+                var quietSince = System.currentTimeMillis()
                 while (isActive && Live.on) {
                     val n = ar.read(buf, 0, buf.size)
                     if (n <= 0) continue
-                    for (i in 0 until n) f[i] = buf[i] / 32768f
+                    var sum = 0.0
+                    for (i in 0 until n) { f[i] = buf[i] / 32768f; sum += f[i] * f[i] }
+                    val rms = kotlin.math.sqrt(sum / n).toFloat()
+                    Live.level = (rms * 8).coerceIn(0f, 1f)
+                    // 10 秒一点声音都没有：多半是这台手机录不到网页的声音
+                    if (rms > .003f) { quietSince = System.currentTimeMillis(); if (Live.silent) Live.silent = false }
+                    else if (System.currentTimeMillis() - quietSince > 10_000 && !Live.silent) { Live.silent = true; if (Live.orig.isEmpty()) Live.status = if (page) "录不到这个网页的声音" else "听不到声音，靠近一点说" }
                     stream.acceptWaveform(if (n == f.size) f else f.copyOf(n), rate)
                     while (r.isReady(stream)) r.decode(stream)
                     val text = r.getResult(stream).text.trim()

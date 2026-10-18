@@ -76,7 +76,7 @@ private fun SubText(text: String, size: TextUnit, weight: FontWeight, color: Col
  * 点一下：上面浮出一排小钮，3 秒后收起；按住上下拖换位置；「收起」变成右下角一颗会呼吸的小球。
  */
 @Composable
-fun BoxScope.LiveCaptionOverlay(bottomGap: androidx.compose.ui.unit.Dp) {
+fun BoxScope.LiveCaptionOverlay(bottomGap: androidx.compose.ui.unit.Dp, onAsk: () -> Unit, onMic: () -> Unit) {
     if (!Live.on) return
     val ctx = androidx.compose.ui.platform.LocalContext.current
     var ctl by remember { mutableIntStateOf(0) }       // 每点一次加一，3 秒后收
@@ -115,6 +115,7 @@ fun BoxScope.LiveCaptionOverlay(bottomGap: androidx.compose.ui.unit.Dp) {
                 "字号" to { Live.fz = (Live.fz + 1) % 3; Live.save() },
                 (if (Live.band) "底色 开" else "底色") to { Live.band = !Live.band; Live.save() },
                 "收起" to { Live.folded = true; showCtl = false },
+                "问她" to onAsk,
                 "停" to { Live.stop(ctx.applicationContext) },
             ).forEach { (t, act) ->
                 PressSurface({ act(); ctl++ }, Modifier.height(30.dp), shape = RoundedCornerShape(50), fill = Color.Transparent, pressScale = .92f, label = t) {
@@ -144,6 +145,16 @@ fun BoxScope.LiveCaptionOverlay(bottomGap: androidx.compose.ui.unit.Dp) {
                     }
                 }
             }
+        }
+        // 录声音认字时：一个小音量条，看得出录没录到；录不到给个换麦克风的按钮
+        if (Live.mode == "asr" && Live.prep < 0f && Live.orig.isEmpty()) {
+            val lv by animateFloatAsState(Live.level, tween(120), label = "lv")
+            Box(Modifier.padding(top = 6.dp).width(60.dp).height(3.dp).background(Color.White.copy(alpha = .2f), RoundedCornerShape(2.dp))) {
+                Box(Modifier.fillMaxWidth(lv.coerceAtLeast(.02f)).height(3.dp).background(Warm, RoundedCornerShape(2.dp)))
+            }
+        }
+        if (Live.mode == "asr" && Live.silent && Live.src == "page") PressSurface(onMic, Modifier.padding(top = 8.dp).height(32.dp), shape = RoundedCornerShape(50), fill = Color(0xE6141619), pressScale = .94f, label = "换成麦克风听") {
+            Txt("换成麦克风听（要开外放）", Color.White.copy(alpha = .9f), 12.5.sp, Modifier.padding(horizontal = 14.dp), maxLines = 1)
         }
         if (Live.prep in 0f..0.999f) Box(Modifier.padding(top = 6.dp).width(120.dp).height(3.dp).background(Color.White.copy(alpha = .2f), RoundedCornerShape(2.dp))) {
             Box(Modifier.fillMaxWidth(Live.prep).height(3.dp).background(Warm, RoundedCornerShape(2.dp)))
