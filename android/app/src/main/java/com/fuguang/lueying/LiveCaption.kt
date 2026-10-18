@@ -124,38 +124,65 @@ object Live {
     }
 }
 
-/** 认字模型：中英双语流式小模型（int8）。先从国内镜像下，再试 GitHub。 */
+/**
+ * 认字模型：中英双语流式小模型（int8）。
+ * 先走 jsDelivr（和掠影内容同一条路，国内能连；放在公开的内容仓库 asr-model 分支，encoder 切成三段），再试 hf-mirror、Hugging Face。
+ * encoder 下完核对 SHA-256，不对就删了重下。
+ */
 object AsrModel {
     private const val DIR = "sherpa-onnx-streaming-zipformer-small-bilingual-zh-en-2023-02-16"
     private val FILES = listOf("encoder-epoch-99-avg-1.int8.onnx", "decoder-epoch-99-avg-1.int8.onnx", "joiner-epoch-99-avg-1.int8.onnx", "tokens.txt")
-    private val BASES = listOf(
-        "https://hf-mirror.com/csukuangfj/$DIR/resolve/main/",
-        "https://huggingface.co/csukuangfj/$DIR/resolve/main/",
-        "https://github.com/dhhd1426-ops/fuguang-lueying/releases/download/asr-model-zh-en/",
+    private const val ENCODER_SHA = "db6f51551762e40e549166fe041ea3e45464370b595e9ad23f06478ec3794fbb"
+    private const val GH = "gh/dhhd1426-ops/fuguanglueying@asr-model/"
+    /** 一个地址 + encoder 是不是切成三段。 */
+    private val SOURCES = listOf(
+        "https://fastly.jsdelivr.net/$GH" to true,
+        "https://cdn.jsdelivr.net/$GH" to true,
+        "https://gcore.jsdelivr.net/$GH" to true,
+        "https://hf-mirror.com/csukuangfj/$DIR/resolve/main/" to false,
+        "https://huggingface.co/csukuangfj/$DIR/resolve/main/" to false,
     )
 
     fun dir(ctx: Context) = File(ctx.filesDir, "asr/$DIR")
     fun ready(ctx: Context) = FILES.all { File(dir(ctx), it).let { f -> f.exists() && f.length() > 1000 } }
 
-    /** 下好四个文件；progress 0–1。 */
+    /** 下好四个文件；progress 0–1（按大小算：encoder 占大头）。 */
     suspend fun ensure(ctx: Context, progress: (Float) -> Unit) = withContext(Dispatchers.IO) {
         val d = dir(ctx).apply { mkdirs() }
-        FILES.forEachIndexed { k, name ->
+        val weight = mapOf(FILES[0] to .86f, FILES[1] to .07f, FILES[2] to .065f, FILES[3] to .005f)
+        var base = 0f
+        for (name in FILES) {
+            val w = weight.getValue(name)
             val f = File(d, name)
-            if (f.exists() && f.length() > 1000) return@forEachIndexed
-            var last: Exception? = null
-            for (b in BASES) {
-                try { fetch(b + name, f) { p -> progress((k + p) / FILES.size) }; last = null; break } catch (e: Exception) { last = e; f.delete() }
+            if (f.exists() && f.length() > 1000) { base += w; continue }
+            var ok = false
+            for ((src, parts) in SOURCES) {
+                try {
+                    if (name == FILES[0] && parts) {
+                        val tmp = File(d, "$name.join"); tmp.delete()
+                        for (k in 0..2) { val pf = File(d, "$name.p$k"); fetch("$src$name.part$k", pf) { p -> progress(base + w * (k + p) / 3) }; pf.inputStream().use { i -> java.io.FileOutputStream(tmp, true).use { o -> i.copyTo(o) } }; pf.delete() }
+                        if (!tmp.renameTo(f)) error("存不下")
+                    } else fetch(src + name, f) { p -> progress(base + w * p) }
+                    if (name == FILES[0] && sha256(f) != ENCODER_SHA) { f.delete(); error("下坏了") }
+                    ok = true; break
+                } catch (e: Exception) { f.delete() }
             }
-            last?.let { throw IllegalStateException("认字模型下不下来，检查网络再试") }
+            if (!ok) throw IllegalStateException("认字模型下不下来（试了 ${SOURCES.size} 个地址），点「译」再试一次")
+            base += w
         }
         progress(1f)
+    }
+
+    private fun sha256(f: File): String {
+        val md = java.security.MessageDigest.getInstance("SHA-256")
+        f.inputStream().use { i -> val b = ByteArray(1 shl 16); var n: Int; while (i.read(b).also { n = it } > 0) md.update(b, 0, n) }
+        return md.digest().joinToString("") { "%02x".format(it) }
     }
 
     private fun fetch(url: String, dst: File, p: (Float) -> Unit) {
         var u = url; var hops = 0
         while (true) {
-            val c = (URL(u).openConnection() as HttpURLConnection).apply { connectTimeout = 15_000; readTimeout = 30_000; instanceFollowRedirects = false; setRequestProperty("User-Agent", "fuguang-lueying") }
+            val c = (URL(u).openConnection() as HttpURLConnection).apply { connectTimeout = 12_000; readTimeout = 25_000; instanceFollowRedirects = false; setRequestProperty("User-Agent", "fuguang-lueying") }
             val code = c.responseCode
             if (code in 300..399 && hops++ < 6) { u = URL(URL(u), c.getHeaderField("Location")).toString(); c.disconnect(); continue }
             if (code != 200) { c.disconnect(); error("$code") }
@@ -166,6 +193,7 @@ object AsrModel {
                 while (ins.read(buf).also { n = it } >= 0) { o.write(buf, 0, n); got += n; if (len > 0) p(got.toFloat() / len) }
             } }
             c.disconnect()
+            if (len > 0 && tmp.length() != len) { tmp.delete(); error("没下完") }
             if (!tmp.renameTo(dst)) error("存不下")
             return
         }
