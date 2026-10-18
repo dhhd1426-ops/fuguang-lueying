@@ -54,7 +54,7 @@
     '.fg-toast{position:fixed;left:50%;bottom:calc(24px + env(safe-area-inset-bottom,0px));transform:translate(-50%,16px);opacity:0;background:#3a404c;color:var(--fg-ink);padding:10px 16px;border-radius:12px;font-size:13.5px;z-index:2147483003;transition:transform ' + T(300) + 'ms ' + DECEL + ',opacity ' + T(200) + 'ms;pointer-events:none;max-width:calc(100vw - 48px)}',
     '.fg-toast.on{transform:translate(-50%,0);opacity:1}.fg-toast.out{transform:translate(-50%,8px);opacity:0;transition-timing-function:' + ACCEL + ';transition-duration:' + T(180) + 'ms}',
     /* 看大图：从原位放大 */
-    '.fg-zoom{position:fixed;z-index:2147483002;object-fit:contain;transition:all ' + T(340) + 'ms ' + DECEL + ';border-radius:0;max-width:none}',
+    '.fg-zoom{position:fixed;z-index:2147483002;object-fit:contain;transition:all ' + T(340) + 'ms ' + DECEL + ';border-radius:0;max-width:none;margin:0;padding:0;transform:none!important;filter:none!important;mix-blend-mode:normal!important;opacity:1!important;animation:none!important;box-sizing:border-box}',
     '.fg-zoom.out{transition-duration:' + T(240) + 'ms;transition-timing-function:' + ACCEL + '}',
     /* 页签 */
     '.fg-tabs{display:flex;gap:4px;position:relative;background:rgba(255,255,255,.05);border-radius:14px;padding:4px;overflow-x:auto;scrollbar-width:none}',
@@ -153,18 +153,32 @@
   }
 
   /* ———— 看大图 ———— */
+  /* 透明底的图（SVG、PNG 插画）放大后垫上页面本来的底色，不然深色线条落在黑底上看不见 */
+  function plate(img) {
+    var src = img.currentSrc || img.src || '';
+    if (!/\.svg(\?|$)|^data:image\/svg|\/illust\/|\.png(\?|$)/i.test(src)) return '';
+    for (var n = img; n && n.nodeType === 1; n = n.parentElement) {
+      var c = getComputedStyle(n).backgroundColor;
+      if (c && c !== 'transparent' && !/rgba\(.*,\s*0\)$/.test(c)) return c;
+    }
+    return '#fff';
+  }
   function zoom(img) {
-    var r = img.getBoundingClientRect(), src = img.currentSrc || img.src;
+    if (img.dataset.fgZooming) return; img.dataset.fgZooming = '1';
+    var r = img.getBoundingClientRect(), src = img.currentSrc || img.src, back = plate(img), vis = img.style.visibility;
     var s = scrim(function () { close(); }); s.style.background = 'rgba(0,0,0,.92)';
     var z = el('img', 'fg-zoom'); z.src = src; z.alt = img.alt || '';
-    z.style.cssText = 'left:' + r.left + 'px;top:' + r.top + 'px;width:' + r.width + 'px;height:' + r.height + 'px;border-radius:' + getComputedStyle(img).borderRadius;
-    D.body.appendChild(z); lock(true);
-    requestAnimationFrame(function () { requestAnimationFrame(function () { z.style.left = '0px'; z.style.top = '0px'; z.style.width = '100vw'; z.style.height = '100vh'; z.style.borderRadius = '0'; }); });
+    z.style.cssText = 'left:' + r.left + 'px;top:' + r.top + 'px;width:' + r.width + 'px;height:' + r.height + 'px;border-radius:' + getComputedStyle(img).borderRadius + (back ? ';background:' + back : '');
+    R.appendChild(z); lock(true);
+    img.style.visibility = 'hidden';   // 原图先藏起来，免得和放大的重成两张
+    requestAnimationFrame(function () { requestAnimationFrame(function () { if (done) return; z.style.left = '0px'; z.style.top = '0px'; z.style.width = '100vw'; z.style.height = '100vh'; z.style.borderRadius = '0'; }); });
     z.addEventListener('click', function () { close(); });
     var done = false;
     function close() { if (done) return; done = true; var r2 = img.getBoundingClientRect(); z.classList.add('out');
       z.style.left = r2.left + 'px'; z.style.top = r2.top + 'px'; z.style.width = r2.width + 'px'; z.style.height = r2.height + 'px';
-      leave(s, 200); setTimeout(function () { z.remove(); }, T(260)); stack.splice(stack.indexOf(close), 1); lock(stack.length > 0); }
+      leave(s, 200);
+      setTimeout(function () { img.style.visibility = vis; delete img.dataset.fgZooming; z.remove(); }, T(260));
+      stack.splice(stack.indexOf(close), 1); lock(stack.length > 0); }
     stack.push(close);
   }
 
@@ -249,7 +263,7 @@
       if (/^https?:/i.test(a.href) && a.host !== location.host) { e.preventDefault(); open(a.href); }
       return;
     }
-    if (t.tagName === 'IMG' && !t.hasAttribute('data-no-zoom') && !t.closest('a,button,[data-sheet],[data-open],.fg-card') && t.naturalWidth > 0) { zoom(t); }
+    if (t.tagName === 'IMG' && !t.classList.contains('fg-zoom') && !t.closest('.fg-zoom,.fg-scrim') && !t.hasAttribute('data-no-zoom') && !t.closest('a,button,[data-sheet],[data-open],.fg-card') && t.naturalWidth > 0) { zoom(t); }
   });
   D.addEventListener('keydown', function (e) { if (e.key === 'Escape' && stack.length) { e.preventDefault(); stack[stack.length - 1](); } });
 
