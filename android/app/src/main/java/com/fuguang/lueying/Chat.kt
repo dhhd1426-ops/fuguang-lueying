@@ -643,7 +643,7 @@ private fun Conversation(
                         ) { UserBubble(m.text, compact, Modifier.longPressMsg(i, pressed == i, onLong).flightBubble(flight, i == flight.idx, 18.dp)) }
                     } else {
                         ThinkRow(m.think, m.steps, live = false) { onThink(i) }
-                        Box(Modifier.fillMaxWidth().longPressMsg(i, pressed == i, onLong)) { Reply(m.text, compact, fadeTail = false) }
+                        Box(Modifier.fillMaxWidth().longPressMsg(i, pressed == i, onLong)) { Reply(remember(m.text) { ToolText.clean(m.text) }, compact, fadeTail = false) }
                         NoteImageRow(m.imgs, onImage)
                         WorkCards(m.works, onWork)
                     }

@@ -374,7 +374,7 @@ object ChatApi {
         val echo = p.id == "deepseek" && tools != null && level != 0
         // 做事中途收到新消息时，那一段回复可能没有正文：空的不带，免得供应商报错
         history.filter { !(it.role == "assistant" && it.text.isBlank()) }.forEach {
-            val m = JSONObject().put("role", it.role).put("content", it.text)
+            val m = JSONObject().put("role", it.role).put("content", if (it.role == "assistant") ToolText.clean(it.text) else it.text)
             if (echo && it.role == "assistant") m.put("reasoning_content", it.think)
             msgs.put(m)
         }
@@ -493,6 +493,8 @@ object ChatApi {
         // Anthropic：按序号收集每一块（思考、正文、工具调用），用工具时要原样发回
         val blocks = sortedMapOf<Int, JSONObject>()
         val partial = mutableMapOf<Int, StringBuilder>()
+        // DeepSeek 把工具调用写进正文时（DSML 标记）：不显示，抠出来照样去做
+        val inline = ToolText()
         try {
             conn.requestMethod = "POST"
             conn.connectTimeout = 15_000
@@ -597,8 +599,8 @@ object ChatApi {
                         if (!d.isNull("reasoning_content")) d.optString("reasoning_content").takeIf { it.isNotEmpty() }?.let {
                             reasoning.append(it); withContext(Dispatchers.Main) { onThink(it) }
                         }
-                        if (!d.isNull("content")) d.optString("content").takeIf { it.isNotEmpty() }?.let {
-                            text.append(it); withContext(Dispatchers.Main) { onText(it) }
+                        if (!d.isNull("content")) d.optString("content").takeIf { it.isNotEmpty() }?.let { s ->
+                            inline.feed(s).takeIf { it.isNotEmpty() }?.let { withContext(Dispatchers.Main) { onText(it) } }
                         }
                         d.optJSONArray("tool_calls")?.let { arr ->
                             for (k in 0 until arr.length()) {
@@ -612,6 +614,15 @@ object ChatApi {
                             }
                         }
                     }
+                }
+            }
+            if (!anthropic) {
+                val (rest, all, found) = inline.finish()
+                if (rest.isNotEmpty()) withContext(Dispatchers.Main) { onText(rest) }
+                text.append(all)
+                // 正规的 tool_calls 没有、正文里却写了调用：照着做
+                if (tools != null && calls.isEmpty()) found.forEachIndexed { k, f ->
+                    calls[k] = Call("inline_$k").also { it.name.append(f.name); it.args.append(f.args.toString()) }
                 }
             }
             // 整理成要发回去的内容块
