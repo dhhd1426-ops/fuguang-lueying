@@ -55,6 +55,8 @@ internal data class VidState(val t: Double, val d: Double, val p: Boolean, val r
 /** 播放器上的手势和按钮要做的事；网页里的视频（VideoCtl.Web）和 App 自己放的（DlPlay）各做一份。 */
 internal interface VidCtl {
     fun toggle(); fun seek(t: Double); fun seekBy(d: Double); fun rate(r: Double); fun hold(on: Boolean)
+    /** 拖动中途：画面跟着手指走，跳到最近的关键帧就行（快）；松手时再用 seek 落准。 */
+    fun scrub(t: Double) = seek(t)
 }
 
 /** 通过 JS 摸到全屏里那个 <video>：先找全屏元素里的，找不到就挑网页里最大的。 */
@@ -73,6 +75,7 @@ internal object VideoCtl {
     class Web(private val web: WebView?) : VidCtl {
         override fun toggle() = VideoCtl.run(web, TOGGLE)
         override fun seek(t: Double) = VideoCtl.run(web, "v.currentTime=$t")
+        override fun scrub(t: Double) = VideoCtl.run(web, "if(v.fastSeek)v.fastSeek($t);else v.currentTime=$t")
         override fun seekBy(d: Double) = VideoCtl.run(web, "v.currentTime=Math.max(0,Math.min(v.duration||1e9,v.currentTime+($d)))")
         override fun rate(r: Double) = VideoCtl.run(web, "v.playbackRate=$r")
         override fun hold(on: Boolean) = VideoCtl.run(web, if (on) "window.__fgr=v.playbackRate;v.playbackRate=2;if(v.paused)v.play()" else "v.playbackRate=window.__fgr||1")
@@ -106,6 +109,9 @@ internal class PlayerState {
     fun setRate(r: Double) { state?.let { sync(it.copy(t = nowPlain(), r = r)) } }
     fun setTime(t: Double) { state?.let { sync(it.copy(t = t)) } }
     fun ripple(side: Int) { ripSide = side; ripKey++ }
+    private var lastScrub = 0L
+    /** 拖动时每 120ms 让画面跟一次，不每一帧都去要。 */
+    fun scrub(ctl: VidCtl, t: Double) { val n = SystemClock.uptimeMillis(); if (n - lastScrub >= 120) { lastScrub = n; ctl.scrub(t) } }
     fun flashIcon(paused: Boolean) { flash = paused; flashKey++ }
 
     fun nowPlain(): Double {
@@ -165,6 +171,7 @@ internal fun VideoGesture(p: PlayerState, ctl: VidCtl, haptic: HapticFeedback, s
                         val c = awaitPointerEvent().changes.first(); c.consume()
                         if (!c.pressed) break
                         p.preview = (t0 + (c.position.x - start.x) / w * 90).coerceIn(0.0, dur)
+                        p.preview?.let { p.scrub(ctl, it) }
                     }
                     p.preview?.let { ctl.seek(it); p.setTime(it) }
                     p.preview = null; p.shown = true; p.poke++
@@ -196,7 +203,7 @@ internal fun Modifier.seekDrag(p: PlayerState, ctl: VidCtl, dur: Double) = point
         if (dur <= 0) return@awaitEachGesture
         fun at(x: Float) = (x / size.width).coerceIn(0f, 1f) * dur
         p.dragging = true; p.menu = false; p.seekFrom = p.nowPlain(); p.preview = at(d.position.x)
-        while (true) { val c = awaitPointerEvent().changes.first(); c.consume(); if (!c.pressed) break; p.preview = at(c.position.x) }
+        while (true) { val c = awaitPointerEvent().changes.first(); c.consume(); if (!c.pressed) break; p.preview = at(c.position.x); p.scrub(ctl, at(c.position.x)) }
         p.preview?.let { ctl.seek(it); p.setTime(it) }
         p.preview = null; p.dragging = false; p.poke++
     }

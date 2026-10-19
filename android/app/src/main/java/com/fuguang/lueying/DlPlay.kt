@@ -55,7 +55,9 @@ import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.SeekParameters
 import androidx.media3.exoplayer.hls.HlsMediaSource
 import androidx.media3.exoplayer.source.MediaSource
 import androidx.media3.exoplayer.source.MergingMediaSource
@@ -77,6 +79,7 @@ object DlPlay {
     var id by mutableStateOf<String?>(null); private set
     var full by mutableStateOf(false)
     var loading by mutableStateOf(false); private set
+    var buffering by mutableStateOf(false); private set
     var error by mutableStateOf<String?>(null); private set
     var player by mutableStateOf<ExoPlayer?>(null); private set
     private var job: Job? = null
@@ -87,10 +90,15 @@ object DlPlay {
     fun open(ctx: Context, d: Dl) {
         close()
         id = d.id; loading = true
-        val p = ExoPlayer.Builder(ctx.applicationContext).build()
+        // 起播和拖完后不用攒满 2.5 / 5 秒才开始：攒够 1 秒就放（网上读时跟手得多）
+        val lc = DefaultLoadControl.Builder().setBufferDurationsMs(15_000, 50_000, 1_000, 1_500).build()
+        val p = ExoPlayer.Builder(ctx.applicationContext).setLoadControl(lc).build()
         p.addListener(object : Player.Listener {
             override fun onPlayerError(e: PlaybackException) { error = "放不了：网站不让直接读，等下好再看"; loading = false }
-            override fun onPlaybackStateChanged(s: Int) { if (s == Player.STATE_READY) loading = false }
+            override fun onPlaybackStateChanged(s: Int) {
+                buffering = s == Player.STATE_BUFFERING
+                if (s == Player.STATE_READY || s == Player.STATE_ENDED) loading = false
+            }
         })
         player = p
         job = scope.launch {
@@ -104,7 +112,7 @@ object DlPlay {
     fun close() {
         job?.cancel(); job = null
         player?.release(); player = null
-        id = null; full = false; loading = false; error = null
+        id = null; full = false; loading = false; buffering = false; error = null
     }
 
     private suspend fun source(ctx: Context, d: Dl): MediaSource? {
@@ -135,7 +143,9 @@ object DlPlay {
     internal class Ctl(private val p: ExoPlayer) : VidCtl {
         private var keep = 1f
         override fun toggle() { p.playWhenReady = !p.playWhenReady }
-        override fun seek(t: Double) = p.seekTo((t * 1000).toLong())
+        override fun seek(t: Double) { p.setSeekParameters(SeekParameters.EXACT); p.seekTo((t * 1000).toLong()) }
+        // 拖动中途跳最近的关键帧：网上读也快，画面跟得上手指
+        override fun scrub(t: Double) { p.setSeekParameters(SeekParameters.CLOSEST_SYNC); p.seekTo((t * 1000).toLong()) }
         override fun seekBy(d: Double) = p.seekTo((p.currentPosition + (d * 1000).toLong()).coerceAtLeast(0))
         override fun rate(r: Double) = p.setPlaybackSpeed(r.toFloat())
         override fun hold(on: Boolean) { if (on) { keep = p.playbackParameters.speed; p.setPlaybackSpeed(2f); p.playWhenReady = true } else p.setPlaybackSpeed(keep) }
@@ -185,9 +195,19 @@ internal fun DlFull(d: Dl?) {
 
 @Composable
 private fun PlayerNote() {
-    val msg = DlPlay.error ?: if (DlPlay.loading) "正在读取…" else null
-    if (msg != null) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Txt(msg, Page.ink, 12.5.sp, Modifier.background(Color(0xB31A1D23), RoundedCornerShape(13.dp)).padding(horizontal = 13.dp, vertical = 8.dp), maxLines = 2)
+    DlPlay.error?.let { msg ->
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Txt(msg, Page.ink, 12.5.sp, Modifier.background(Color(0xB31A1D23), RoundedCornerShape(13.dp)).padding(horizontal = 13.dp, vertical = 8.dp), maxLines = 2)
+        }
+        return
+    }
+    // 在读：等 300ms 还没好才露出一个小转圈（一闪而过的不打扰），不再写字挡在画面中间
+    val wait = DlPlay.loading || DlPlay.buffering
+    var show by remember { mutableStateOf(false) }
+    LaunchedEffect(wait) { if (wait) { delay(300); show = true } else show = false }
+    val a by animateFloatAsState(if (show && wait) 1f else 0f, tween(180), label = "wait")
+    if (a > 0f) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Box(Modifier.size(44.dp).graphicsLayer { alpha = a }.background(Color(0x8C1A1D23), CircleShape), contentAlignment = Alignment.Center) { LoadRing(FpWarm, 22.dp) }
     }
 }
 
