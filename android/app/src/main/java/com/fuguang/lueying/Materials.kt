@@ -64,7 +64,10 @@ object Materials {
 
     private suspend fun open(url: String): ToolOut {
         if (!url.startsWith("http")) return ToolOut("网址不对：要 http 开头的完整网址。")
-        Douyin.link(url)?.let { l -> runCatching { Douyin.parse(l) }.getOrNull()?.let { return douyin(url, it) } }
+        VideoStore.offer(url)?.let { c ->
+            VideoStore.ready(c)
+            c.item?.let { i -> synchronized(said) { said[url] = "解析了抖音「${i.title.take(16)}」" }; return VideoParse.result(c, i) }
+        }
         val g = PageGrab.grab(url)
         val host = runCatching { URL(g.url).host }.getOrDefault("")
         val picked = pick(g.raw, host)
@@ -83,13 +86,6 @@ object Materials {
             JSONObject().put("title", g.title).put("url", g.url).put("text", g.text.take(5000)).put("materials", arr)
                 .put("count", picked.groupingBy { it.kind }.eachCount().entries.joinToString("、") { "${it.key} ${it.value}" }).toString(),
         )
-    }
-
-    /** 抖音链接被当成网页打开时：照样解析（见 [VideoParse]），别只拿到标题。 */
-    private fun douyin(url: String, i: Douyin.Item): ToolOut {
-        ClipLink.offer(url)
-        synchronized(said) { said[url] = "解析了抖音「${i.title.take(16)}」" }
-        return VideoParse.result(i)
     }
 
     class Mat(val url: String, val kind: String, val alt: String, val w: Int, val h: Int, val near: String)

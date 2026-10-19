@@ -40,6 +40,7 @@ class MainActivity : ComponentActivity() {
         YtDlp.init(this, prefs)
         if (intent?.getStringExtra("open") == "downloads") Downloads.open = true
         Skills.init(this, prefs)
+        VideoStore.init(this, prefs)
         ClipLink.init(prefs)
         val controller = WindowCompat.getInsetsController(window, window.decorView)
         controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
