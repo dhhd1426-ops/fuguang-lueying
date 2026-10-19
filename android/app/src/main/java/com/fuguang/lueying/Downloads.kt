@@ -195,11 +195,6 @@ object Downloads {
                     withContext(Dispatchers.Main) { save() }
                     return@launch
                 }
-                val got: File = when (d.media.kind) {
-                    "hls" -> hls(d, w)
-                    "dash" -> dash(d, w)
-                    else -> file(d, d.media.url, File(w, "a.bin"), share = 1f, base = 0f)
-                }
                 // 磁力 / 种子：只下选中的文件，下完存好（视频进相册，别的进「下载」文件夹）
                 if (d.media.kind == "magnet") {
                     val files = Torrent.download(d, w) { st ->
@@ -215,6 +210,11 @@ object Downloads {
                     runCatching { w.deleteRecursively() }; d.state = 3
                     withContext(Dispatchers.Main) { save() }
                     return@launch
+                }
+                val got: File = when (d.media.kind) {
+                    "hls" -> hls(d, w)
+                    "dash" -> dash(d, w)
+                    else -> file(d, d.media.url, File(w, "a.bin"), share = 1f, base = 0f)
                 }
                 // 不是视频的文件（安装包、压缩包、PDF……）：原样放进「下载」文件夹
                 if (d.media.kind == "file" && !isVideo(d.media)) {
