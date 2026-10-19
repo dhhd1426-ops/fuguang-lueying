@@ -12,7 +12,11 @@ import org.libtorrent4j.SettingsPack
 import org.libtorrent4j.TorrentHandle
 import org.libtorrent4j.TorrentInfo
 import org.libtorrent4j.TorrentStatus
-import org.libtorrent4j.swig.torrent_flags_t
+import org.libtorrent4j.TorrentFlags
+import org.libtorrent4j.swig.add_torrent_params
+import org.libtorrent4j.swig.byte_vector
+import org.libtorrent4j.swig.error_code
+import org.libtorrent4j.swig.libtorrent
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
@@ -61,6 +65,9 @@ object Torrent {
                 .uploadRateLimit(256 * 1024)          // 下的时候也会传给别人（BT 就是这样），封个顶，不占你的上行
                 .activeDownloads(4).connectionsLimit(200)
             sp.setEnableDht(true)
+            // 所有 Tracker 一起问（默认只问第一个能用的），找人快很多
+            sp.setBoolean(org.libtorrent4j.swig.settings_pack.bool_types.announce_to_all_trackers.swigValue(), true)
+            sp.setBoolean(org.libtorrent4j.swig.settings_pack.bool_types.announce_to_all_tiers.swigValue(), true)
             s.start(SessionParams(sp))
             sm = s
         }
@@ -127,15 +134,17 @@ object Torrent {
         val pr = Array(ti.numFiles()) { if (it in sel) Priority.DEFAULT else Priority.IGNORE }
         val dir = File(w, "data").apply { mkdirs() }
         val s = session()
-        s.download(ti, dir, null, pr, null, torrent_flags_t())
-        var th: TorrentHandle? = null
-        for (k in 0 until 100) { th = s.find(ti.infoHash())?.takeIf { it.isValid }; if (th != null) break; delay(100) }
-        val h = th ?: error("没加进下载里")
+        val h = add(s, ti, d.media.url, dir, pr)
         handles[d.id] = h; infos[d.id] = ti; dirs[d.id] = dir
         try {
+            var kick = 0L
             while (true) {
                 val st = h.status()
                 report(st)
+                // 一直没连上人：每 20 秒再问一遍 Tracker 和 DHT
+                if (st.numPeers() == 0 && System.currentTimeMillis() - kick > 20_000) {
+                    kick = System.currentTimeMillis(); runCatching { h.forceReannounce(); h.forceDHTAnnounce() }
+                }
                 if (st.totalWanted() > 0 && st.totalWantedDone() >= st.totalWanted()) break
                 delay(1000)
             }
@@ -152,6 +161,26 @@ object Torrent {
         sel.sorted().map { File(dir, fs.filePath(it)) to fs.fileName(it) }.filter { it.first.exists() }
     }
 
+    /**
+     * 加进会话：磁力链接本身的 Tracker + 补的公开 Tracker + DHT 都带上（以前只用拿到的种子信息加，Tracker 丢了，常常找不到人）；
+     * 不排队、不暂停，加进去就开始。
+     */
+    private fun add(s: SessionManager, ti: TorrentInfo, key: String, dir: File, pr: Array<Priority>): TorrentHandle {
+        val ec = error_code()
+        val p = (if (isMagnet(key)) libtorrent.parse_magnet_uri(key, ec).takeIf { ec.value() == 0 } else null) ?: add_torrent_params()
+        val tv = p.getTrackers()
+        TRACKERS.forEach { if (it !in tv) tv.add(it) }
+        p.setTrackers(tv)
+        p.set_ti(ti.swig())
+        p.setSave_path(dir.absolutePath)
+        p.set_file_priorities(byte_vector().apply { pr.forEach { add(it.swig()) } })
+        p.setFlags(p.getFlags().and_(TorrentFlags.PAUSED.inv()).and_(TorrentFlags.AUTO_MANAGED.inv()))
+        ec.clear()
+        val th = s.swig().add_torrent(p, ec)
+        if (ec.value() != 0 || th == null || !th.is_valid()) error("没加进下载里：" + ec.message())
+        return TorrentHandle(th).also { runCatching { it.resume(); it.forceReannounce(); it.forceDHTAnnounce() } }
+    }
+
     /** 下完的文件放哪：视频进相册「Movies/浮光掠影」，声音进「Music/浮光掠影」，别的进「Download/浮光掠影」。 */
     fun mime(name: String): String = when (val e = ext(name)) {
         "mp4", "m4v" -> "video/mp4"; "mkv" -> "video/x-matroska"; "webm" -> "video/webm"; "avi" -> "video/x-msvideo"
@@ -165,7 +194,11 @@ object Torrent {
     fun line(st: TorrentStatus): String = when (st.state()) {
         TorrentStatus.State.CHECKING_FILES, TorrentStatus.State.CHECKING_RESUME_DATA -> "核对已下的部分…"
         TorrentStatus.State.DOWNLOADING_METADATA -> "在找种子信息…"
-        else -> if (st.numPeers() == 0) "在找人 · 还没连上" else "${st.numPeers()} 个人在传"
+        else -> when {
+            st.numPeers() > 0 -> "${st.numPeers()} 个人在传"
+            st.listPeers() > 0 -> "找到 ${st.listPeers()} 个人，正在连"
+            else -> "在找人 · 已连上 ${nodes()} 个 DHT 节点"
+        }
     }
 
     /** 边下边看读哪个文件：选中的里面最大的视频。 */
