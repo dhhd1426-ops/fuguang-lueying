@@ -68,6 +68,12 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import kotlinx.coroutines.delay
 import java.io.ByteArrayInputStream
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInWindow
+import org.json.JSONObject
+import org.json.JSONTokener
 
 /**
  * 内置浏览器：聊天里的链接、搜索出处、作品和画板里的外链，都在这里打开，不跳出 App。
@@ -108,7 +114,7 @@ private object BrIcons {
     val down = Ic("M12 4v11M7.5 10.5L12 15l4.5-4.5M5 19h14")
 }
 
-private fun Context.activity(): Activity? { var c: Context? = this; while (c is ContextWrapper) { if (c is Activity) return c; c = c.baseContext }; return null }
+internal fun Context.activity(): Activity? { var c: Context? = this; while (c is ContextWrapper) { if (c is Activity) return c; c = c.baseContext }; return null }
 
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
@@ -135,14 +141,21 @@ fun InBrowserLayer() {
     var fullCb by remember { mutableStateOf<WebChromeClient.CustomViewCallback?>(null) }
     var dlOpen by remember { mutableStateOf(false) }
     var h by remember { mutableIntStateOf(0) }
+    // 全屏：从视频原处长出来（fullFrom），退出时先播完收回的动画（exiting），网站自己退的不再回调（siteHid）
+    var fullFrom by remember { mutableStateOf<Rect?>(null) }
+    var exiting by remember { mutableStateOf(false) }
+    var siteHid by remember { mutableStateOf(false) }
+    var rootPos by remember { mutableStateOf(Offset.Zero) }
 
-    fun exitFull() {
-        fullCb?.onCustomViewHidden(); full = null; fullCb = null
+    fun finishFull() {
+        if (!siteHid) fullCb?.onCustomViewHidden()
+        full = null; fullCb = null; fullFrom = null; exiting = false; siteHid = false
         ctx.activity()?.let { a ->
             a.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
             WindowInsetsControllerCompat(a.window, a.window.decorView).show(WindowInsetsCompat.Type.systemBars())
         }
     }
+    fun exitFull() { if (full != null) exiting = true else finishFull() }
     BackHandler(enabled = target != null) {
         when {
             full != null -> exitFull()
@@ -156,7 +169,7 @@ fun InBrowserLayer() {
     LaunchedEffect(Unit) { AdBlock.refresh() }
 
     Box(
-        Modifier.fillMaxSize().onSizeChanged { h = it.height }
+        Modifier.fillMaxSize().onSizeChanged { h = it.height }.onGloballyPositioned { rootPos = it.positionInWindow() }
             .offset { IntOffset(0, ((1f - t) * h).toInt()) }
             .background(Ground)
             .pointerInput(Unit) { detectTapGestures { } },
@@ -214,16 +227,21 @@ fun InBrowserLayer() {
                                 // 视频全屏：视频脱出来铺满、横过来、收起状态栏
                                 override fun onShowCustomView(view: View?, callback: CustomViewCallback?) {
                                     if (view == null) return
-                                    full = view; fullCb = callback
+                                    fullCb = callback; siteHid = false; exiting = false
+                                    // 先问视频在网页里的位置，从那里长出来；200ms 没回就从中间长
+                                    val w = this@apply
+                                    var placed = false
+                                    val go = { rr: Rect? -> if (!placed) { placed = true; fullFrom = rr; full = view } }
+                                    w.evaluateJavascript(VideoCtl.LAST) { s -> go(lastRect(w, s, rootPos)) }
+                                    w.postDelayed({ go(null) }, 200)
                                     c.activity()?.let { a ->
-                                        a.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
                                         WindowInsetsControllerCompat(a.window, a.window.decorView).apply {
                                             hide(WindowInsetsCompat.Type.systemBars())
                                             systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
                                         }
                                     }
                                 }
-                                override fun onHideCustomView() { exitFull() }
+                                override fun onHideCustomView() { siteHid = true; exitFull() }
                             }
                             webViewClient = object : WebViewClient() {
                                 override fun onPageStarted(view: WebView?, u: String?, favicon: Bitmap?) {
@@ -236,6 +254,7 @@ fun InBrowserLayer() {
                                     canBack = view?.canGoBack() == true; canFwd = view?.canGoForward() == true
                                     if (AdBlock.on(host)) view?.evaluateJavascript(cosmeticJs(), null)
                                     view?.evaluateJavascript(Sniffer.PROBE) { r -> Sniffer.fromPage(r, u.orEmpty()) }
+                                    view?.evaluateJavascript(VideoTouch.JS, null)
                                 }
                                 override fun doUpdateVisitedHistory(view: WebView?, u: String?, reload: Boolean) {
                                     canBack = view?.canGoBack() == true; canFwd = view?.canGoForward() == true
@@ -349,7 +368,7 @@ fun InBrowserLayer() {
 
         // 视频全屏
         full?.let { v ->
-            AndroidView(factory = { c -> FrameLayout(c).apply { setBackgroundColor(android.graphics.Color.BLACK); (v.parent as? ViewGroup)?.removeView(v); addView(v, FrameLayout.LayoutParams(-1, -1)) } }, modifier = Modifier.fillMaxSize())
+            FullPlayer(v, web, title, fullFrom, exiting, onExit = { exitFull() }, onDownload = { exitFull(); dlOpen = true }, onDone = { finishFull() })
         }
     }
 }
@@ -389,3 +408,13 @@ private fun cosmeticJs(): String {
     val css = AdBlock.COSMETIC.replace("\\", "\\\\").replace("`", "\\`").replace("\n", " ")
     return "(function(){if(document.getElementById('fg-ab'))return;var s=document.createElement('style');s.id='fg-ab';s.textContent=`$css`;(document.head||document.documentElement).appendChild(s)})()"
 }
+
+/** 最近点到的视频在网页里的位置（CSS 像素）换成这一层里的像素。 */
+private fun lastRect(w: WebView, s: String?, root: Offset): Rect? = runCatching {
+    val o = JSONObject(JSONTokener(s).nextValue() as String)
+    @Suppress("DEPRECATION") val k = w.scale
+    val loc = IntArray(2).also { w.getLocationInWindow(it) }
+    val l = o.getDouble("l").toFloat() * k + loc[0] - root.x
+    val t = o.getDouble("t").toFloat() * k + loc[1] - root.y
+    Rect(l, t, l + o.getDouble("w").toFloat() * k, t + o.getDouble("h").toFloat() * k)
+}.getOrNull()
