@@ -257,7 +257,7 @@ class ChatState(val history: ConvStore) {
                             if (thinkText.isNotBlank() && !thinkText.endsWith("\n\n")) thinkText += "\n\n"
                             val idx = liveSteps.size
                             liveSteps.add(ToolStep(thinkText.length, n, Trail.liveTitle(n), Trail.detail(n, a), done = false))
-                            var made = n != Works.MAKE
+                            var made = n != Works.MAKE && n != Works.EDIT
                             try {
                             if (n == Memory.REMEMBER || n == Memory.FORGET) Memory.runTool(who, n, a, cur.orEmpty(), convTitle0)
                             else if (n == Recall.TOOL) Recall.run(store0, cur, a.optString("query"))
@@ -265,7 +265,7 @@ class ChatState(val history: ConvStore) {
                             else if (n == Gallery.TOOL) Gallery.run(a)
                             else if (n == Materials.OPEN || n == Materials.LOOK) Materials.run(n, a, Yu.vision(p.id))
                             else if (n == Skills.OPEN || n == Skills.FIND || n == Skills.LEARN) Skills.run(n, a)
-                            else if (n == Works.MAKE || n == Works.READ) Works.run(n, a, who.id) { id -> made = true; if (id !in pendingWorks) pendingWorks.add(id) }
+                            else if (n == Works.MAKE || n == Works.READ || n == Works.EDIT) Works.run(n, a, who.id) { id -> made = true; if (id !in pendingWorks) pendingWorks.add(id) }
                             else if (Mcp.owns(n)) Mcp.run(n, a)
                             else Yu.run(n, a, Yu.vision(p.id)) { refs -> refs.forEach { r -> if (r !in pendingImgs) pendingImgs.add(r) } }
                             } catch (e: kotlinx.coroutines.CancellationException) {
@@ -275,7 +275,7 @@ class ChatState(val history: ConvStore) {
                                 ToolOut("没成功：" + (e.message ?: e.javaClass.simpleName).take(80) + "。可以再试一次，或如实告诉对方没做成。")
                             } finally {
                                 // 没做成的作品如实标出来，不显示「做好了」
-                                val t = if (made) Trail.doneTitle(n, a) else Trail.failTitle(a)
+                                val t = if (made) Trail.doneTitle(n, a) else Trail.failTitle(n, a)
                                 if (idx < liveSteps.size) liveSteps[idx] = liveSteps[idx].copy(title = t, done = true)
                             }
                         },

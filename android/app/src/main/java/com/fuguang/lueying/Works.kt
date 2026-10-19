@@ -22,6 +22,7 @@ data class Work(val id: String, val title: String, val kind: String, val updated
 object Works {
     const val MAKE = "make_work"
     const val READ = "read_work"
+    const val EDIT = WorkEdit.TOOL
 
     private var dir: File? = null
     /** 作品有变（新做或改过）就加一，卡片和打开的页面跟着刷新。 */
@@ -78,7 +79,7 @@ object Works {
                 "kind=doc：文档，把正文写成 Markdown 放进 markdown（# 标题、- 列表、1. 编号、> 引用、| 表格 |，单独一行 ![说明](图片地址) 插图），可以导出成 Word。" +
                 "网上的图片、视频直接写原地址，做好时会存进这台手机，作品里换成本地的。" +
                 Board.GUIDE +
-                "改以前的作品：带上它的 id，整份重写，会替换原来那张卡的内容。",
+                "改以前的作品：小改（改字、换颜色、调间距、换图、加删一小块）用 edit_work 只改那几处；改动超过一半、换了走法，才带上它的 id 整份重写，会替换原来那张卡的内容。",
             JSONObject().put("type", "object").put(
                 "properties",
                 JSONObject()
@@ -108,6 +109,7 @@ object Works {
             JSONObject().put("type", "object").put("properties", JSONObject().put("id", JSONObject().put("type", "string")))
                 .put("required", JSONArray(listOf("id"))),
         ),
+        WorkEdit.spec,
     )
 
     /** 提示词：她手边有这支笔，以及这段聊天里已经做过的作品。 */
@@ -121,7 +123,7 @@ object Works {
             "幻灯片能导出成 PPT，文档能导出成 Word，也都能存成 PDF。$who 想看个东西、要一份 PPT 或文档的时候，可以动手做；做不做、做成什么样，你自己判断。" +
             "做了就不用把代码贴进回复里，说一两句做了什么、怎么玩就好。" +
             "作品卡只有真的用 $MAKE 做、并且收到「做好了」才会出现：要做就先动手，收到结果再说；没收到就别说已经做好、点开看。" +
-            (if (made.isEmpty()) "" else "这段聊天里你已经做过：" + made.joinToString("；") { "《${it.title}》（${it.kindName}，id=${it.id}）" } + "。要改哪件，先用 $READ 看原稿，再带上 id 用 $MAKE 重做。")
+            (if (made.isEmpty()) "" else "这段聊天里你已经做过：" + made.joinToString("；") { "《${it.title}》（${it.kindName}，id=${it.id}）" } + "。要改哪件，先用 $READ 看原稿；小改用 $EDIT 只换那几处，大改才带上 id 用 $MAKE 重做。")
     }
 
     /** 跑工具；做好的作品 id 交给 onMade，好挂到这条回复下面。 */
@@ -130,13 +132,16 @@ object Works {
         if (name == READ) {
             val rid = a.optString("id").trim()
             val o = source(rid) ?: return@withContext ToolOut("没有这件作品。")
-            val body = when (o.optString("kind")) {
-                "board" -> Board.forRead(rid, o)
-                "slides" -> o.optJSONArray("slides")?.toString(1).orEmpty()
-                "doc" -> o.optString("markdown")
-                else -> o.optString("html")
-            }
+            val body = if (o.optString("kind") == "board") Board.forRead(rid, o) else WorkEdit.body(o)
             return@withContext ToolOut("《${o.optString("title")}》（${o.optString("kind")}）原稿：\n" + body.take(60_000))
+        }
+        if (name == EDIT) {
+            val eid = a.optString("id").trim()
+            val o = source(eid) ?: return@withContext ToolOut("没有这件作品。")
+            val r = WorkEdit.apply(o, a)
+            val args = r.args ?: return@withContext ToolOut(r.text)
+            val out = this@Works.run(MAKE, args, pid, onMade)
+            return@withContext ToolOut(r.text + "。" + out.text, out.images)
         }
         val title = a.optString("title").trim().ifEmpty { "未命名" }.take(40)
         val kind = a.optString("kind").let { if (it in setOf("page", "slides", "doc", "board")) it else if (a.has("board")) "board" else "page" }
