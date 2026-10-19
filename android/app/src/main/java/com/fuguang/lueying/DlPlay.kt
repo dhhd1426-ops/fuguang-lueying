@@ -244,6 +244,31 @@ internal fun DlInline(d: Dl) {
     }
 }
 
+/**
+ * 聊天里抖音卡的那一块（见 ClipPlay）：封面原地换成播放画面，控件和下载页卡片里同一套。
+ * surface=false：画面挪到右下角小窗了，这里只留黑底。
+ */
+@Composable
+internal fun DlEmbed(d: Dl, surface: Boolean) {
+    Box(Modifier.fillMaxSize().background(Color.Black)) {
+        val pl = DlPlay.player
+        if (pl != null && surface && !DlPlay.full && DlPlay.fail == null) PlayerSurface(d, pl, mini = true)
+        PlayerNote(d)
+        if (DlPlay.fail != null && !DlPlay.fixing) Box(Modifier.align(Alignment.TopEnd).padding(6.dp)) { Chip("收起", { DlPlay.close() }) { SvgIcon(Ic("M6 6l12 12M18 6L6 18"), Page.ink, 13.dp, stroke = 1.8f) } }
+    }
+}
+
+/** 小窗里的画面：只有画面，切回 App 外就暂停。 */
+@Composable
+internal fun DlBareSurface(pl: ExoPlayer) {
+    val owner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    DisposableEffect(owner, pl) {
+        val o = androidx.lifecycle.LifecycleEventObserver { _, e -> if (e == androidx.lifecycle.Lifecycle.Event.ON_STOP) pl.pause() }
+        owner.lifecycle.addObserver(o); onDispose { owner.lifecycle.removeObserver(o) }
+    }
+    AndroidView(factory = { c -> TextureView(c).also { it.keepScreenOn = true; pl.setVideoTextureView(it) } }, onRelease = { pl.clearVideoTextureView(it) }, modifier = Modifier.fillMaxSize())
+}
+
 /** 全屏：横视频横过来、收起系统栏；返回或 ↙ 回到卡片。 */
 @Composable
 internal fun DlFull(d: Dl?) {

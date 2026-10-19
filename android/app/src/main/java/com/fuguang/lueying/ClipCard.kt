@@ -53,6 +53,14 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.relocation.bringIntoViewRequester
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
+import kotlinx.coroutines.launch
 import androidx.compose.ui.unit.sp
 
 internal val ClipWarm = Color(0xFFE9B48E)
@@ -99,7 +107,7 @@ fun ClipCard(c: Clip) {
                     AnimatedVisibility(c.save == 2, enter = fadeIn(tween(260, 160)) + expandVertically(tween(280, 80, Curves.standard)), exit = fadeOut(tween(120))) {
                         Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                             Txt(if (c.outMime.startsWith("image") && c.pick == 0) "存在 相册 / 浮光掠影 · ${c.item?.images?.size ?: 0} 张" else "存在 相册 / 浮光掠影", Page.muted, 11.5.sp, Modifier.weight(1f), maxLines = 1)
-                            Small("打开") { openClip(ctx, c) }
+                            Small("打开", onLong = { openClip(ctx, c) }) { if (ClipPlay.playable(c) && !c.outMime.startsWith("image")) { ClipPlay.play(ctx, c) } else openClip(ctx, c) }
                             Spacer(Modifier.width(6.dp))
                             Small("发给…") { shareClip(ctx, c) }
                         }
@@ -111,10 +119,25 @@ fun ClipCard(c: Clip) {
     }
 }
 
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 private fun Cover(c: Clip) {
     val i = c.item
-    Box(Modifier.fillMaxWidth().aspectRatio(16 / 10f).background(Color.White.copy(alpha = .04f)), contentAlignment = Alignment.Center) {
+    val ctx = LocalContext.current
+    val mine = ClipPlay.isMine(c)
+    val req = remember { androidx.compose.foundation.relocation.BringIntoViewRequester() }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    // 正在放的是这张：点小窗时把它滑回来；卡片离开（换对话、删掉）就停
+    LaunchedEffect(mine) { if (mine) ClipPlay.bring = { scope.launch { req.bringIntoView() } } }
+    androidx.compose.runtime.DisposableEffect(Unit) { onDispose { if (ClipPlay.isMine(c)) { DlPlay.close(); ClipPlay.mini = false } } }
+    Box(
+        Modifier.fillMaxWidth().aspectRatio(16 / 10f).background(if (mine) Color.Black else Color.White.copy(alpha = .04f))
+            .bringIntoViewRequester(req)
+            .onGloballyPositioned { co -> if (mine) { val b = co.boundsInWindow(); ClipPlay.mini = b.height < co.size.height * .35f } }
+            .then(if (!mine && i != null && ClipPlay.playable(c)) Modifier.clickable(remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, null) { ClipPlay.play(ctx, c) } else Modifier),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (mine) { ClipPlay.playing()?.let { DlEmbed(it, surface = !ClipPlay.mini) }; return@Box }
         val pic = c.cover
         when {
             pic != null -> Image(pic, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
@@ -126,6 +149,9 @@ private fun Cover(c: Clip) {
             Tag("抖音", Modifier.align(Alignment.TopStart))
             val right = if (i.images.isNotEmpty()) "图集 · ${i.images.size} 张" else if (i.seconds > 0) "%d:%02d".format(i.seconds / 60, i.seconds % 60) else null
             right?.let { Tag(it, Modifier.align(Alignment.BottomEnd)) }
+            if (ClipPlay.playable(c)) Box(Modifier.size(52.dp).background(Color(0x80101216), androidx.compose.foundation.shape.CircleShape), contentAlignment = Alignment.Center) {
+                PlayGlyph(false, Modifier.size(20.dp))
+            }
         }
     }
 }
@@ -205,11 +231,16 @@ internal fun SaveButton(c: Clip, onSave: () -> Unit) {
     }
 }
 
+/** 小按钮；onLong：长按（「打开」长按用别的播放器）。 */
 @Composable
-private fun Small(text: String, onClick: () -> Unit) {
-    PressSurface(onClick, Modifier.height(26.dp), shape = RoundedCornerShape(8.dp), fill = Color.White.copy(alpha = .08f), pressedFill = Color.White.copy(alpha = .14f), pressScale = .95f, label = text) {
-        Txt(text, Page.ink, 12.sp, Modifier.padding(horizontal = 10.dp))
-    }
+private fun Small(text: String, onLong: (() -> Unit)? = null, onClick: () -> Unit) {
+    var down by remember { mutableStateOf(false) }
+    val sc by animateFloatAsState(if (down) .95f else 1f, tween(120), label = "small")
+    Box(
+        Modifier.height(26.dp).graphicsLayer { scaleX = sc; scaleY = sc }.clip(RoundedCornerShape(8.dp)).background(Color.White.copy(alpha = if (down) .14f else .08f))
+            .pointerInput(onLong) { detectTapGestures(onPress = { down = true; tryAwaitRelease(); down = false }, onLongPress = onLong?.let { f -> { _ -> f() } }, onTap = { onClick() }) },
+        contentAlignment = Alignment.Center,
+    ) { Txt(text, Page.ink, 12.sp, Modifier.padding(horizontal = 10.dp)) }
 }
 
 fun openClip(ctx: Context, c: Clip) {
