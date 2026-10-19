@@ -59,6 +59,8 @@ android {
     }
 }
 
+val torrentNative: Configuration by configurations.creating
+
 dependencies {
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.activity:activity-compose:1.12.2")
@@ -79,4 +81,22 @@ dependencies {
     implementation("org.libtorrent4j:libtorrent4j:2.1.0-38")
     implementation("org.libtorrent4j:libtorrent4j-android-arm64:2.1.0-38")
     testImplementation("junit:junit:4.13.2")
+    // CI 上的磁力探测（TorrentProbeTest）：电脑上跑同一个 libtorrent，用 Linux 版本机库
+    testImplementation("org.libtorrent4j:libtorrent4j:2.1.0-38")
+    torrentNative("org.libtorrent4j:libtorrent4j-linux:2.1.0-38")
+}
+
+// 单元测试里 libtorrent4j 从 libtorrent4j.jni.path 读本机库：从 Linux 版的 jar 里取出 x86_64 那份
+tasks.withType<Test>().configureEach {
+    val jars = torrentNative
+    val dir = layout.buildDirectory.dir("torrent-native")
+    doFirst {
+        val so = jars.files.flatMap { j -> zipTree(j).matching { include("**/libtorrent4j.so") }.files }
+            .let { all -> all.firstOrNull { "x86_64" in it.path || "amd64" in it.path } ?: all.firstOrNull() }
+        if (so != null) {
+            val dst = dir.get().file("libtorrent4j.so").asFile
+            dst.parentFile.mkdirs(); so.copyTo(dst, true)
+            systemProperty("libtorrent4j.jni.path", dst.absolutePath)
+        }
+    }
 }

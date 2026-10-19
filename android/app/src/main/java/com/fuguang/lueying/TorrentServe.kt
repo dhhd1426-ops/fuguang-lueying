@@ -26,9 +26,10 @@ object TorrentServe {
     /** 这个下载正在下的视频的播放地址；还没在下就 null。 */
     fun url(id: String): String? {
         val f = Torrent.streamFile(id) ?: return null
-        warm(id, f)
-        return "http://127.0.0.1:${port()}/t/$id/$f"
+        return urlFor(id, f)
     }
+
+    fun urlFor(id: String, f: Int): String { warm(id, f); return "http://127.0.0.1:${port()}/t/$id/$f" }
 
     /** 先要开头 4 块、结尾 2 块。 */
     private fun warm(id: String, f: Int) {

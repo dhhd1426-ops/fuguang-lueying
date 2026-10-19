@@ -49,6 +49,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 
 private val Warm = Color(0xFFE9B48E)
 private val Ink2 = Color(0xFF2A211B)
@@ -220,7 +221,16 @@ private fun DlRow(d: Dl, i: Int, onAct: (android.net.Uri, String) -> Unit) {
                 0 -> "排队中"
                 else -> listOf(d.quality, if (d.total > 0) mb(d.done).ifBlank { "0 MB" } + " / " + mb(d.total) else mb(d.done), if (d.speed > 0) DownloadService.speed(d.speed) else "", if (d.media.kind == "magnet") d.note else "").filter { it.isNotBlank() }.joinToString(" · ")
             }
-            Txt(line, if (d.state == 4) Color(0xFFD79A94) else Page.muted.copy(alpha = .7f), 11.5.sp, Modifier.padding(top = 3.dp), maxLines = 2)
+            // 磁力：点状态字展开排查信息（连上几个人、Tracker 哪些能用），每秒刷新
+            var diag by remember { mutableStateOf(false) }
+            val magnet = d.media.kind == "magnet"
+            Txt(line, if (d.state == 4) Color(0xFFD79A94) else Page.muted.copy(alpha = .7f), 11.5.sp,
+                Modifier.padding(top = 3.dp).then(if (magnet) Modifier.pointerInput(Unit) { detectTapGestures { diag = !diag } } else Modifier), maxLines = 2)
+            if (magnet && diag) {
+                var text by remember { mutableStateOf("") }
+                LaunchedEffect(Unit) { while (true) { text = withContext(kotlinx.coroutines.Dispatchers.IO) { Torrent.diag(d.id) }; delay(1000) } }
+                Txt(text, Page.muted.copy(alpha = .8f), 10.5.sp, Modifier.padding(top = 6.dp).background(Color.White.copy(alpha = .04f), RoundedCornerShape(8.dp)).padding(8.dp), lineHeight = 16.sp)
+            }
             if (d.state == 3) Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 val u = Downloads.uri(d)
                 SmallAct("播放", true) { u?.let { onAct(it, "play") } }

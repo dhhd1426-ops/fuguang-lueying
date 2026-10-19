@@ -201,6 +201,30 @@ object Torrent {
         }
     }
 
+    /**
+     * 排查用：这一个下载现在的样子（连上几个人、谁有多少、Tracker 哪些能用、为什么不能用）。
+     * 下载页点那一行的状态字展开；CI 上的磁力探测也用它写报告。
+     */
+    fun diag(id: String): String {
+        val h = handles[id] ?: return "不在下载里（暂停了或者还没开始）"
+        val st = h.status()
+        val s = sm
+        val peers = runCatching { h.peerInfo() }.getOrDefault(emptyList())
+        val tr = runCatching { h.trackers() }.getOrDefault(emptyList())
+        val works = tr.count { e -> e.endpoints().any { runCatching { it.infohashV1().isWorking }.getOrDefault(false) } }
+        val head = listOf(
+            "状态 ${st.state()} · 连上 ${st.numPeers()} 人（种子 ${st.numSeeds()}）· 知道 ${st.listPeers()} 人 · 可去连 ${st.connectCandidates()}",
+            "DHT ${nodes()} 节点 · 外网能连进来：${if (s?.isFirewalled == false) "能" else "不能"} · Tracker 能用 $works/${tr.size}",
+            "下 ${st.downloadPayloadRate() / 1024} KB/s · 收到 ${st.totalPayloadDownload() / 1024} KB · 核对过 ${st.totalWantedDone() / 1024} KB · 丢弃 ${st.totalFailedBytes() / 1024} KB",
+        )
+        val ps = peers.sortedByDescending { it.downSpeed() }.take(8).map {
+            "  · ${it.client().ifBlank { "?" }.take(24)} ${it.connectionType()} 对方有 ${(it.progress() * 100).toInt()}% ↓${it.downSpeed() / 1024} KB/s 收过 ${it.totalDownload() / 1024} KB"
+        }
+        val ts = tr.flatMap { e -> e.endpoints().mapNotNull { ep -> runCatching { ep.infohashV1() }.getOrNull()?.takeIf { it.message().isNotBlank() || it.fails() > 0 }
+            ?.let { "  × ${e.url().substringAfter("://").substringBefore('/')}：${it.message().ifBlank { "失败 ${it.fails()} 次" }}" } } }.distinct().take(6)
+        return (head + ps + ts).joinToString("\n")
+    }
+
     /** 边下边看读哪个文件：选中的里面最大的视频。 */
     fun streamFile(id: String): Int? {
         val ti = infos[id] ?: return null; val h = handles[id] ?: return null
