@@ -39,6 +39,9 @@ object TorrentServe {
         (maxOf(first, last - 1)..last).forEach { p -> if (!h.havePiece(p)) h.setPieceDeadline(p, 600) }
     }
 
+    /** 最近一次出错（排查用，探测报告里写出来）。 */
+    @Volatile var lastError: String = ""
+
     private fun serve(c: Socket) = runCatching {
         c.use { sock ->
             sock.soTimeout = 30_000
@@ -87,7 +90,7 @@ object TorrentServe {
                 out.flush()
             } finally { raf?.close() }
         }
-    }
+    }.onFailure { lastError = it.toString() }
 
     /** 等这一块下到；等的时候给它和后面 [window] 块设期限（越近越急）。下载被拿掉了、等了 3 分钟都没到就放弃。 */
     private fun ready(id: String, piece: Int, window: Int): Boolean {

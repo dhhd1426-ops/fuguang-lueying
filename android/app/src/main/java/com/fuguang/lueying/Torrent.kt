@@ -190,7 +190,7 @@ object Torrent {
         "mp4", "m4v" -> "video/mp4"; "mkv" -> "video/x-matroska"; "webm" -> "video/webm"; "avi" -> "video/x-msvideo"
         "mov" -> "video/quicktime"; "ts", "m2ts" -> "video/mp2t"; "flv" -> "video/x-flv"; "wmv" -> "video/x-ms-wmv"
         "mp3" -> "audio/mpeg"; "m4a", "aac" -> "audio/mp4"; "flac" -> "audio/flac"; "wav" -> "audio/wav"; "ogg" -> "audio/ogg"
-        else -> android.webkit.MimeTypeMap.getSingleton().getMimeTypeFromExtension(e) ?: "application/octet-stream"
+        else -> runCatching { android.webkit.MimeTypeMap.getSingleton().getMimeTypeFromExtension(e) }.getOrNull() ?: "application/octet-stream"
     }
     fun isMedia(name: String) = ext(name) in VIDEO || ext(name) in AUDIO
 

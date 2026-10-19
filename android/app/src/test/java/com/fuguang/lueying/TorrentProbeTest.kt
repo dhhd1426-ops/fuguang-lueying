@@ -75,6 +75,7 @@ class TorrentProbeTest {
                 }.getOrElse { "失败：$it" }
             }
             note("[${sec()}s] 边下边看 $label：$r，用了 ${(System.currentTimeMillis() - s0) / 1000} 秒")
+            if (TorrentServe.lastError.isNotEmpty()) note("  小服务出错：${TorrentServe.lastError}")
         }
         note(Torrent.diag("probe"))
         job.cancel()
