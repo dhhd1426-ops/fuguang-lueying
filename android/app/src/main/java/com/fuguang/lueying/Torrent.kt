@@ -178,7 +178,11 @@ object Torrent {
         ec.clear()
         val th = s.swig().add_torrent(p, ec)
         if (ec.value() != 0 || th == null || !th.is_valid()) error("没加进下载里：" + ec.message())
-        return TorrentHandle(th).also { runCatching { it.resume(); it.forceReannounce(); it.forceDHTAnnounce() } }
+        // 刚拿种子信息时那一份（只上传、拿到就停）可能还没从会话里拿掉，这时拿回来的是它：把这两个标记去掉、重设要哪些文件
+        return TorrentHandle(th).also { runCatching {
+            it.unsetFlags(TorrentFlags.UPLOAD_MODE); it.unsetFlags(TorrentFlags.STOP_WHEN_READY)
+            it.prioritizeFiles(pr); it.resume(); it.forceReannounce(); it.forceDHTAnnounce()
+        } }
     }
 
     /** 下完的文件放哪：视频进相册「Movies/浮光掠影」，声音进「Music/浮光掠影」，别的进「Download/浮光掠影」。 */
