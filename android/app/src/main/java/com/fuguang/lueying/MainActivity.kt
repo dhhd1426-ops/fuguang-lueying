@@ -40,6 +40,7 @@ class MainActivity : ComponentActivity() {
         YtDlp.init(this, prefs)
         if (intent?.getStringExtra("open") == "downloads") Downloads.open = true
         Skills.init(this, prefs)
+        ClipLink.init(prefs)
         val controller = WindowCompat.getInsetsController(window, window.decorView)
         controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
 
@@ -55,6 +56,12 @@ class MainActivity : ComponentActivity() {
                 },
             )
         }
+    }
+
+    // 回到 App、窗口拿到焦点时看一眼剪贴板（安卓 10 起只有这时读得到）
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) ClipLink.check(this)
     }
 
     // 点通知栏「下好了」回到 App：打开下载页

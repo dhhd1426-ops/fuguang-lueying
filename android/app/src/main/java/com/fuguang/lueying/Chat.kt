@@ -436,7 +436,8 @@ fun ChatPage(
     // 内置浏览器里「让她看看这页」：写进输入框
     androidx.compose.runtime.DisposableEffect(chat) {
         InBrowser.ask = { t -> if (chat.busy) chat.draft = t else { chat.draft = t }; chat.focusTick++ }
-        onDispose { InBrowser.ask = null }
+        ClipLink.give = { t -> chat.draft = t; chat.focusTick++ }
+        onDispose { InBrowser.ask = null; ClipLink.give = null }
     }
     androidx.compose.runtime.SideEffect {
         Zen.held = menu || shelf || boards || workOpen != null || thinkOpen || picker || press != null || viewing != null || selectText != null || chat.draft.isNotBlank() || imeOpen
