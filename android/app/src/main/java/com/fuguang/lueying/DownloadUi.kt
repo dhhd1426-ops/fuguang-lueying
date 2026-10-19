@@ -153,7 +153,8 @@ fun DownloadSheet(open: Boolean, title: String, pageUrl: String, onDone: (String
 @Composable
 fun DownloadsLayer() {
     val open = Downloads.open
-    BackHandler(enabled = open) { Downloads.open = false }
+    // 打开时才挂上返回：挂得最晚，排在内置浏览器等别的返回前面（以前浏览器先接走了返回手势）
+    if (open) BackHandler { Downloads.open = false }
     val k by animateFloatAsState(if (open) 1f else 0f, tween(if (open) 340 else 220, easing = if (open) Curves.decel else Curves.accel), label = "dls")
     if (k <= 0f) return
     val ctx = LocalContext.current
