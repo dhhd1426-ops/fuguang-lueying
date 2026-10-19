@@ -112,6 +112,7 @@ private object BrIcons {
     val chat = Ic("M5 5.5h14v10H10l-4 3v-3H5Z")
     val out = Ic("M14 4h6v6M20 4l-9 9M18 14v6H4V6h6")
     val down = Ic("M12 4v11M7.5 10.5L12 15l4.5-4.5M5 19h14")
+    val home = Ic("M4.5 11 12 4.5l7.5 6.5M6.5 9.5V19.5h11V9.5")
 }
 
 internal fun Context.activity(): Activity? { var c: Context? = this; while (c is ContextWrapper) { if (c is Activity) return c; c = c.baseContext }; return null }
@@ -146,6 +147,10 @@ fun InBrowserLayer() {
     var exiting by remember { mutableStateOf(false) }
     var siteHid by remember { mutableStateOf(false) }
     var rootPos by remember { mutableStateOf(Offset.Zero) }
+    // 主页：盖在网页上，网页的前后记录不动；homePlay 每次回到主页加一，让 Amor 浮一遍
+    var home by remember { mutableStateOf(false) }
+    var homePlay by remember { mutableIntStateOf(0) }
+    var homeFocus by remember { mutableIntStateOf(0) }
 
     fun finishFull() {
         if (!siteHid) fullCb?.onCustomViewHidden()
@@ -161,6 +166,7 @@ fun InBrowserLayer() {
             full != null -> exitFull()
             dlOpen -> dlOpen = false
             menu || shieldOpen -> { menu = false; shieldOpen = false }
+            home -> home = false
             web?.canGoBack() == true -> web?.goBack()
             else -> InBrowser.close()
         }
@@ -190,10 +196,10 @@ fun InBrowserLayer() {
                         }
                     }
                     Column(Modifier.weight(1f).padding(horizontal = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                        Txt(title.ifBlank { "正在打开…" }, Page.ink, 14.sp, maxLines = 1)
+                        Txt(if (home) "主页" else title.ifBlank { "正在打开…" }, Page.ink, 14.sp, maxLines = 1)
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             if (secure) { SvgIcon(BrIcons.lock, Page.muted.copy(alpha = .6f), 10.dp, stroke = 2.2f); Spacer(Modifier.width(3.dp)) }
-                            Txt(host, Page.muted.copy(alpha = .6f), 11.sp, maxLines = 1)
+                            Txt(if (home) "Amor" else host, Page.muted.copy(alpha = .6f), 11.sp, maxLines = 1)
                         }
                     }
                     IconBtn(BrIcons.more, "更多") { menu = !menu; shieldOpen = false }
@@ -307,11 +313,18 @@ fun InBrowserLayer() {
                         Txt(if (vids <= 1) "下载视频" else "下载 · $vids 个", Page.ink, 13.sp, maxLines = 1)
                     }
                 }
+                // 主页盖在网页上：淡入淡出 260ms；搜或开网址就回到网页
+                val ha by animateFloatAsState(if (home) 1f else 0f, tween(260, easing = Curves.standard), label = "home")
+                if (ha > 0f) Box(Modifier.fillMaxSize().graphicsLayer { alpha = ha; val sc = .985f + .015f * ha; scaleX = sc; scaleY = sc }.pointerInput(Unit) { detectTapGestures { } }) {
+                    BrowserHome(homePlay, homeFocus) { u -> home = false; title = ""; progress = 1; web?.loadUrl(u) }
+                }
             }
             // 底栏
             Row(Modifier.fillMaxWidth().background(Bar).windowInsetsPadding(WindowInsets.navigationBars).padding(vertical = 2.dp), horizontalArrangement = androidx.compose.foundation.layout.Arrangement.SpaceAround) {
-                IconBtn(BrIcons.back, "后退", canBack) { web?.goBack() }
-                IconBtn(BrIcons.fwd, "前进", canFwd) { web?.goForward() }
+                IconBtn(BrIcons.back, "后退", canBack || home) { if (home) home = false else web?.goBack() }
+                // 主页：在主页时亮杏色；已经在主页再点，光标进搜索框
+                IconBtn(BrIcons.home, "主页", tint = if (home) Warm else null) { if (home) homeFocus++ else { home = true; homePlay++; menu = false; shieldOpen = false } }
+                IconBtn(BrIcons.fwd, "前进", canFwd && !home) { web?.goForward() }
                 Box {
                     IconBtn(BrIcons.down, "下载") { Downloads.open = true }
                     val n = Downloads.running
@@ -374,9 +387,9 @@ fun InBrowserLayer() {
 }
 
 @Composable
-private fun IconBtn(icon: Ic, label: String, enabled: Boolean = true, onClick: () -> Unit) {
+private fun IconBtn(icon: Ic, label: String, enabled: Boolean = true, tint: Color? = null, onClick: () -> Unit) {
     PressSurface(onClick, Modifier.size(44.dp), shape = CircleShape, fill = Color.Transparent, pressScale = .88f, enabled = enabled, label = label) {
-        SvgIcon(icon, Page.ink.copy(alpha = if (enabled) .9f else .3f), 20.dp, stroke = 1.8f)
+        SvgIcon(icon, tint ?: Page.ink.copy(alpha = if (enabled) .9f else .3f), 20.dp, stroke = 1.8f)
     }
 }
 
