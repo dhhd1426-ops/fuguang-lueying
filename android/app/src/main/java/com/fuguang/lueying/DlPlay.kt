@@ -79,7 +79,7 @@ object DlPlay {
     var full by mutableStateOf(false)
     var loading by mutableStateOf(false); private set
     var buffering by mutableStateOf(false); private set
-    var fail by mutableStateOf<Fail?>(null); private set
+    internal var fail by mutableStateOf<Fail?>(null); private set
     var fixing by mutableStateOf(false); private set
     var player by mutableStateOf<ExoPlayer?>(null); private set
     private var job: Job? = null
