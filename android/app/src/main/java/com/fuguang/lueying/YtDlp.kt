@@ -97,5 +97,17 @@ object YtDlp {
         }
     }
 
+    /** 边下边看：这一档的直链（画面一条、声音一条，或者合在一起的一条）。拿不到返回空。 */
+    suspend fun streams(pageUrl: String, headers: Map<String, String>, height: Int, audioOnly: Boolean): List<String> {
+        if (!boot()) return emptyList()
+        return withContext(Dispatchers.IO) {
+            runCatching {
+                val h = if (height > 0) "[height<=$height]" else ""
+                val r = YoutubeDLRequest(pageUrl).web(headers, pageUrl).apply { addOption("-g"); addOption("-f", if (audioOnly) "ba/b" else "bv*$h+ba/b$h/bv*+ba/b") }
+                YoutubeDL.getInstance().execute(r, null, null).out.lines().map { it.trim() }.filter { it.startsWith("http") }.take(2)
+            }.getOrDefault(emptyList())
+        }
+    }
+
     fun stop(id: String) { runCatching { YoutubeDL.destroyProcessById(id) } }
 }

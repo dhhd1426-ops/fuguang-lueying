@@ -155,6 +155,8 @@ fun DownloadsLayer() {
     val open = Downloads.open
     // 打开时才挂上返回：挂得最晚，排在内置浏览器等别的返回前面（以前浏览器先接走了返回手势）
     if (open) BackHandler { Downloads.open = false }
+    // 关掉下载页时，正在放的也停掉
+    LaunchedEffect(open) { if (!open) DlPlay.close() }
     val k by animateFloatAsState(if (open) 1f else 0f, tween(if (open) 340 else 220, easing = if (open) Curves.decel else Curves.accel), label = "dls")
     if (k <= 0f) return
     val ctx = LocalContext.current
@@ -171,13 +173,14 @@ fun DownloadsLayer() {
             } else Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).windowInsetsPadding(WindowInsets.navigationBars).padding(horizontal = 14.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 list.forEachIndexed { i, d -> androidx.compose.runtime.key(d.id) { DlRow(d, i) { u, act ->
                     when (act) {
-                        "play" -> runCatching { ctx.startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(u, if (d.audioOnly) "audio/*" else "video/*").addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)) }
+                        "play" -> DlPlay.toggle(ctx, d)
                         "share" -> runCatching { ctx.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType(if (d.audioOnly) "audio/*" else "video/*").putExtra(Intent.EXTRA_STREAM, u).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION), d.title).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
                     }
                 } } }
                 Txt("加了版权保护的视频下不了。下载的视频自己看，别拿去传播。", Page.muted.copy(alpha = .5f), 11.5.sp, Modifier.padding(top = 10.dp, start = 4.dp, bottom = 20.dp))
             }
         }
+        DlFull(Downloads.list.firstOrNull { it.id == DlPlay.id })
     }
 }
 
@@ -185,13 +188,18 @@ fun DownloadsLayer() {
 private fun DlRow(d: Dl, i: Int, onAct: (android.net.Uri, String) -> Unit) {
     val rise = remember { Animatable(0f) }
     LaunchedEffect(Unit) { delay(40L * i.coerceAtMost(8)); rise.animateTo(1f, tween(360, easing = Curves.decel)) }
-    Row(
+    val ctx = LocalContext.current
+    Column(
         Modifier.graphicsLayer { alpha = rise.value; translationY = (1f - rise.value) * 8.dp.toPx() }.fillMaxWidth()
             .background(Color.White.copy(alpha = .04f), RoundedCornerShape(16.dp)).padding(10.dp),
-        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(Modifier.width(76.dp).aspectRatio(16f / 9f).background(Color(0xFF3A2A20), RoundedCornerShape(8.dp)), contentAlignment = Alignment.Center) {
-            SvgIcon(if (d.audioOnly) Ic("M9 18V6l10-2v12M9 18a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0ZM19 16a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0Z") else playIc, Warm.copy(alpha = .8f), 18.dp, stroke = 1.6f)
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        // 缩略图：点了这一行展开成播放器，边下边看；正在看时盖一层「在看」
+        val watching = DlPlay.id == d.id
+        PressSurface({ DlPlay.toggle(ctx, d) }, Modifier.width(76.dp).aspectRatio(16f / 9f), shape = RoundedCornerShape(8.dp), fill = Color(0xFF3A2A20), pressScale = .95f, label = if (watching) "收起播放" else "边下边看") {
+            SvgIcon(if (d.audioOnly) Ic("M9 18V6l10-2v12M9 18a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0ZM19 16a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0Z") else playIc, Warm.copy(alpha = .8f), 18.dp, stroke = 1.6f, modifier = Modifier.align(Alignment.Center))
+            val wa by animateFloatAsState(if (watching) 1f else 0f, tween(200), label = "watch")
+            if (wa > 0f) Box(Modifier.fillMaxSize().graphicsLayer { alpha = wa }.background(Color(0x8C121418)), contentAlignment = Alignment.Center) { Txt("在看", Warm, 10.5.sp, maxLines = 1) }
         }
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
@@ -232,6 +240,8 @@ private fun DlRow(d: Dl, i: Int, onAct: (android.net.Uri, String) -> Unit) {
             }
             if (d.state in setOf(4, 5)) PressSurface({ Downloads.delete(d) }, Modifier.size(36.dp), shape = CircleShape, fill = Color.Transparent, pressScale = .88f, label = "删除") { SvgIcon(trash, Page.muted, 16.dp, stroke = 1.6f) }
         }
+    }
+    DlInline(d)
     }
 }
 

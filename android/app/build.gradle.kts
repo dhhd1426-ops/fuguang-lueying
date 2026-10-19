@@ -66,6 +66,7 @@ dependencies {
     implementation("androidx.compose.ui:ui:1.12.0")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.10.0")
     implementation("androidx.media3:media3-exoplayer:1.9.2")
+    implementation("androidx.media3:media3-exoplayer-hls:1.9.2")
     implementation("dev.chrisbanes.haze:haze:1.7.3")
     implementation("org.jsoup:jsoup:1.18.3")
     implementation("com.caverock:androidsvg-aar:1.4")

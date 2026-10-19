@@ -52,6 +52,11 @@ import kotlin.math.roundToInt
 /** 网页里那个视频此刻的样子：秒、总长（直播是 0）、暂停没、速度、缓冲到哪、画面宽高。 */
 internal data class VidState(val t: Double, val d: Double, val p: Boolean, val r: Double, val b: Double, val vw: Int, val vh: Int)
 
+/** 播放器上的手势和按钮要做的事；网页里的视频（VideoCtl.Web）和 App 自己放的（DlPlay）各做一份。 */
+internal interface VidCtl {
+    fun toggle(); fun seek(t: Double); fun seekBy(d: Double); fun rate(r: Double); fun hold(on: Boolean)
+}
+
 /** 通过 JS 摸到全屏里那个 <video>：先找全屏元素里的，找不到就挑网页里最大的。 */
 internal object VideoCtl {
     private const val FIND = "var f=document.fullscreenElement||document.webkitFullscreenElement;var v=f&&(f.tagName==='VIDEO'?f:f.querySelector('video'));" +
@@ -63,6 +68,15 @@ internal object VideoCtl {
     const val LAST = "JSON.stringify(window.__fgLast||null)"
 
     fun run(web: WebView?, body: String) { web?.evaluateJavascript("(function(){$FIND if(v){$body}})()", null) }
+
+    /** 网页里的视频：每个动作都是一句 JS。 */
+    class Web(private val web: WebView?) : VidCtl {
+        override fun toggle() = VideoCtl.run(web, TOGGLE)
+        override fun seek(t: Double) = VideoCtl.run(web, "v.currentTime=$t")
+        override fun seekBy(d: Double) = VideoCtl.run(web, "v.currentTime=Math.max(0,Math.min(v.duration||1e9,v.currentTime+($d)))")
+        override fun rate(r: Double) = VideoCtl.run(web, "v.playbackRate=$r")
+        override fun hold(on: Boolean) = VideoCtl.run(web, if (on) "window.__fgr=v.playbackRate;v.playbackRate=2;if(v.paused)v.play()" else "v.playbackRate=window.__fgr||1")
+    }
 
     fun parse(r: String?): VidState? = runCatching {
         val o = JSONObject(r!!)
@@ -114,10 +128,10 @@ private class Taps { var at = 0L; var pos = Offset.Zero; var job: Job? = null }
 
 /** 画面上的手势：点一下显隐控件、点两下左右跳 10 秒 / 中间暂停、按住 2 倍速、左右滑跳进度（一个画面宽 = 90 秒）。 */
 @Composable
-internal fun VideoGesture(p: PlayerState, web: WebView?, haptic: HapticFeedback, scope: CoroutineScope) {
+internal fun VideoGesture(p: PlayerState, ctl: VidCtl, haptic: HapticFeedback, scope: CoroutineScope) {
     val taps = remember { Taps() }
     Box(
-        Modifier.fillMaxSize().pointerInput(web) {
+        Modifier.fillMaxSize().pointerInput(ctl) {
             awaitEachGesture {
                 val down = awaitFirstDown(); down.consume()
                 val start = down.position; val w = size.width.toFloat()
@@ -137,11 +151,11 @@ internal fun VideoGesture(p: PlayerState, web: WebView?, haptic: HapticFeedback,
                 if (quick == null) {
                     // 按住：2 倍速，松手恢复
                     p.hold = true; p.menu = false
-                    VideoCtl.run(web, "window.__fgr=v.playbackRate;v.playbackRate=2;if(v.paused)v.play()")
+                    ctl.hold(true)
                     p.setPaused(false)
                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                     while (true) { val c = awaitPointerEvent().changes.first(); c.consume(); if (!c.pressed) break }
-                    VideoCtl.run(web, "v.playbackRate=window.__fgr||1")
+                    ctl.hold(false)
                     p.hold = false
                     return@awaitEachGesture
                 }
@@ -152,7 +166,7 @@ internal fun VideoGesture(p: PlayerState, web: WebView?, haptic: HapticFeedback,
                         if (!c.pressed) break
                         p.preview = (t0 + (c.position.x - start.x) / w * 90).coerceIn(0.0, dur)
                     }
-                    p.preview?.let { VideoCtl.run(web, "v.currentTime=$it"); p.setTime(it) }
+                    p.preview?.let { ctl.seek(it); p.setTime(it) }
                     p.preview = null; p.shown = true; p.poke++
                     return@awaitEachGesture
                 }
@@ -162,9 +176,9 @@ internal fun VideoGesture(p: PlayerState, web: WebView?, haptic: HapticFeedback,
                     taps.job?.cancel(); taps.at = 0
                     val rx = u.position.x / w
                     when {
-                        rx < 1 / 3f && dur > 0 -> { VideoCtl.run(web, "v.currentTime=Math.max(0,v.currentTime-10)"); p.setTime((p.nowPlain() - 10).coerceAtLeast(0.0)); p.ripple(-1) }
-                        rx > 2 / 3f && dur > 0 -> { VideoCtl.run(web, "v.currentTime=Math.min(v.duration,v.currentTime+10)"); p.setTime((p.nowPlain() + 10).coerceAtMost(dur)); p.ripple(1) }
-                        else -> { val paused = p.playing; VideoCtl.run(web, VideoCtl.TOGGLE); p.setPaused(paused); p.flashIcon(paused) }
+                        rx < 1 / 3f && dur > 0 -> { ctl.seekBy(-10.0); p.setTime((p.nowPlain() - 10).coerceAtLeast(0.0)); p.ripple(-1) }
+                        rx > 2 / 3f && dur > 0 -> { ctl.seekBy(10.0); p.setTime((p.nowPlain() + 10).coerceAtMost(dur)); p.ripple(1) }
+                        else -> { val paused = p.playing; ctl.toggle(); p.setPaused(paused); p.flashIcon(paused) }
                     }
                 } else {
                     taps.at = u.uptimeMillis; taps.pos = u.position
@@ -176,14 +190,14 @@ internal fun VideoGesture(p: PlayerState, web: WebView?, haptic: HapticFeedback,
 }
 
 /** 拖进度条：按下就跳到手指那里，跟着走，松手落定。 */
-internal fun Modifier.seekDrag(p: PlayerState, web: WebView?, dur: Double) = pointerInput(dur) {
+internal fun Modifier.seekDrag(p: PlayerState, ctl: VidCtl, dur: Double) = pointerInput(dur) {
     awaitEachGesture {
         val d = awaitFirstDown(); d.consume()
         if (dur <= 0) return@awaitEachGesture
         fun at(x: Float) = (x / size.width).coerceIn(0f, 1f) * dur
         p.dragging = true; p.menu = false; p.seekFrom = p.nowPlain(); p.preview = at(d.position.x)
         while (true) { val c = awaitPointerEvent().changes.first(); c.consume(); if (!c.pressed) break; p.preview = at(c.position.x) }
-        p.preview?.let { VideoCtl.run(web, "v.currentTime=$it"); p.setTime(it) }
+        p.preview?.let { ctl.seek(it); p.setTime(it) }
         p.preview = null; p.dragging = false; p.poke++
     }
 }

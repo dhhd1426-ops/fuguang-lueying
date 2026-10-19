@@ -73,6 +73,7 @@ internal fun FullPlayer(view: View, web: WebView?, title: String, from: Rect?, e
     val scope = rememberCoroutineScope()
 
     // 每 250ms 问一次网页里的视频
+    val ctl = remember(web) { VideoCtl.Web(web) }
     LaunchedEffect(web) { while (true) { web?.evaluateJavascript(VideoCtl.STATE) { r -> VideoCtl.parse(r)?.let { p.sync(it) } }; delay(250) } }
     // 长出来；横视频再横过来
     LaunchedEffect(Unit) {
@@ -110,18 +111,18 @@ internal fun FullPlayer(view: View, web: WebView?, title: String, from: Rect?, e
         )
         if (t < .99f && !exiting) return@Box
         // 手势层在下，控件在上：空白处的触摸落到手势层，按钮自己接
-        VideoGesture(p, web, haptic, scope)
+        VideoGesture(p, ctl, haptic, scope)
         val ca by animateFloatAsState(if (p.shown && !exiting) 1f else 0f, tween(220, easing = Curves.standard), label = "ctl")
         val now = p.now()
         val dur = p.state?.d ?: 0.0
         if (ca < .99f) Box(Modifier.align(Alignment.BottomStart).fillMaxWidth(if (dur > 0) (now / dur).toFloat().coerceIn(0f, 1f) else 0f).height(2.dp).graphicsLayer { alpha = (1f - ca) * .85f }.background(FpWarm))
-        if (ca > .01f) Controls(p, web, title, now, dur, Modifier.graphicsLayer { alpha = ca }, onExit, onDownload)
+        if (ca > .01f) Controls(p, ctl, title, now, dur, Modifier.graphicsLayer { alpha = ca }, onExit, onDownload)
         GestureMarks(p)
     }
 }
 
 @Composable
-private fun Controls(p: PlayerState, web: WebView?, title: String, now: Double, dur: Double, modifier: Modifier, onExit: () -> Unit, onDownload: () -> Unit) {
+internal fun Controls(p: PlayerState, ctl: VidCtl, title: String, now: Double, dur: Double, modifier: Modifier, onExit: () -> Unit, onDownload: (() -> Unit)?, extra: String? = null) {
     Box(modifier.fillMaxSize()) {
         Box(Modifier.fillMaxWidth().fillMaxHeight(.3f).background(Brush.verticalGradient(listOf(Color(0x6B0A0B0E), Color.Transparent))))
         Box(Modifier.align(Alignment.BottomStart).fillMaxWidth().fillMaxHeight(.4f).background(Brush.verticalGradient(listOf(Color.Transparent, Color(0x990A0B0E)))))
@@ -129,30 +130,31 @@ private fun Controls(p: PlayerState, web: WebView?, title: String, now: Double, 
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Chip("退出全屏", onExit) { SvgIcon(FpIcons.shrink, Page.ink, 16.dp, stroke = 1.8f) }
                 Txt(title.ifBlank { "视频" }, Page.ink, 16.sp, Modifier.weight(1f).padding(horizontal = 12.dp), family = Serif, maxLines = 1)
-                Chip("下载", onDownload) { SvgIcon(FpIcons.down, Page.ink, 15.dp, stroke = 1.8f); Spacer(Modifier.width(5.dp)); Txt("下载", Page.ink, 12.5.sp, maxLines = 1) }
+                if (extra != null) Txt(extra, FpWarm, 12.5.sp, Modifier.padding(end = 4.dp), maxLines = 1)
+                if (onDownload != null) Chip("下载", onDownload) { SvgIcon(FpIcons.down, Page.ink, 15.dp, stroke = 1.8f); Spacer(Modifier.width(5.dp)); Txt("下载", Page.ink, 12.5.sp, maxLines = 1) }
             }
             Spacer(Modifier.weight(1f))
-            ProgressBar(p, web, now, dur)
+            ProgressBar(p, ctl, now, dur)
             Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 Txt(if (dur > 0) fmtTime(now) + " / " + fmtTime(dur) else "直播", Page.ink, 12.5.sp, maxLines = 1)
                 Spacer(Modifier.weight(1f))
                 Chip("倍速", { p.menu = !p.menu; p.poke++ }) { Txt(rateText(p.state?.r ?: 1.0), if (p.menu) FpWarm else Page.ink, 12.5.sp, maxLines = 1) }
             }
         }
-        PressSurface({ VideoCtl.run(web, VideoCtl.TOGGLE); p.setPaused(!(p.state?.p ?: true)); p.poke++ }, Modifier.align(Alignment.Center).size(58.dp), shape = CircleShape, fill = FpGlass, pressScale = .92f, label = if (p.playing) "暂停" else "播放") {
+        PressSurface({ ctl.toggle(); p.setPaused(!(p.state?.p ?: true)); p.poke++ }, Modifier.align(Alignment.Center).size(58.dp), shape = CircleShape, fill = FpGlass, pressScale = .92f, label = if (p.playing) "暂停" else "播放") {
             PlayGlyph(p.playing, Modifier.align(Alignment.Center).size(24.dp))
         }
-        if (p.menu) RateMenu(p, web, Modifier.align(Alignment.BottomEnd).windowInsetsPadding(WindowInsets.displayCutout).padding(end = 14.dp, bottom = 52.dp))
+        if (p.menu) RateMenu(p, ctl, Modifier.align(Alignment.BottomEnd).windowInsetsPadding(WindowInsets.displayCutout).padding(end = 14.dp, bottom = 52.dp))
     }
 }
 
 @Composable
-private fun RateMenu(p: PlayerState, web: WebView?, modifier: Modifier) {
+private fun RateMenu(p: PlayerState, ctl: VidCtl, modifier: Modifier) {
     val cur = p.state?.r ?: 1.0
     Column(modifier.background(Color(0xFF262A32), RoundedCornerShape(14.dp)).padding(5.dp)) {
         listOf(2.0, 1.5, 1.25, 1.0, .75).forEach { v ->
             val on = kotlin.math.abs(v - cur) < .01
-            PressSurface({ VideoCtl.run(web, "v.playbackRate=$v"); p.setRate(v); p.menu = false; p.poke++ }, Modifier.width(76.dp), shape = RoundedCornerShape(9.dp), fill = if (on) FpWarm.copy(alpha = .12f) else Color.Transparent, pressScale = .96f, label = rateText(v)) {
+            PressSurface({ ctl.rate(v); p.setRate(v); p.menu = false; p.poke++ }, Modifier.width(76.dp), shape = RoundedCornerShape(9.dp), fill = if (on) FpWarm.copy(alpha = .12f) else Color.Transparent, pressScale = .96f, label = rateText(v)) {
                 Txt(rateText(v), if (on) FpWarm else Page.ink, 13.sp, Modifier.padding(horizontal = 14.dp, vertical = 8.dp), maxLines = 1)
             }
         }
@@ -160,7 +162,7 @@ private fun RateMenu(p: PlayerState, web: WebView?, modifier: Modifier) {
 }
 
 @Composable
-private fun Chip(label: String, onClick: () -> Unit, content: @Composable () -> Unit) {
+internal fun Chip(label: String, onClick: () -> Unit, content: @Composable () -> Unit) {
     PressSurface(onClick, Modifier.height(34.dp), shape = RoundedCornerShape(17.dp), fill = FpGlass, pressedFill = FpWarm.copy(alpha = .22f), pressScale = .94f, label = label) {
         Row(Modifier.align(Alignment.Center).padding(horizontal = 11.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) { content() }
     }
@@ -178,8 +180,8 @@ internal fun PlayGlyph(playing: Boolean, modifier: Modifier, color: Color = Page
 }
 
 @Composable
-private fun ProgressBar(p: PlayerState, web: WebView?, now: Double, dur: Double) {
-    BoxWithConstraints(Modifier.fillMaxWidth().height(26.dp).seekDrag(p, web, dur)) {
+internal fun ProgressBar(p: PlayerState, ctl: VidCtl, now: Double, dur: Double) {
+    BoxWithConstraints(Modifier.fillMaxWidth().height(26.dp).seekDrag(p, ctl, dur)) {
         val f = if (dur > 0) (now / dur).toFloat().coerceIn(0f, 1f) else 0f
         val b = if (dur > 0) ((p.state?.b ?: 0.0) / dur).toFloat().coerceIn(0f, 1f) else 0f
         val th by animateFloatAsState(if (p.dragging) 5f else 3f, tween(160), label = "th")
