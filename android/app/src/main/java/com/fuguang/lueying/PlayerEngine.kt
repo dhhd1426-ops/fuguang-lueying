@@ -17,7 +17,7 @@ import java.io.File
 /**
  * 播放器的底子（照 Media3 官方建议和 Just Player / Seal 这类成熟播放器的做法调）：
  * - 解码：MediaCodec 异步排队（新机默认开，旧机也强开），硬解失败自动换下一个解码器。
- * - 缓冲：攒够 1 秒就起播、拖完 1.5 秒就接着放；往前最多攒 60 秒；身后留 30 秒，往回拖一小段不用重新读。
+ * - 缓冲：本地和网上分开调、按字节封顶（见 build）。
  * - 网上读的视频走磁盘缓存（1 GB，最久没看的先删）：看过的段落往回拖、重看都是秒开。下载的成品不进缓存。
  * - 声音：抢音频焦点（来电、别的 App 放声音时自动停），拔耳机就暂停；放的时候不让手机锁网络和 CPU。
  */
@@ -25,13 +25,20 @@ import java.io.File
 internal object PlayerEngine {
     private var cache: SimpleCache? = null
 
-    fun build(ctx: Context): ExoPlayer {
+    /**
+     * local：下好的本地文件。读盘很快，不用攒多：往前最多 12 秒、总共不超过 48 MB，身后留 5 秒。
+     * 以前不分本地和网上，一律往前攒 60 秒、身后留 30 秒，而且「时间优先、不看字节」：4K 原画每秒约 3 MB，
+     * 光缓冲就占 200 多 MB 内存，系统反复回收内存，画面一顿一顿、拖一下转圈。现在按字节封顶。
+     * 网上读的：起播 1 秒，卡过之后攒到 3 秒再放（以前 1.5 秒，网一抖就放一下停一下），往前最多 60 秒、总共不超过 64 MB。
+     */
+    fun build(ctx: Context, local: Boolean = false): ExoPlayer {
         val app = ctx.applicationContext
         val rf = DefaultRenderersFactory(app).setEnableDecoderFallback(true).forceEnableMediaCodecAsynchronousQueueing()
-        val lc = DefaultLoadControl.Builder()
-            .setBufferDurationsMs(15_000, 60_000, 1_000, 1_500)
-            .setBackBuffer(30_000, true)
-            .setPrioritizeTimeOverSizeThresholds(true)
+        val lc = (if (local) DefaultLoadControl.Builder()
+                .setBufferDurationsMs(6_000, 12_000, 500, 1_000).setTargetBufferBytes(48 shl 20).setBackBuffer(5_000, false)
+            else DefaultLoadControl.Builder()
+                .setBufferDurationsMs(20_000, 60_000, 1_000, 3_000).setTargetBufferBytes(64 shl 20).setBackBuffer(15_000, false))
+            .setPrioritizeTimeOverSizeThresholds(false)
             .build()
         val audio = AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MOVIE).build()
         return ExoPlayer.Builder(app, rf).setLoadControl(lc)

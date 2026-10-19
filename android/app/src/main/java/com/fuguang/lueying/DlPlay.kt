@@ -93,7 +93,7 @@ object DlPlay {
     fun open(ctx: Context, d: Dl, fresh: Boolean = false) {
         close()
         id = d.id; loading = true; app = ctx.applicationContext
-        val p = PlayerEngine.build(ctx)
+        val p = PlayerEngine.build(ctx, local = d.state == 3)
         p.addListener(object : Player.Listener {
             override fun onPlayerError(e: PlaybackException) { fail = DlFail.of(ctx.applicationContext, d, e, p.videoFormat); loading = false }
             override fun onPlaybackStateChanged(s: Int) {
@@ -194,6 +194,12 @@ object DlPlay {
         }
     }
 
+    /**
+     * 松手 / 点两下跳的落点：前后 3 秒里有关键帧就直接落在关键帧上（不用从前一个关键帧一路解码过来，不转圈）；
+     * 没有再落准。以前一律精确，关键帧隔得远的文件（电影、原画常见 5–10 秒）松手要等一两秒。
+     */
+    private val LAND = SeekParameters(3_000_000L, 3_000_000L)
+
     /** 手势和按钮落到播放器上。按住 2 倍速，松手回到原来的速度。 */
     internal class Ctl(private val p: ExoPlayer) : VidCtl {
         private var keep = 1f
@@ -201,14 +207,15 @@ object DlPlay {
         private var scrubbing = false
         override fun seek(t: Double) {
             if (scrubbing) { scrubbing = false; p.setScrubbingModeEnabled(false) }
-            p.setSeekParameters(SeekParameters.EXACT); p.seekTo((t * 1000).toLong())
+            p.setSeekParameters(LAND); p.seekTo((t * 1000).toLong())
         }
         // 拖动中途：Media3 的拖动模式（连续跳转时丢掉没用的解码、不重复缓冲）+ 跳最近的关键帧，画面跟得上手指
         override fun scrub(t: Double) {
             if (!scrubbing) { scrubbing = true; p.setScrubbingModeEnabled(true) }
             p.setSeekParameters(SeekParameters.CLOSEST_SYNC); p.seekTo((t * 1000).toLong())
         }
-        override fun seekBy(d: Double) = p.seekTo((p.currentPosition + (d * 1000).toLong()).coerceAtLeast(0))
+        override fun seekBy(d: Double) { p.setSeekParameters(LAND); p.seekTo((p.currentPosition + (d * 1000).toLong()).coerceAtLeast(0)) }
+        override val scrubGapMs get() = 40L
         override fun rate(r: Double) = p.setPlaybackSpeed(r.toFloat())
         override fun hold(on: Boolean) { if (on) { keep = p.playbackParameters.speed; p.setPlaybackSpeed(2f); p.playWhenReady = true } else p.setPlaybackSpeed(keep) }
     }

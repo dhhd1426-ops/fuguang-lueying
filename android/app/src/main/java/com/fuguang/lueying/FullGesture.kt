@@ -57,6 +57,8 @@ internal interface VidCtl {
     fun toggle(); fun seek(t: Double); fun seekBy(d: Double); fun rate(r: Double); fun hold(on: Boolean)
     /** 拖动中途：画面跟着手指走，跳到最近的关键帧就行（快）；松手时再用 seek 落准。 */
     fun scrub(t: Double) = seek(t)
+    /** 拖动时多久让画面跟一次：网页要走 JS，120ms；ExoPlayer 自己会合并没来得及做的，40ms。 */
+    val scrubGapMs: Long get() = 120L
 }
 
 /** 通过 JS 摸到全屏里那个 <video>：先找全屏元素里的，找不到就挑网页里最大的。 */
@@ -110,8 +112,8 @@ internal class PlayerState {
     fun setTime(t: Double) { state?.let { sync(it.copy(t = t)) } }
     fun ripple(side: Int) { ripSide = side; ripKey++ }
     private var lastScrub = 0L
-    /** 拖动时每 120ms 让画面跟一次，不每一帧都去要。 */
-    fun scrub(ctl: VidCtl, t: Double) { val n = SystemClock.uptimeMillis(); if (n - lastScrub >= 120) { lastScrub = n; ctl.scrub(t) } }
+    /** 拖动时按 ctl.scrubGapMs 让画面跟一次，不每一帧都去要。 */
+    fun scrub(ctl: VidCtl, t: Double) { val n = SystemClock.uptimeMillis(); if (n - lastScrub >= ctl.scrubGapMs) { lastScrub = n; ctl.scrub(t) } }
     fun flashIcon(paused: Boolean) { flash = paused; flashKey++ }
 
     fun nowPlain(): Double {
