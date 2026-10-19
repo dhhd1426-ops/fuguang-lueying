@@ -28,7 +28,7 @@ object YtDlp {
     fun init(ctx: Context, p: Prefs) { app = ctx.applicationContext; prefs = p }
 
     /** 第一次用时解开（几秒）。 */
-    private suspend fun boot(): Boolean = lock.withLock {
+    internal suspend fun boot(): Boolean = lock.withLock {
         if (ready) return true
         withContext(Dispatchers.IO) {
             runCatching { YoutubeDL.init(app); FFmpeg.init(app); ready = true }

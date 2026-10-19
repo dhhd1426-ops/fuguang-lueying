@@ -60,7 +60,7 @@ private val back = Ic("M14.5 6l-6 6 6 6")
 private val trash = Ic("M5 7h14M10 7V4.5h4V7M7 7l1 13h8l1-13")
 private val retry = Ic("M19 8a7.5 7.5 0 1 0 1 5M19 4v4h-4")
 
-private fun mb(b: Long) = if (b <= 0) "" else if (b >= 1 shl 30) "%.2f GB".format(b / 1073741824.0) else "%.1f MB".format(b / 1048576.0)
+internal fun mb(b: Long) = if (b <= 0) "" else if (b >= 1 shl 30) "%.2f GB".format(b / 1073741824.0) else "%.1f MB".format(b / 1048576.0)
 
 /** 下载视频：从下面升起，选哪一个（有几个时）、清晰度、存到相册 / 只在 Wi-Fi。 */
 @Composable

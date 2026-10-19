@@ -79,7 +79,8 @@ object DlPlay {
     var full by mutableStateOf(false)
     var loading by mutableStateOf(false); private set
     var buffering by mutableStateOf(false); private set
-    var error by mutableStateOf<String?>(null); private set
+    var fail by mutableStateOf<Fail?>(null); private set
+    var fixing by mutableStateOf(false); private set
     var player by mutableStateOf<ExoPlayer?>(null); private set
     private var job: Job? = null
     private val scope = MainScope()
@@ -92,7 +93,7 @@ object DlPlay {
         id = d.id; loading = true; app = ctx.applicationContext
         val p = PlayerEngine.build(ctx)
         p.addListener(object : Player.Listener {
-            override fun onPlayerError(e: PlaybackException) { error = "放不了：网站不让直接读，等下好再看"; loading = false }
+            override fun onPlayerError(e: PlaybackException) { fail = DlFail.of(ctx.applicationContext, d, e, p.videoFormat); loading = false }
             override fun onPlaybackStateChanged(s: Int) {
                 buffering = s == Player.STATE_BUFFERING
                 if (s == Player.STATE_READY || s == Player.STATE_ENDED) loading = false
@@ -102,7 +103,7 @@ object DlPlay {
         job = scope.launch {
             val src = runCatching { source(ctx.applicationContext, d) }.getOrNull()
             if (player !== p) return@launch
-            if (src == null) { error = "这一个现在放不了，等下好再看"; loading = false; return@launch }
+            if (src == null) { fail = Fail("net", "这一个现在读不了，下好就能看", "没拿到播放地址"); loading = false; return@launch }
             // 上次看到哪，从那里接着放
             p.setMediaSource(src, PlayerEngine.lastPos(ctx, d.id)); p.prepare(); p.playWhenReady = true
         }
@@ -113,7 +114,21 @@ object DlPlay {
         val p = player; val a = app; val i = id
         if (p != null && a != null && i != null && p.duration != C.TIME_UNSET) PlayerEngine.keepPos(a, i, p.currentPosition, p.duration)
         p?.release(); player = null
-        id = null; full = false; loading = false; buffering = false; error = null
+        id = null; full = false; loading = false; buffering = false; fail = null; fixing = false
+    }
+
+    /** 修一下：重新装一遍盒子，好了接着放；没修好就写原因，留着「用别的播放器」。 */
+    fun repair(ctx: Context, d: Dl) {
+        if (fixing) return
+        fixing = true
+        player?.let { player = null; it.release() }   // 先放开文件，再改它
+        scope.launch {
+            val r = runCatching { Remux.repair(ctx.applicationContext, d) }
+            fixing = false
+            if (DlPlay.id != d.id) return@launch
+            r.onSuccess { n -> d.total = n; d.done = n; open(ctx, d) }
+                .onFailure { e -> fail = Fail("codec", "没修好：" + (e.message ?: "重新合成也没成"), fail?.why ?: "") }
+        }
     }
 
     private suspend fun source(ctx: Context, d: Dl): MediaSource? {
@@ -176,8 +191,10 @@ internal fun DlInline(d: Dl) {
     ) {
         Box(Modifier.padding(top = 10.dp).fillMaxWidth().aspectRatio(16f / 9f).clip(RoundedCornerShape(10.dp)).background(Color.Black)) {
             val pl = DlPlay.player
-            if (pl != null && !DlPlay.full) PlayerSurface(d, pl, mini = true)
-            PlayerNote()
+            if (pl != null && !DlPlay.full && DlPlay.fail == null) PlayerSurface(d, pl, mini = true)
+            PlayerNote(d)
+            // 放不了时控件不在了，留一个收起
+            if (DlPlay.fail != null && !DlPlay.fixing) Box(Modifier.align(Alignment.TopEnd).padding(6.dp)) { Chip("收起", { DlPlay.close() }) { SvgIcon(Ic("M6 6l12 12M18 6L6 18"), Page.ink, 13.dp, stroke = 1.8f) } }
         }
     }
 }
@@ -199,17 +216,12 @@ internal fun DlFull(d: Dl?) {
         }
     }
     val k by animateFloatAsState(1f, tween(260, easing = Curves.decel), label = "dlfull")
-    Box(Modifier.fillMaxSize().graphicsLayer { alpha = k }.background(Color.Black)) { PlayerSurface(d, pl, mini = false); PlayerNote() }
+    Box(Modifier.fillMaxSize().graphicsLayer { alpha = k }.background(Color.Black)) { PlayerSurface(d, pl, mini = false); PlayerNote(d) }
 }
 
 @Composable
-private fun PlayerNote() {
-    DlPlay.error?.let { msg ->
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Txt(msg, Page.ink, 12.5.sp, Modifier.background(Color(0xB31A1D23), RoundedCornerShape(13.dp)).padding(horizontal = 13.dp, vertical = 8.dp), maxLines = 2)
-        }
-        return
-    }
+private fun PlayerNote(d: Dl) {
+    DlPlay.fail?.let { f -> FailNote(d, f); return }
     // 在读：等 300ms 还没好才露出一个小转圈（一闪而过的不打扰），不再写字挡在画面中间
     val wait = DlPlay.loading || DlPlay.buffering
     var show by remember { mutableStateOf(false) }

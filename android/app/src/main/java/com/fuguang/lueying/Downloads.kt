@@ -66,7 +66,7 @@ class Dl(
 
 /**
  * 下载（内置浏览器）：整段文件多线程分块下；m3u8 分段并发下、解开 AES-128、按顺序拼好再转成 mp4；
- * 画面和声音分开的（B 站 m4s）各自下完用 MediaMuxer 合成一个文件。加了版权保护（DRM）的不下。
+ * 画面和声音分开的（B 站 m4s）各自下完合成一个文件（Remux：先 ffmpeg，再 MediaMuxer，合完自己放一下确认能看）。加了版权保护（DRM）的不下。
  * 在后台走：有在下的就开着前台服务，通知栏有进度；切页面、关浏览器都接着下。暂停后再继续，下过的不重下。
  */
 object Downloads {
@@ -159,7 +159,7 @@ object Downloads {
         if (!gone) note = "相册里那份删不掉，要到相册里自己删"
     }
 
-    private fun missing(u: Uri): Boolean = runCatching {
+    internal fun missing(u: Uri): Boolean = runCatching {
         app.contentResolver.query(u, arrayOf(android.provider.MediaStore.MediaColumns._ID), null, null, null)?.use { it.count == 0 } ?: true
     }.getOrDefault(true)
 
@@ -210,9 +210,9 @@ object Downloads {
                 val ext = if (d.audioOnly) "m4a" else if (got.name.endsWith(".ts")) "ts" else "mp4"
                 val final = File(w, "out.$ext")
                 when {
-                    d.audioOnly -> mux(listOf(got to "audio/"), final)
+                    d.audioOnly -> Remux.pack(app, listOf(got to "audio/"), final)
                     d.media.kind == "dash" -> got.renameTo(final)
-                    d.media.kind == "hls" && got.name.endsWith(".ts") -> if (!runCatching { mux(listOf(got to ""), File(w, "out.mp4")) }.isSuccess) got.renameTo(final) else { got.delete() }
+                    d.media.kind == "hls" && got.name.endsWith(".ts") -> if (!runCatching { Remux.pack(app, listOf(got to ""), File(w, "out.mp4")) }.isSuccess) got.renameTo(final) else { got.delete() }
                     else -> got.renameTo(final)
                 }
                 val result = File(w, "out.mp4").takeIf { it.exists() && !d.audioOnly } ?: final
@@ -439,39 +439,8 @@ object Downloads {
         val v = file(d, d.media.url, File(w, "v.m4s"), .8f, 0f)
         val au = file(d, a, File(w, "a.m4s"), .2f, .8f)
         val out = File(w, "merged.mp4")
-        mux(listOf(v to "video/", au to "audio/"), out)
+        Remux.pack(app, listOf(v to "video/", au to "audio/"), out)
         v.delete(); au.delete()
         return out
-    }
-
-    /** 用系统自带的 MediaExtractor + MediaMuxer 重新封装：picks 是（文件, 只要哪类轨 "video/" "audio/" 或 "" 全要）。 */
-    private fun mux(picks: List<Pair<File, String>>, out: File) {
-        val mm = MediaMuxer(out.path, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
-        val ex = ArrayList<Pair<MediaExtractor, Map<Int, Int>>>()
-        try {
-            picks.forEach { (f, want) ->
-                val e = MediaExtractor(); e.setDataSource(f.path)
-                val map = HashMap<Int, Int>()
-                for (i in 0 until e.trackCount) {
-                    val fmt = e.getTrackFormat(i); val mime = fmt.getString(MediaFormat.KEY_MIME).orEmpty()
-                    if ((want.isEmpty() && (mime.startsWith("video/") || mime.startsWith("audio/"))) || (want.isNotEmpty() && mime.startsWith(want) && map.isEmpty())) {
-                        e.selectTrack(i); map[i] = mm.addTrack(fmt)
-                    }
-                }
-                if (map.isEmpty()) error("这个文件里没有${if (want == "audio/") "声音" else "画面"}")
-                ex += e to map
-            }
-            mm.start()
-            val buf = ByteBuffer.allocate(4 shl 20); val info = MediaCodec.BufferInfo()
-            ex.forEach { (e, map) ->
-                while (true) {
-                    val n = e.readSampleData(buf, 0); if (n < 0) break
-                    val ti = map[e.sampleTrackIndex] ?: run { e.advance(); continue }
-                    info.set(0, n, e.sampleTime, if (e.sampleFlags and MediaExtractor.SAMPLE_FLAG_SYNC != 0) MediaCodec.BUFFER_FLAG_KEY_FRAME else 0)
-                    mm.writeSampleData(ti, buf, info); e.advance()
-                }
-            }
-            mm.stop()
-        } finally { runCatching { mm.release() }; ex.forEach { runCatching { it.first.release() } } }
     }
 }
