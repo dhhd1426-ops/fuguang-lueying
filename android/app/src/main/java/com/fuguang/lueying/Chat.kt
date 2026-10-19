@@ -711,7 +711,18 @@ fun UserBubble(text: String, compact: Boolean, modifier: Modifier = Modifier) {
             .background(rgba(255, 255, 255, .08f), RoundedCornerShape(18.dp))
             .border(1.dp, rgba(255, 255, 255, .1f), RoundedCornerShape(18.dp))
             .padding(horizontal = 16.dp, vertical = 11.dp),
-    ) { Txt(text, Page.ink, 15.sp, lineHeight = 24.sp) }
+    ) { BasicText(userLinks(text), style = TextStyle(color = Page.ink, fontSize = 15.sp, lineHeight = 24.sp)) }
+}
+
+private val urlRe = Regex("https?://[A-Za-z0-9._~:/?#\\[\\]@!$&'*+,;=%-]+")
+
+/** 你发的话里的网址也能点：只认网址里能出现的字符，紧跟着的中文不会算进去；点了在内置浏览器开。 */
+private fun userLinks(text: String): AnnotatedString = buildAnnotatedString {
+    append(text)
+    urlRe.findAll(text).forEach { m ->
+        val u = m.value.trimEnd('.', ',', ')', ';', '!', '?', ':', '\'', ']')
+        if (u.length > 10) addLink(androidx.compose.ui.text.LinkAnnotation.Clickable(u, androidx.compose.ui.text.TextLinkStyles(SpanStyle(color = css("#e9b48e"), textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline))) { InBrowser.open(u) }, m.range.first, m.range.first + u.length)
+    }
 }
 
 @Composable
@@ -789,7 +800,7 @@ private fun inline(block: String, fade: Int): AnnotatedString {
     map[s0.length] = sb.length
     val s = sb.toString()
     // 光秃秃的网址也能点
-    Regex("https?://[A-Za-z0-9._~:/?#\\[\\]@!$&'*+,;=%-]+").findAll(s).forEach { m -> if (links.none { m.range.first in it.first until it.second }) links += Triple(m.range.first, m.range.last + 1, m.value.trimEnd('.', ',', ')', ';')) }
+    urlRe.findAll(s).forEach { m -> if (links.none { m.range.first in it.first until it.second }) { val u = m.value.trimEnd('.', ',', ')', ';', '!', '?', ':', '\'', ']'); links += Triple(m.range.first, m.range.first + u.length, u) } }
     return buildAnnotatedString {
         append(s)
         bold.forEach { r -> val a = map[min(r.first, s0.length)]; val b = map[min(r.last + 1, s0.length)]; if (a < b) addStyle(SpanStyle(fontWeight = FontWeight.SemiBold, color = Page.ink), a, b) }
