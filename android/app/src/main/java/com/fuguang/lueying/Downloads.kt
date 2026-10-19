@@ -90,6 +90,12 @@ object Downloads {
                 }
             }
         }
+        sweep()
+    }
+
+    /** 临时文件夹里不属于任何一个下载的（暂停、没成的下载重开 App 后不在列表里了），清掉。 */
+    private fun sweep() = scope.launch {
+        File(app.cacheDir, "dl").listFiles()?.forEach { f -> if (list.none { it.id == f.name }) runCatching { f.deleteRecursively() } }
     }
 
     private fun save() {
@@ -133,13 +139,30 @@ object Downloads {
 
     fun pause(d: Dl) { if (d.media.kind == "ytdlp") YtDlp.stop(d.id); d.job?.cancel(); d.state = 5; d.speed = 0 }
     fun resume(d: Dl) { if (d.state == 5 || d.state == 4) run(d) }
+    /** 删完的一句提示（相册那份删不掉时）；下载页底下浮出来。 */
+    var note by mutableStateOf<String?>(null)
+
+    /**
+     * 删干净：正在放的先停；下载停下后等它真停了（线程、yt-dlp 进程不再写）再删临时文件夹；
+     * 成品在相册的删相册那份，在 App 里的删文件。相册那份删不掉（重装过 App 就不归它管了）就如实说。
+     */
     fun delete(d: Dl) {
+        if (DlPlay.id == d.id) DlPlay.close()
         if (d.media.kind == "ytdlp") YtDlp.stop(d.id)
-        d.job?.cancel(); list.remove(d)
-        runCatching { work(d).deleteRecursively() }
-        if (d.out.startsWith("content://")) runCatching { app.contentResolver.delete(Uri.parse(d.out), null, null) } else if (d.out.isNotEmpty()) File(d.out).delete()
-        save()
+        val job = d.job
+        job?.cancel(); list.remove(d); save()
+        scope.launch { runCatching { job?.join() }; delay(600); runCatching { work(d).deleteRecursively() } }
+        val gone = when {
+            d.out.startsWith("content://") -> { val u = Uri.parse(d.out); runCatching { app.contentResolver.delete(u, null, null) }; missing(u) }
+            d.out.isNotEmpty() -> File(d.out).let { it.delete(); !it.exists() }
+            else -> true
+        }
+        if (!gone) note = "相册里那份删不掉，要到相册里自己删"
     }
+
+    private fun missing(u: Uri): Boolean = runCatching {
+        app.contentResolver.query(u, arrayOf(android.provider.MediaStore.MediaColumns._ID), null, null, null)?.use { it.count == 0 } ?: true
+    }.getOrDefault(true)
 
     /** 播放 / 分享用的地址。 */
     fun uri(d: Dl): Uri? = when {

@@ -180,6 +180,13 @@ fun DownloadsLayer() {
                 Txt("加了版权保护的视频下不了。下载的视频自己看，别拿去传播。", Page.muted.copy(alpha = .5f), 11.5.sp, Modifier.padding(top = 10.dp, start = 4.dp, bottom = 20.dp))
             }
         }
+        // 删完的提示：浮上来停 2.4 秒
+        LaunchedEffect(Downloads.note) { if (Downloads.note != null) { delay(2400); Downloads.note = null } }
+        val na by animateFloatAsState(if (Downloads.note != null) 1f else 0f, tween(240, easing = Curves.decel), label = "note")
+        var lastNote by remember { mutableStateOf("") }
+        Downloads.note?.let { lastNote = it }
+        if (na > 0f) Txt(lastNote, Page.ink, 13.sp, Modifier.align(Alignment.BottomCenter).windowInsetsPadding(WindowInsets.navigationBars).padding(bottom = 28.dp)
+            .graphicsLayer { alpha = na; translationY = (1f - na) * 10.dp.toPx() }.background(Color(0xFF3A404C), RoundedCornerShape(12.dp)).padding(horizontal = 14.dp, vertical = 9.dp), maxLines = 1)
         DlFull(Downloads.list.firstOrNull { it.id == DlPlay.id })
     }
 }
