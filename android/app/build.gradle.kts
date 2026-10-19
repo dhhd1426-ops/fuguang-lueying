@@ -75,5 +75,8 @@ dependencies {
     // 下载引擎：yt-dlp + ffmpeg（和开源下载器 Seal 同一套）
     implementation("io.github.junkfood02.youtubedl-android:library:0.17.3")
     implementation("io.github.junkfood02.youtubedl-android:ffmpeg:0.17.3")
+    // 磁力 / 种子：libtorrent 的 Java 封装（开源安卓 BT 客户端 LibreTorrent 用的同一套），只打 64 位 ARM
+    implementation("org.libtorrent4j:libtorrent4j:2.1.0-38")
+    implementation("org.libtorrent4j:libtorrent4j-android-arm64:2.1.0-38")
     testImplementation("junit:junit:4.13.2")
 }

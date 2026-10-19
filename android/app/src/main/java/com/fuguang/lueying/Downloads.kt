@@ -61,6 +61,7 @@ class Dl(
     var speed by mutableLongStateOf(0)
     var error by mutableStateOf("")
     var out by mutableStateOf("")      // 好了以后：content:// 或文件路径
+    var note by mutableStateOf("")     // 磁力：几个人在传 / 核对已下的部分 / 正在存进相册
     var job: Job? = null
 }
 
@@ -199,6 +200,22 @@ object Downloads {
                     "dash" -> dash(d, w)
                     else -> file(d, d.media.url, File(w, "a.bin"), share = 1f, base = 0f)
                 }
+                // 磁力 / 种子：只下选中的文件，下完存好（视频进相册，别的进「下载」文件夹）
+                if (d.media.kind == "magnet") {
+                    val files = Torrent.download(d, w) { st ->
+                        d.total = st.totalWanted(); d.done = st.totalWantedDone(); d.speed = st.downloadPayloadRate().toLong()
+                        d.frac = if (d.total > 0) d.done.toFloat() / d.total else 0f
+                        d.note = Torrent.line(st)
+                    }
+                    if (files.isEmpty()) error("下完了，但没找到文件")
+                    d.state = 2; d.speed = 0; d.note = "正在存进相册…"
+                    val outs = files.map { (f, name) -> if (Torrent.isMedia(name)) place(d, f, name) else placeFile(d, f, name) }
+                    d.out = outs[files.indexOfFirst { Torrent.ext(it.second) in Torrent.VIDEO }.coerceAtLeast(0)]
+                    d.total = files.sumOf { it.first.length().coerceAtLeast(0) }.takeIf { it > 0 } ?: d.total; d.done = d.total; d.frac = 1f; d.note = ""
+                    runCatching { w.deleteRecursively() }; d.state = 3
+                    withContext(Dispatchers.Main) { save() }
+                    return@launch
+                }
                 // 不是视频的文件（安装包、压缩包、PDF……）：原样放进「下载」文件夹
                 if (d.media.kind == "file" && !isVideo(d.media)) {
                     d.total = got.length(); d.done = d.total; d.frac = 1f
@@ -231,14 +248,14 @@ object Downloads {
     }
 
     /** 放到最后的地方：存到相册（Movies/浮光掠影 或 Music/浮光掠影），或者留在 App 里。 */
-    private fun place(d: Dl, f: File): String {
-        val ext = f.extension
-        val name = d.title.replace(Regex("[\\\\/:*?\"<>|\\n]"), "_").take(60) + "." + ext
+    private fun place(d: Dl, f: File, named: String? = null): String {
+        val ext = named?.let { Torrent.ext(it) } ?: f.extension
+        val name = (named?.substringBeforeLast('.') ?: d.title).replace(Regex("[\\\\/:*?\"<>|\\n]"), "_").take(80) + "." + ext
         if (d.gallery) runCatching {
-            val audio = ext == "m4a"
+            val audio = ext == "m4a" || (named != null && Torrent.mime(named).startsWith("audio"))
             val cv = ContentValues().apply {
                 put(MediaStore.MediaColumns.DISPLAY_NAME, name)
-                put(MediaStore.MediaColumns.MIME_TYPE, if (audio) "audio/mp4" else if (ext == "ts") "video/mp2t" else "video/mp4")
+                put(MediaStore.MediaColumns.MIME_TYPE, if (named != null) Torrent.mime(named) else if (audio) "audio/mp4" else if (ext == "ts") "video/mp2t" else "video/mp4")
                 put(MediaStore.MediaColumns.RELATIVE_PATH, (if (audio) Environment.DIRECTORY_MUSIC else Environment.DIRECTORY_MOVIES) + "/浮光掠影")
                 put(MediaStore.MediaColumns.IS_PENDING, 1)
             }
@@ -256,12 +273,12 @@ object Downloads {
 
     private fun isVideo(m: Sniffer.Media) = m.mime.startsWith("video") || m.mime.startsWith("audio") || Regex("\\.(mp4|webm|mov|m4v|flv|mkv|ts|m4a|mp3)(\\?|$)").containsMatchIn(m.url.lowercase())
 
-    private fun placeFile(d: Dl, f: File): String {
-        val name = d.media.name.ifBlank { d.media.url.substringBefore('?').substringAfterLast('/').ifBlank { d.title } }.replace(Regex("[\\\\/:*?\"<>|\\n]"), "_").take(80)
+    private fun placeFile(d: Dl, f: File, named: String? = null): String {
+        val name = (named ?: d.media.name).ifBlank { d.media.url.substringBefore('?').substringAfterLast('/').ifBlank { d.title } }.replace(Regex("[\\\\/:*?\"<>|\\n]"), "_").take(80)
         return runCatching {
             val cv = ContentValues().apply {
                 put(MediaStore.MediaColumns.DISPLAY_NAME, name)
-                put(MediaStore.MediaColumns.MIME_TYPE, d.media.mime.ifBlank { "application/octet-stream" })
+                put(MediaStore.MediaColumns.MIME_TYPE, named?.let { Torrent.mime(it) } ?: d.media.mime.ifBlank { "application/octet-stream" })
                 put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/浮光掠影")
             }
             val uri = app.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, cv)!!

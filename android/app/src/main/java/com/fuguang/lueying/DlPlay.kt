@@ -129,7 +129,8 @@ object DlPlay {
                 val mark = p.currentPosition + p.bufferedPosition
                 val waiting = st == Player.STATE_BUFFERING || (st == Player.STATE_IDLE && loading)
                 if (!waiting || mark != last) { last = mark; since = System.currentTimeMillis(); continue }
-                if (System.currentTimeMillis() - since < 15_000) continue
+                // 磁力要等人传过来，多给一会儿
+                if (System.currentTimeMillis() - since < (if (d.media.kind == "magnet") 60_000 else 15_000)) continue
                 if (canRetry) { open(ctx, d, fresh = true); return@launch }
                 fail = Fail("stall", "读了很久没有进展", stallWhy(p)); loading = false; buffering = false
                 return@launch
@@ -184,6 +185,13 @@ object DlPlay {
         val up = PlayerEngine.cached(ctx, http)
         fun prog(u: String) = ProgressiveMediaSource.Factory(up).createMediaSource(MediaItem.fromUri(u))
         return when (m.kind) {
+            // 磁力：本机小服务读还在下的那个视频（读到哪先下哪）；暂停着的先接着下
+            "magnet" -> {
+                if (d.state == 4 || d.state == 5) Downloads.resume(d)
+                var u: String? = null
+                for (k in 0 until 120) { u = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { TorrentServe.url(d.id) }; if (u != null) break; kotlinx.coroutines.delay(500) }
+                u?.let { ProgressiveMediaSource.Factory(DefaultDataSource.Factory(ctx)).createMediaSource(MediaItem.fromUri(it)) }
+            }
             "hls" -> HlsMediaSource.Factory(up).createMediaSource(MediaItem.fromUri(d.variant ?: m.url))
             "ytdlp" -> {
                 val height = d.variant?.toIntOrNull() ?: Regex("(\\d{3,4})").find(d.quality)?.value?.toIntOrNull() ?: 0

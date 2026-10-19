@@ -216,9 +216,9 @@ private fun DlRow(d: Dl, i: Int, onAct: (android.net.Uri, String) -> Unit) {
                 4 -> "没下成：" + d.error
                 5 -> "已暂停 · ${(d.frac * 100).toInt()}%"
                 6 -> "等 Wi-Fi"
-                2 -> "正在合成…"
+                2 -> d.note.ifBlank { "正在合成…" }
                 0 -> "排队中"
-                else -> listOf(d.quality, if (d.total > 0) mb(d.done) + " / " + mb(d.total) else mb(d.done), if (d.speed > 0) DownloadService.speed(d.speed) else "").filter { it.isNotBlank() }.joinToString(" · ")
+                else -> listOf(d.quality, if (d.total > 0) mb(d.done) + " / " + mb(d.total) else mb(d.done), if (d.speed > 0) DownloadService.speed(d.speed) else "", if (d.media.kind == "magnet") d.note else "").filter { it.isNotBlank() }.joinToString(" · ")
             }
             Txt(line, if (d.state == 4) Color(0xFFD79A94) else Page.muted.copy(alpha = .7f), 11.5.sp, Modifier.padding(top = 3.dp), maxLines = 2)
             if (d.state == 3) Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {

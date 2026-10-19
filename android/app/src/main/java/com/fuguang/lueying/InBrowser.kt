@@ -92,7 +92,7 @@ object InBrowser {
         if (!t.startsWith("http://") && !t.startsWith("https://")) return
         url = t; nonce++
     }
-    fun close() { url = null }
+    fun close() { url = null; Magnet.ask = null }
 }
 
 private val Warm = Color(0xFFE9B48E)
@@ -283,6 +283,8 @@ fun InBrowserLayer() {
                                     val u = req?.url ?: return false
                                     val s = u.scheme?.lowercase()
                                     if (s == "http" || s == "https") return false
+                                    // 磁力链接：不当成跳 App 拦掉，弹出磁力下载
+                                    if (s == "magnet") { Magnet.ask = Magnet.Ask(u.toString(), view?.url.orEmpty()); return true }
                                     if (s == "tel" || s == "mailto" || s == "sms") { runCatching { c.startActivity(Intent(Intent.ACTION_VIEW, u).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }; return true }
                                     // 跳别的 App、跳应用商店：拦下，数一个
                                     if (AdBlock.isAppJump(s)) { blocked[2]++; blockedTick++; toast = "拦下了一次跳转到别的 App"; return true }
@@ -290,7 +292,10 @@ fun InBrowserLayer() {
                                 }
                             }
                             // 点到的是文件（视频、安装包、压缩包……）：认成一个可下载的东西，弹出下载
-                            setDownloadListener { u, _, cd, mime, len -> Sniffer.direct(u, mime, len, cd, url); dlOpen = true }
+                            setDownloadListener { u, _, cd, mime, len ->
+                                if (Torrent.isTorrent(u, mime)) { Magnet.ask = Magnet.Ask(u, url.orEmpty()); return@setDownloadListener }
+                                Sniffer.direct(u, mime, len, cd, url); dlOpen = true
+                            }
                             web = this
                         }
                     },
@@ -378,6 +383,9 @@ fun InBrowserLayer() {
 
         // 选清晰度
         DownloadSheet(dlOpen, title, web?.url ?: target.orEmpty()) { dlOpen = false; if (it.isNotEmpty()) toast = it }
+
+        // 磁力 / 种子
+        MagnetSheet { toast = it }
 
         // 视频全屏
         full?.let { v ->

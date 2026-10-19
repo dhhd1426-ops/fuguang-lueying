@@ -46,6 +46,11 @@ internal class Fail(val kind: String, val msg: String, val why: String)
 internal object DlFail {
     fun of(ctx: Context, d: Dl, e: PlaybackException, fmt: Format?): Fail {
         val code = e.errorCode; val name = e.errorCodeName
+        if (d.state != 3 && d.media.kind == "magnet") return when (code) {
+            PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS, PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED -> Fail("net", "还没连上传这个视频的人，等一会儿再点", name)
+            PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT -> Fail("net", "这一段一直没人传过来，等下多一点再看", name)
+            else -> if (code in 4001..4005) codec(ctx, d, fmt, name) else Fail("net", "这一个现在读不了，下好就能看", name)
+        }
         if (d.state != 3) return when (code) {
             PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED, PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT -> Fail("net", "网连不上，下好就能看", name)
             PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS -> Fail("net", "网站不让直接读，下好就能看", name)
