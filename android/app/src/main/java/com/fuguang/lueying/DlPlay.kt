@@ -55,7 +55,6 @@ import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
-import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.SeekParameters
 import androidx.media3.exoplayer.hls.HlsMediaSource
@@ -84,15 +83,14 @@ object DlPlay {
     var player by mutableStateOf<ExoPlayer?>(null); private set
     private var job: Job? = null
     private val scope = MainScope()
+    private var app: Context? = null
 
     fun toggle(ctx: Context, d: Dl) { if (id == d.id) close() else open(ctx, d) }
 
     fun open(ctx: Context, d: Dl) {
         close()
-        id = d.id; loading = true
-        // 起播和拖完后不用攒满 2.5 / 5 秒才开始：攒够 1 秒就放（网上读时跟手得多）
-        val lc = DefaultLoadControl.Builder().setBufferDurationsMs(15_000, 50_000, 1_000, 1_500).build()
-        val p = ExoPlayer.Builder(ctx.applicationContext).setLoadControl(lc).build()
+        id = d.id; loading = true; app = ctx.applicationContext
+        val p = PlayerEngine.build(ctx)
         p.addListener(object : Player.Listener {
             override fun onPlayerError(e: PlaybackException) { error = "放不了：网站不让直接读，等下好再看"; loading = false }
             override fun onPlaybackStateChanged(s: Int) {
@@ -105,13 +103,16 @@ object DlPlay {
             val src = runCatching { source(ctx.applicationContext, d) }.getOrNull()
             if (player !== p) return@launch
             if (src == null) { error = "这一个现在放不了，等下好再看"; loading = false; return@launch }
-            p.setMediaSource(src); p.prepare(); p.playWhenReady = true
+            // 上次看到哪，从那里接着放
+            p.setMediaSource(src, PlayerEngine.lastPos(ctx, d.id)); p.prepare(); p.playWhenReady = true
         }
     }
 
     fun close() {
         job?.cancel(); job = null
-        player?.release(); player = null
+        val p = player; val a = app; val i = id
+        if (p != null && a != null && i != null && p.duration != C.TIME_UNSET) PlayerEngine.keepPos(a, i, p.currentPosition, p.duration)
+        p?.release(); player = null
         id = null; full = false; loading = false; buffering = false; error = null
     }
 
@@ -127,9 +128,10 @@ object DlPlay {
         if (h.keys.none { it.equals("Referer", true) }) h["Referer"] = ref
         android.webkit.CookieManager.getInstance().getCookie(ref)?.takeIf { it.isNotBlank() && h.keys.none { k -> k.equals("Cookie", true) } }?.let { h["Cookie"] = it }
         val http = DefaultHttpDataSource.Factory().setUserAgent(ua).setDefaultRequestProperties(h).setAllowCrossProtocolRedirects(true).setConnectTimeoutMs(15_000)
-        fun prog(u: String) = ProgressiveMediaSource.Factory(http).createMediaSource(MediaItem.fromUri(u))
+        val up = PlayerEngine.cached(ctx, http)
+        fun prog(u: String) = ProgressiveMediaSource.Factory(up).createMediaSource(MediaItem.fromUri(u))
         return when (m.kind) {
-            "hls" -> HlsMediaSource.Factory(http).createMediaSource(MediaItem.fromUri(d.variant ?: m.url))
+            "hls" -> HlsMediaSource.Factory(up).createMediaSource(MediaItem.fromUri(d.variant ?: m.url))
             "ytdlp" -> {
                 val height = d.variant?.toIntOrNull() ?: Regex("(\\d{3,4})").find(d.quality)?.value?.toIntOrNull() ?: 0
                 val us = YtDlp.streams(m.url, m.headers, height, d.audioOnly)
@@ -143,9 +145,16 @@ object DlPlay {
     internal class Ctl(private val p: ExoPlayer) : VidCtl {
         private var keep = 1f
         override fun toggle() { p.playWhenReady = !p.playWhenReady }
-        override fun seek(t: Double) { p.setSeekParameters(SeekParameters.EXACT); p.seekTo((t * 1000).toLong()) }
-        // 拖动中途跳最近的关键帧：网上读也快，画面跟得上手指
-        override fun scrub(t: Double) { p.setSeekParameters(SeekParameters.CLOSEST_SYNC); p.seekTo((t * 1000).toLong()) }
+        private var scrubbing = false
+        override fun seek(t: Double) {
+            if (scrubbing) { scrubbing = false; p.setScrubbingModeEnabled(false) }
+            p.setSeekParameters(SeekParameters.EXACT); p.seekTo((t * 1000).toLong())
+        }
+        // 拖动中途：Media3 的拖动模式（连续跳转时丢掉没用的解码、不重复缓冲）+ 跳最近的关键帧，画面跟得上手指
+        override fun scrub(t: Double) {
+            if (!scrubbing) { scrubbing = true; p.setScrubbingModeEnabled(true) }
+            p.setSeekParameters(SeekParameters.CLOSEST_SYNC); p.seekTo((t * 1000).toLong())
+        }
         override fun seekBy(d: Double) = p.seekTo((p.currentPosition + (d * 1000).toLong()).coerceAtLeast(0))
         override fun rate(r: Double) = p.setPlaybackSpeed(r.toFloat())
         override fun hold(on: Boolean) { if (on) { keep = p.playbackParameters.speed; p.setPlaybackSpeed(2f); p.playWhenReady = true } else p.setPlaybackSpeed(keep) }
@@ -219,12 +228,18 @@ private fun PlayerSurface(d: Dl, pl: ExoPlayer, mini: Boolean) {
     val scope = rememberCoroutineScope()
     val haptic = LocalHapticFeedback.current
     LaunchedEffect(pl) { while (true) { p.sync(DlPlay.state(pl)); delay(250) } }
+    val owner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    DisposableEffect(owner, pl) {
+        val o = androidx.lifecycle.LifecycleEventObserver { _, e -> if (e == androidx.lifecycle.Lifecycle.Event.ON_STOP) pl.pause() }
+        owner.lifecycle.addObserver(o); onDispose { owner.lifecycle.removeObserver(o) }
+    }
     LaunchedEffect(p.shown, p.poke, p.playing, p.menu) { if (p.shown && p.playing && !p.menu) { delay(2600); p.shown = false } }
     Box(Modifier.fillMaxSize()) {
         val s = p.state
         val ratio = if (s != null && s.vw > 0 && s.vh > 0) s.vw.toFloat() / s.vh else 16f / 9f
         Box(Modifier.align(Alignment.Center).aspectRatio(ratio, matchHeightConstraintsFirst = !mini || ratio < 16f / 9f)) {
-            AndroidView(factory = { c -> TextureView(c).also { pl.setVideoTextureView(it) } }, onRelease = { pl.clearVideoTextureView(it) }, modifier = Modifier.fillMaxSize())
+            if (mini) AndroidView(factory = { c -> TextureView(c).also { it.keepScreenOn = true; pl.setVideoTextureView(it) } }, onRelease = { pl.clearVideoTextureView(it) }, modifier = Modifier.fillMaxSize())
+            else AndroidView(factory = { c -> android.view.SurfaceView(c).also { it.keepScreenOn = true; pl.setVideoSurfaceView(it) } }, onRelease = { pl.clearVideoSurfaceView(it) }, modifier = Modifier.fillMaxSize())
         }
         VideoGesture(p, ctl, haptic, scope)
         val ca by animateFloatAsState(if (p.shown) 1f else 0f, tween(220, easing = Curves.standard), label = "dlctl")

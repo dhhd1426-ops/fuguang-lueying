@@ -2,6 +2,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <!-- 打开时检查网上有没有新的掠影和留言 -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.INTERNET" />
 
     <!-- 内置浏览器下载视频：后台接着下，通知栏有进度 -->
