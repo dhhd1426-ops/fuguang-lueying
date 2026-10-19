@@ -64,6 +64,7 @@ object Materials {
 
     private suspend fun open(url: String): ToolOut {
         if (!url.startsWith("http")) return ToolOut("网址不对：要 http 开头的完整网址。")
+        Douyin.link(url)?.let { l -> runCatching { Douyin.parse(l) }.getOrNull()?.let { return douyin(url, it) } }
         val g = PageGrab.grab(url)
         val host = runCatching { URL(g.url).host }.getOrDefault("")
         val picked = pick(g.raw, host)
@@ -82,6 +83,21 @@ object Materials {
             JSONObject().put("title", g.title).put("url", g.url).put("text", g.text.take(5000)).put("materials", arr)
                 .put("count", picked.groupingBy { it.kind }.eachCount().entries.joinToString("、") { "${it.key} ${it.value}" }).toString(),
         )
+    }
+
+    /** 抖音作品：直接解析出完整文案、作者、时长、封面和去掉水印的视频 / 原图。 */
+    private fun douyin(url: String, i: Douyin.Item): ToolOut {
+        val page = i.pageUrl
+        listOfNotNull(i.cover, i.video, i.music).plus(i.images).forEach { mark(it, page) }
+        synchronized(said) { said[url] = "解析了抖音「${i.title.take(16)}」" + if (i.images.isNotEmpty()) "，${i.images.size} 张原图" else "" }
+        val o = JSONObject().put("platform", "抖音").put("title", i.title).put("author", i.author).put("url", page)
+        if (i.seconds > 0) o.put("duration", "%d:%02d".format(i.seconds / 60, i.seconds % 60))
+        i.cover?.let { o.put("cover", it) }
+        i.video?.let { o.put("video", it) }
+        if (i.images.isNotEmpty()) o.put("images", JSONArray(i.images))
+        i.music?.let { o.put("music", it) }
+        o.put("note", "这是这条抖音的文案和地址，video 是去掉水印的视频。视频画面和里面说的话你看不到，只有文案里写的才算数；封面和原图可以用 $LOOK 看一眼。想存下来的话，聊天页顶上那条可以直接下载。")
+        return ToolOut(o.toString())
     }
 
     class Mat(val url: String, val kind: String, val alt: String, val w: Int, val h: Int, val near: String)

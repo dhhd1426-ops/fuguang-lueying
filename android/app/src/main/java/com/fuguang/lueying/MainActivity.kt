@@ -64,6 +64,12 @@ class MainActivity : ComponentActivity() {
         if (hasFocus) ClipLink.check(this)
     }
 
+    // 有的系统（如 HyperOS）焦点回来那一下还读不到剪贴板：回到前台后稍等再看一次
+    override fun onResume() {
+        super.onResume()
+        window.decorView.postDelayed({ if (hasWindowFocus()) ClipLink.check(this) }, 600)
+    }
+
     // 点通知栏「下好了」回到 App：打开下载页
     override fun onNewIntent(intent: android.content.Intent) {
         super.onNewIntent(intent)

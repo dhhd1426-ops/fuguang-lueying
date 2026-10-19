@@ -179,6 +179,7 @@ class ChatState(val history: ConvStore) {
         if (editing in messages.indices) while (messages.size > editing) messages.removeAt(messages.lastIndex)
         editing = -1
         messages.add(ChatMsg("user", text))
+        ClipLink.offer(text)
         Memory.touch(newChat = messages.size == 1)
         persist()
         sent++

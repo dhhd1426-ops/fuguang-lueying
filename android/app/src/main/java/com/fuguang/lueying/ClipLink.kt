@@ -52,8 +52,13 @@ object ClipLink {
     fun check(act: Activity) {
         val cm = act.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager ?: return
         val text = runCatching { cm.primaryClip?.getItemAt(0)?.coerceToText(act)?.toString() }.getOrNull() ?: return
+        offer(text)
+    }
+
+    /** 一段文字里有抖音链接就认（剪贴板、你发给她的话都走这里）；同一段只认一次。 */
+    fun offer(text: String) {
         val l = Douyin.link(text) ?: return
-        val key = text.hashCode().toString()
+        val key = l.hashCode().toString()
         if (prefs?.string("clip-seen") == key) return
         if (showing && phase == 3) return          // 正在下的那条别被打断
         prefs?.putString("clip-seen", key)
