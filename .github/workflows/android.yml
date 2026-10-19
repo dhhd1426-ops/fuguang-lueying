@@ -78,24 +78,23 @@ jobs:
           git push -q -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" office-samples
 
       - name: Torrent probe
-        # 提交说明里带「磁力」时，在 check 分支上跑一遍磁力探测（找种子信息 → 下 → 边下边看），报告写成注解并放到 torrent-report 分支
+        # 提交说明里带「磁力」时，在 check 分支上跑一遍磁力探测（找种子信息 → 下 → 边下边看），报告和日志尾巴放到 torrent-report 分支
         if: github.ref == 'refs/heads/check' && contains(github.event.head_commit.message, '磁力')
         continue-on-error: true
         timeout-minutes: 15
         working-directory: android
         run: |
-          set -o pipefail
-          ./gradlew :app:testDebugUnitTest --tests "com.fuguang.lueying.TorrentProbeTest" --console=plain 2>&1 | tee probe.log || {
-            { grep -E "^e: |Exception|Error|FAILED" probe.log | head -n 30; grep -A 20 "What went wrong" probe.log | head -n 20; } | while IFS= read -r line; do echo "::error::${line}"; done
-          }
-          if [ -f app/build/torrent-report/report.txt ]; then
-            while IFS= read -r line; do echo "::notice::${line}"; done < app/build/torrent-report/report.txt
-            mkdir /tmp/tr && cp app/build/torrent-report/report.txt /tmp/tr/ && cd /tmp/tr
-            git init -q && git checkout -q -b torrent-report
-            git -c user.name=Claude -c user.email=noreply@anthropic.com add -A
-            git -c user.name=Claude -c user.email=noreply@anthropic.com commit -q -m "torrent report ${{ github.sha }}"
-            git push -q -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" torrent-report
-          fi
+          ./gradlew :app:testDebugUnitTest --tests "com.fuguang.lueying.TorrentProbeTest" --console=plain > probe.log 2>&1 || echo "gradle exit $?" >> probe.log
+          mkdir -p /tmp/tr
+          cp app/build/torrent-report/report.txt /tmp/tr/ 2>/dev/null || true
+          tail -n 150 probe.log > /tmp/tr/probe-tail.log
+          find app/build/test-results -name "*Torrent*.xml" -exec cp {} /tmp/tr/ \; 2>/dev/null || true
+          [ -f /tmp/tr/report.txt ] && while IFS= read -r line; do echo "::notice::${line}"; done < /tmp/tr/report.txt
+          cd /tmp/tr
+          git init -q && git checkout -q -b torrent-report
+          git -c user.name=Claude -c user.email=noreply@anthropic.com add -A
+          git -c user.name=Claude -c user.email=noreply@anthropic.com commit -q -m "torrent report ${{ github.sha }}"
+          git push -q -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" torrent-report
 
       - name: Rename APK
         run: |
