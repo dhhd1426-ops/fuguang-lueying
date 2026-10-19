@@ -18,7 +18,7 @@ import java.net.URL
  */
 object Douyin {
     class Item(
-        val id: String, val title: String, val author: String, val cover: String?, val seconds: Int,
+        val id: String, val title: String, val desc: String, val author: String, val cover: String?, val seconds: Int,
         val video: String?, val images: List<String>, val music: String?,
     ) {
         val pageUrl get() = "https://www.douyin.com/" + (if (images.isNotEmpty()) "note/" else "video/") + id
@@ -142,6 +142,7 @@ object Douyin {
         return Item(
             id = id,
             title = o.optString("desc").lineSequence().firstOrNull()?.trim().orEmpty().ifBlank { "抖音作品" }.take(60),
+            desc = o.optString("desc").trim().take(2000),
             author = o.optJSONObject("author")?.optString("nickname").orEmpty(),
             cover = first(v?.optJSONObject("cover")?.optJSONArray("url_list")) ?: first(v?.optJSONObject("origin_cover")?.optJSONArray("url_list")) ?: imgs.firstOrNull(),
             seconds = if (ms > 1000) ms / 1000 else ms,

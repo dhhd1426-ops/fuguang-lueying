@@ -474,7 +474,7 @@ object ChatApi {
     }
 
     /** 能一起并发着做的工具（只读、不问人）。 */
-    private val READ_ONLY = setOf(Skills.OPEN, Skills.FIND, WebSearch.TOOL, Recall.TOOL, Works.READ, Materials.OPEN, Materials.LOOK, Gallery.TOOL)
+    private val READ_ONLY = setOf(Skills.OPEN, Skills.FIND, WebSearch.TOOL, Recall.TOOL, Works.READ, Materials.OPEN, Materials.LOOK, Gallery.TOOL, VideoParse.TOOL)
 
     private fun args(call: Call) = runCatching { JSONObject(call.args.toString().ifBlank { "{}" }) }.getOrDefault(JSONObject())
 
