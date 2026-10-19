@@ -84,25 +84,24 @@ object Downloads {
             val a = JSONArray(p.string("downloads") ?: return@runCatching)
             for (i in 0 until a.length()) {
                 val o = a.getJSONObject(i)
-                val m = Sniffer.Media(o.optString("kind"), o.optString("url"), o.optString("audio").ifEmpty { null }, page = o.optString("page"))
-                list += Dl(o.getString("id"), o.optString("title"), m, o.optString("quality"), null, o.optBoolean("audioOnly"), o.optBoolean("gallery"), false, o.optLong("at")).also {
-                    it.state = 3; it.out = o.optString("out"); it.total = o.optLong("total"); it.done = it.total; it.frac = 1f
+                val hs = o.optJSONObject("headers")?.let { h -> h.keys().asSequence().associateWith { k -> h.optString(k) } }.orEmpty()
+                val m = Sniffer.Media(o.optString("kind"), o.optString("url"), o.optString("audio").ifEmpty { null }, headers = hs, page = o.optString("page"))
+                list += Dl(o.getString("id"), o.optString("title"), m, o.optString("quality"), o.optString("variant").ifEmpty { null }, o.optBoolean("audioOnly"), o.optBoolean("gallery"), o.optBoolean("wifi"), o.optLong("at")).also {
+                    it.out = o.optString("out"); it.total = o.optLong("total")
+                    if (o.optInt("state", 3) == 3) { it.state = 3; it.done = it.total; it.frac = 1f }
+                    else { it.state = 5; it.done = o.optLong("done"); it.frac = o.optDouble("frac", 0.0).toFloat() }
                 }
             }
         }
-        sweep()
-    }
-
-    /** 临时文件夹里不属于任何一个下载的（暂停、没成的下载重开 App 后不在列表里了），清掉。 */
-    private fun sweep() = scope.launch {
-        File(app.cacheDir, "dl").listFiles()?.forEach { f -> if (list.none { it.id == f.name }) runCatching { f.deleteRecursively() } }
     }
 
     private fun save() {
         val a = JSONArray()
-        list.filter { it.state == 3 }.forEach { d ->
+        list.forEach { d ->
             a.put(JSONObject().put("id", d.id).put("title", d.title).put("kind", d.media.kind).put("url", d.media.url).put("audio", d.media.audio ?: "")
-                .put("page", d.media.page).put("quality", d.quality).put("audioOnly", d.audioOnly).put("gallery", d.gallery).put("at", d.at).put("out", d.out).put("total", d.total))
+                .put("page", d.media.page).put("quality", d.quality).put("audioOnly", d.audioOnly).put("gallery", d.gallery).put("at", d.at).put("out", d.out).put("total", d.total)
+                .put("state", if (d.state == 3) 3 else 5).put("done", d.done).put("frac", d.frac.toDouble()).put("variant", d.variant ?: "").put("wifi", d.wifiOnly)
+                .put("headers", JSONObject(d.media.headers)))
         }
         prefs?.putString("downloads", a.toString())
     }
@@ -129,7 +128,7 @@ object Downloads {
 
     fun start(act: Activity?, title: String, m: Sniffer.Media, quality: String, variant: String?, audioOnly: Boolean, gallery: Boolean, wifiOnly: Boolean) {
         val d = Dl(System.currentTimeMillis().toString(36), title.ifBlank { "视频" }.take(60), m, quality, variant, audioOnly, gallery, wifiOnly)
-        list.add(0, d)
+        list.add(0, d); save()
         // 通知栏进度：安卓 13 起要先问一声
         if (act != null && android.os.Build.VERSION.SDK_INT >= 33 &&
             ContextCompat.checkSelfPermission(act, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
@@ -137,7 +136,7 @@ object Downloads {
         run(d)
     }
 
-    fun pause(d: Dl) { if (d.media.kind == "ytdlp") YtDlp.stop(d.id); d.job?.cancel(); d.state = 5; d.speed = 0 }
+    fun pause(d: Dl) { if (d.media.kind == "ytdlp") YtDlp.stop(d.id); d.job?.cancel(); d.state = 5; d.speed = 0; save() }
     fun resume(d: Dl) { if (d.state == 5 || d.state == 4) run(d) }
     /** 删完的一句提示（相册那份删不掉时）；下载页底下浮出来。 */
     var note by mutableStateOf<String?>(null)
@@ -226,6 +225,7 @@ object Downloads {
                 throw e
             } catch (e: Exception) {
                 d.error = e.message?.take(60) ?: "没下成"; d.state = 4; d.speed = 0
+                withContext(Dispatchers.Main + kotlinx.coroutines.NonCancellable) { save() }
             }
         }
     }
