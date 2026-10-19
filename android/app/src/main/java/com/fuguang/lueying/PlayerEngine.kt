@@ -52,6 +52,8 @@ internal object PlayerEngine {
     /** 每个下载看到哪了：再打开从那里接着放。 */
     fun lastPos(ctx: Context, id: String): Long = ctx.getSharedPreferences("dl-play", 0).getLong(id, 0)
 
+    fun forget(ctx: Context, id: String) { ctx.getSharedPreferences("dl-play", 0).edit().remove(id).apply() }
+
     fun keepPos(ctx: Context, id: String, pos: Long, dur: Long) {
         val sp = ctx.getSharedPreferences("dl-play", 0).edit()
         // 刚开头、快结尾的不记，下次从头放

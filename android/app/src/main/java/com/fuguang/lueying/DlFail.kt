@@ -116,6 +116,11 @@ internal fun FailNote(d: Dl, f: Fail) {
             when (f.kind) {
                 "mux" -> { FailBtn("修一下", true) { DlPlay.repair(ctx, d) }; FailBtn("用别的播放器", false) { DlFail.external(ctx, d) } }
                 "codec" -> if (d.state == 3) FailBtn("用别的播放器", true) { DlFail.external(ctx, d) } else FailBtn("好", true) { DlPlay.close() }
+                "stall" -> {
+                    FailBtn("从头再放", true) { DlPlay.open(ctx, d, fresh = true) }
+                    if (d.state == 3) FailBtn("修一下", false) { DlPlay.repair(ctx, d) }
+                    if (d.state == 3) FailBtn("别的播放器", false) { DlFail.external(ctx, d) }
+                }
                 "gone" -> FailBtn("从下载里移除", true) { Downloads.delete(d) }
                 else -> FailBtn("好", true) { DlPlay.close() }
             }

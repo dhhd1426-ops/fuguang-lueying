@@ -83,12 +83,14 @@ object DlPlay {
     var fixing by mutableStateOf(false); private set
     var player by mutableStateOf<ExoPlayer?>(null); private set
     private var job: Job? = null
+    private var dog: Job? = null
     private val scope = MainScope()
     private var app: Context? = null
 
     fun toggle(ctx: Context, d: Dl) { if (id == d.id) close() else open(ctx, d) }
 
-    fun open(ctx: Context, d: Dl) {
+    /** fresh：不从上次看到的地方接着放（上一次卡住了，换从头放试一次）。 */
+    fun open(ctx: Context, d: Dl, fresh: Boolean = false) {
         close()
         id = d.id; loading = true; app = ctx.applicationContext
         val p = PlayerEngine.build(ctx)
@@ -105,12 +107,48 @@ object DlPlay {
             if (player !== p) return@launch
             if (src == null) { fail = Fail("net", "这一个现在读不了，下好就能看", "没拿到播放地址"); loading = false; return@launch }
             // 上次看到哪，从那里接着放
-            p.setMediaSource(src, PlayerEngine.lastPos(ctx, d.id)); p.prepare(); p.playWhenReady = true
+            val resume = if (fresh) 0L else PlayerEngine.lastPos(ctx, d.id)
+            if (fresh) PlayerEngine.forget(ctx, d.id)
+            p.setMediaSource(src, resume); p.prepare(); p.playWhenReady = true
+            watch(ctx.applicationContext, d, p, canRetry = resume > 0)
         }
     }
 
+    /**
+     * 看门狗：转圈不能一直转。在读（缓冲）超过 15 秒、读到的位置也没往前走，就当卡住了：
+     * 有「接着看」的位置先丢掉它、从头放一次；还不行就说清楚读到哪了，给「从头再放 / 修一下 / 用别的播放器」。
+     */
+    private fun watch(ctx: Context, d: Dl, p: ExoPlayer, canRetry: Boolean) {
+        dog?.cancel()
+        dog = scope.launch {
+            var last = -1L; var since = System.currentTimeMillis()
+            while (true) {
+                delay(1000)
+                if (player !== p || fail != null || fixing) return@launch
+                val st = p.playbackState
+                val mark = p.currentPosition + p.bufferedPosition
+                val waiting = st == Player.STATE_BUFFERING || (st == Player.STATE_IDLE && loading)
+                if (!waiting || mark != last) { last = mark; since = System.currentTimeMillis(); continue }
+                if (System.currentTimeMillis() - since < 15_000) continue
+                if (canRetry) { open(ctx, d, fresh = true); return@launch }
+                fail = Fail("stall", "读了很久没有进展", stallWhy(p)); loading = false; buffering = false
+                return@launch
+            }
+        }
+    }
+
+    private fun stallWhy(p: ExoPlayer): String {
+        fun t(ms: Long) = if (ms < 0 || ms == C.TIME_UNSET) "?" else fmtTime(ms / 1000.0)
+        val v = p.videoFormat; val a = p.audioFormat
+        return listOfNotNull(
+            "BUFFERING", "${t(p.currentPosition)} / ${t(p.duration)}", "已读到 ${t(p.bufferedPosition)}",
+            v?.takeIf { it.width > 0 }?.let { "${it.width}×${it.height}" },
+            "声音 " + (a?.sampleMimeType?.substringAfter('/') ?: "无"),
+        ).joinToString(" · ")
+    }
+
     fun close() {
-        job?.cancel(); job = null
+        job?.cancel(); job = null; dog?.cancel(); dog = null
         val p = player; val a = app; val i = id
         if (p != null && a != null && i != null && p.duration != C.TIME_UNSET) PlayerEngine.keepPos(a, i, p.currentPosition, p.duration)
         p?.release(); player = null
