@@ -34,7 +34,7 @@ internal object PanQuarkSave {
                 .put("fid_token_list", JSONArray().put(f.extra["token"].orEmpty()))
                 .put("to_pdir_fid", tmp)
                 .put("pwd_id", s.id).put("stoken", stoken)
-                .put("pdir_fid", f.extra["pdir"] ?: "0")
+                .put("pdir_fid", "0") // 照 QkTool：子文件夹里的文件也传 "0"，靠 fid + fid_token 认文件
                 .put("scene", "link").put("pdir_save_all", false)
             call(s, "share/sharepage/save", body = b).optJSONObject("data")?.optString("task_id").orEmpty()
         }

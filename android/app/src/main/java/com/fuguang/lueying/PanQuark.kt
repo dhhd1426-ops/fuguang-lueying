@@ -131,7 +131,7 @@ object PanQuark : PanApi {
                 out += PanFile(
                     fid, name, o.optLong("size", -1), dir = !o.optBoolean("file", true),
                     path = if (parent.isEmpty()) name else "$parent/$name",
-                    extra = mapOf("token" to o.optString("share_fid_token"), "pdir" to pdir),
+                    extra = mapOf("token" to o.optString("share_fid_token")),
                 )
             }
             seen += list.length()
