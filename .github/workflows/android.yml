@@ -108,9 +108,17 @@ jobs:
           api-level: 30
           arch: x86_64
           target: google_apis
-          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot
+          cores: 4
+          ram-size: 4096M
+          emulator-boot-timeout: 1200
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot -camera-back none
           disable-animations: true
           script: bash android/probe-emulator.sh
+
+      - name: Emulator note
+        if: github.ref == 'refs/heads/check' && contains(github.event.head_commit.message, '迅雷')
+        run: |
+          mkdir -p /tmp/tr; [ -f /tmp/tr/emulator.txt ] || echo "模拟器没跑完（多半没开起来）。KVM: $(ls -l /dev/kvm 2>&1)" > /tmp/tr/emulator.txt
 
       - name: Push torrent report
         if: github.ref == 'refs/heads/check' && (contains(github.event.head_commit.message, '磁力') || contains(github.event.head_commit.message, '迅雷'))
