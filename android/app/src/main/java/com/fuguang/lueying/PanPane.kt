@@ -64,7 +64,7 @@ private val OnWarmInk = Color(0xFF2A211B)
  * 主按钮四段反馈（照 dongxiaosheji 01-done-burst）：进度填满按钮 → 画 ✓ → 停一拍迸杏色光点 + 轻震 → 「打开 · 在下载里看」。
  */
 @Composable
-fun PanPane(it: PanItem, onClose: () -> Unit) {
+fun PanPane(it: PanItem, head: Boolean = true, onClose: () -> Unit) {
     val act = LocalContext.current.activity()
     val haptic = LocalHapticFeedback.current
     var size by remember { mutableStateOf(IntSize.Zero) }
@@ -78,7 +78,8 @@ fun PanPane(it: PanItem, onClose: () -> Unit) {
 
     Box(Modifier.fillMaxWidth().onSizeChanged { s -> size = s }) {
         Column(Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, bottom = 12.dp, top = 4.dp).graphicsLayer { translationX = dx.value * density }, verticalArrangement = Arrangement.spacedBy(9.dp)) {
-            Head(it)
+            // 长条里顶上那行已经写了哪家和标题，这里不再重复
+            if (head) Head(it)
             AnimatedContent(it.stage, transitionSpec = { fadeIn(tween(240, 60)) togetherWith fadeOut(tween(120)) }, label = "panStage") { st ->
                 when (st) {
                     0 -> Column(verticalArrangement = Arrangement.spacedBy(6.dp)) { repeat(3) { i -> Box(Modifier.fillMaxWidth().height(32.dp).clip(RoundedCornerShape(9.dp)).background(Color.White.copy(alpha = .06f - i * .015f))) } }

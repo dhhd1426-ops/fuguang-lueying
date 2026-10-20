@@ -84,7 +84,7 @@ fun PanPillLayer() {
                     Pressable({ PanLink.dismiss() }, Modifier.padding(start = 2.dp), label = "不用") { _ -> SvgIcon(Icons.close, Page.muted, 16.dp, modifier = Modifier.padding(8.dp)) }
                 }
                 AnimatedVisibility(PanLink.open, enter = expandVertically(tween(380, easing = Curves.decel), Alignment.Top) + fadeIn(tween(240, 80)), exit = shrinkVertically(tween(240, easing = Curves.accel), Alignment.Top) + fadeOut(tween(160))) {
-                    PanPane(item) { PanLink.dismiss() }
+                    PanPane(item, head = false) { PanLink.dismiss() }
                 }
             }
         }
