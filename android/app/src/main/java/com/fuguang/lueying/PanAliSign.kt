@@ -56,8 +56,10 @@ internal object PanAliSign {
 
     fun sha256Hex(s: String): String = sha256(s).joinToString("") { "%02x".format(it) }
 
-    /** 由一段十六进制（OpenList 用 sha256(user_id)）得到私钥，落在 [1, N-1]。 */
-    fun key(hex: String): BigInteger = BigInteger(hex, 16).mod(N.subtract(BigInteger.ONE)).add(BigInteger.ONE)
+    /** 由一段十六进制（OpenList 用 sha256(user_id)）得到私钥：原样当私钥，极少数越界的再折回 [1, N-1]。 */
+    fun key(hex: String): BigInteger = BigInteger(hex, 16).let {
+        if (it.signum() > 0 && it < N) it else it.mod(N.subtract(BigInteger.ONE)).add(BigInteger.ONE)
+    }
 
     /** 公钥：X + Y 各 32 字节的十六进制（128 个字符）。 */
     fun pub(d: BigInteger): String {
