@@ -142,6 +142,7 @@ object PanBaidu : PanApi {
         s.state["borrowed"] = "1"
         if (s.state["shareid"] == null) wxlist(s, "", root = true, parent = "")
         val url = "$API/share/transfer?" + Pan.form("shareid" to s.state["shareid"], "from" to s.state["uk"],
+            "sekey" to URLDecoder.decode(s.state["randsk"].orEmpty(), "UTF-8").ifEmpty { null },
             "bdstoken" to tk, "ondup" to "newcopy", "async" to 1, "channel" to "chunlei", "web" to 1, "clienttype" to 0)
         val j = json(Pan.http(url, mapOf("Cookie" to ck(s), "Referer" to "$API/s/1${s.id}"),
             Pan.form("fsidlist" to "[${f.extra["fs_id"] ?: f.id}]", "path" to TEMP)))
@@ -159,7 +160,7 @@ object PanBaidu : PanApi {
         val to = j.optJSONObject("extra")?.optJSONArray("list")?.optJSONObject(0)?.optString("to")
             ?.takeIf { it.isNotEmpty() } ?: "$TEMP/${f.name}"
         try {
-            val m = json(Pan.http("$API/api/filemetas?" + Pan.form("target" to JSONArray(listOf(to)).toString(),
+            val m = json(Pan.http("$API/api/filemetas?" + Pan.form("target" to arr(to),
                 "dlink" to 1, "web" to 5, "origin" to "dlna"), mapOf("User-Agent" to NETDISK_UA, "Cookie" to ck(s))))
             if (m.optInt("errno", -999) != 0) throw PanError(PanError.Kind.LIMIT, "存进去了，但百度不给下载地址", "BAIDU · filemetas ${m.optInt("errno")}")
             val dlink = m.optJSONArray("info")?.optJSONObject(0)?.optString("dlink").orEmpty()
@@ -219,12 +220,15 @@ object PanBaidu : PanApi {
     private suspend fun delete(s: PanShare, tk: String, path: String) {
         Pan.http("$API/api/filemanager?" + Pan.form("opera" to "delete", "async" to 0, "onnest" to "fail",
             "bdstoken" to tk, "channel" to "chunlei", "web" to 1, "app_id" to 250528, "clienttype" to 0),
-            mapOf("Cookie" to ck(s)), Pan.form("filelist" to JSONArray(listOf(path)).toString()))
+            mapOf("Cookie" to ck(s)), Pan.form("filelist" to arr(path)))
     }
 
     // ———— 小件 ————
 
     private fun bduss(): String = Regex("""(?:^|;\s*)BDUSS=([^;]+)""").find(Pan.cookie(Disk.BAIDU))?.groupValues?.get(1).orEmpty()
+
+    /** ["路径"]。不用 JSONArray：它会把 / 写成 \/。 */
+    private fun arr(p: String) = "[\"" + p.replace("\\", "\\\\").replace("\"", "\\\"") + "\"]"
 
     private fun login() { if (bduss().isEmpty()) throw loginErr("no BDUSS") }
 
