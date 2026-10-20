@@ -385,7 +385,7 @@ fun InBrowserLayer() {
         DownloadSheet(dlOpen, title, web?.url ?: target.orEmpty()) { dlOpen = false; if (it.isNotEmpty()) toast = it }
 
         // 磁力 / 种子
-        MagnetSheet { toast = it }
+        MagnetSheet(Sniffer.found.size, onOnline = { dlOpen = true }) { toast = it }
 
         // 视频全屏
         full?.let { v ->

@@ -30,7 +30,23 @@ class TorrentProbeTest {
     private suspend fun run(work: File) {
         val t0 = System.currentTimeMillis()
         fun sec() = (System.currentTimeMillis() - t0) / 1000
+        Torrent.init(File(work, "home"))
+        for (i in 0 until 20) { if (Torrent.TRACKERS.size > 20) break; delay(1000) }
+        note("[${sec()}s] Tracker 列表 ${Torrent.TRACKERS.size} 个")
         Torrent.session()
+        // 要排查的真实磁力（test/resources/probe-magnets.txt，一行一个）：各看 90 秒
+        javaClass.classLoader?.getResource("probe-magnets.txt")?.readText()?.lines()?.map { it.trim() }?.filter { it.startsWith("magnet:") }?.forEachIndexed { n, mg ->
+            val a0 = sec()
+            val mt = Torrent.fetch(mg, File(work, "pm$n"), 90)
+            note("[${sec()}s] 真实磁力 #$n：" + if (mt == null) "90 秒没拿到种子信息" else "${sec() - a0} 秒拿到，${mt.items.size} 个文件，${mt.items.sumOf { it.size } shr 20} MB")
+            if (mt != null) {
+                val bg = mt.items.maxBy { it.size }
+                val dd = Dl("pm$n", mt.name, Sniffer.Media("magnet", mg), "", "${bg.i}", false, false, false)
+                val jb = kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch { runCatching { Torrent.download(dd, File(work, "pmd$n")) { } } }
+                for (k in 0 until 9) { delay(10_000); note("[${sec()}s] #$n ${Torrent.diag("pm$n").lineSequence().take(4).joinToString(" | ")}") }
+                note(Torrent.diag("pm$n")); jb.cancel(); delay(1500)
+            }
+        }
         for (i in 0 until 30) { if (Torrent.nodes() > 20) break; delay(1000) }
         note("[${sec()}s] DHT 节点 ${Torrent.nodes()}")
 

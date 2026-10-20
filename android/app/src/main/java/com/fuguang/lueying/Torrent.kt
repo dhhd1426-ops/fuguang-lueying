@@ -43,13 +43,37 @@ object Torrent {
     private val AUDIO = setOf("mp3", "m4a", "flac", "aac", "wav", "ogg", "ape")
     fun ext(n: String) = n.substringAfterLast('.', "").lowercase()
 
-    /** 常用的公开 Tracker：磁力链接里的少、慢，补上一批，拿种子信息快很多。 */
-    private val TRACKERS = listOf(
+    /** 内置的公开 Tracker（下面的在线列表拿不到时用）。 */
+    private val BUILTIN = listOf(
         "udp://tracker.opentrackr.org:1337/announce", "udp://open.stealth.si:80/announce", "udp://tracker.torrent.eu.org:451/announce",
         "udp://exodus.desync.com:6969/announce", "udp://open.demonii.com:1337/announce", "udp://tracker.openbittorrent.com:6969/announce",
         "udp://tracker.dler.org:6969/announce", "udp://explodie.org:6969/announce", "https://tracker.tamersunion.org:443/announce",
         "udp://tracker.qu.ax:6969/announce", "http://tracker.opentrackr.org:1337/announce",
     )
+
+    /**
+     * 在线 Tracker 列表：XIU2/TrackersListCollection（专门挑在国内也连得上的）+ ngosang/trackerslist，
+     * 走 jsDelivr（国内能打开），一天更新一次，存在本地。不少国外 UDP Tracker 在国内连不上，只用内置那几个常常找不到人。
+     */
+    @Volatile private var online: List<String> = emptyList()
+    @Volatile private var home: File? = null
+    val TRACKERS: List<String> get() = (online + BUILTIN).distinct().take(80)
+
+    /** App 启动时调：记住放状态的地方，读上次的 Tracker 列表，过期了后台去拿新的。 */
+    fun init(dir: File) {
+        home = dir.apply { mkdirs() }
+        val f = File(dir, "trackers.txt")
+        online = runCatching { f.readLines().filter { it.contains("://") } }.getOrDefault(emptyList())
+        if (!f.exists() || System.currentTimeMillis() - f.lastModified() > 24 * 3600_000L) kotlin.concurrent.thread(isDaemon = true) {
+            val got = listOf(
+                "https://cdn.jsdelivr.net/gh/XIU2/TrackersListCollection@master/best.txt",
+                "https://cdn.jsdelivr.net/gh/ngosang/trackerslist@master/trackers_best.txt",
+                "https://cdn.jsdelivr.net/gh/XIU2/TrackersListCollection@master/http.txt",
+            ).flatMap { u -> runCatching { (URL(u).openConnection() as HttpURLConnection).run { connectTimeout = 10_000; readTimeout = 15_000; inputStream.bufferedReader().readLines() } }.getOrDefault(emptyList()) }
+                .map { it.trim() }.filter { it.contains("://") && it.contains("announce") }.distinct()
+            if (got.size >= 5) { online = got; runCatching { f.writeText(got.joinToString("\n")) } }
+        }
+    }
 
     private var sm: SessionManager? = null
     private val lock = Any()
@@ -68,8 +92,17 @@ object Torrent {
             // 所有 Tracker 一起问（默认只问第一个能用的），找人快很多
             sp.setBoolean(org.libtorrent4j.swig.settings_pack.bool_types.announce_to_all_trackers.swigValue(), true)
             sp.setBoolean(org.libtorrent4j.swig.settings_pack.bool_types.announce_to_all_tiers.swigValue(), true)
-            s.start(SessionParams(sp))
+            // 多几个 DHT 入口（默认那几个在国内常连不上）
+            sp.setDhtBootstrapNodes("dht.libtorrent.org:25401,router.bittorrent.com:6881,router.utorrent.com:6881,dht.transmissionbt.com:6881,dht.aelitis.com:6881,router.bitcomet.com:6881")
+            // 上次存下的 DHT 节点表：再打开不用从头找，几秒就能连上
+            val st = home?.let { File(it, "session.dat") }?.takeIf { it.exists() }
+            val params = st?.let { runCatching { SessionParams(it.readBytes()) }.getOrNull() }
+            if (params != null) { s.start(params); s.applySettings(sp) } else s.start(SessionParams(sp))
             sm = s
+            // 每 5 分钟存一次 DHT 节点表
+            kotlin.concurrent.thread(isDaemon = true) {
+                while (true) { Thread.sleep(300_000); runCatching { val b = s.saveState(); if (b != null && b.size > 100) home?.let { File(it, "session.dat").writeBytes(b) } } }
+            }
         }
     }
 
@@ -199,6 +232,7 @@ object Torrent {
         TorrentStatus.State.CHECKING_FILES, TorrentStatus.State.CHECKING_RESUME_DATA -> "核对已下的部分…"
         TorrentStatus.State.DOWNLOADING_METADATA -> "在找种子信息…"
         else -> when {
+            st.numPeers() > 0 && st.downloadPayloadRate() < 2048 && st.totalPayloadDownload() < 1048576 -> "连上 ${st.numPeers()} 人，还没人传过来"
             st.numPeers() > 0 -> "${st.numPeers()} 个人在传"
             st.listPeers() > 0 -> "找到 ${st.listPeers()} 个人，正在连"
             else -> "在找人 · 已连上 ${nodes()} 个 DHT 节点"
@@ -218,6 +252,7 @@ object Torrent {
         val works = tr.count { e -> e.endpoints().any { runCatching { it.infohashV1().isWorking }.getOrDefault(false) } }
         val head = listOf(
             "状态 ${st.state()} · 连上 ${st.numPeers()} 人（种子 ${st.numSeeds()}）· 知道 ${st.listPeers()} 人 · 可去连 ${st.connectCandidates()}",
+            "Tracker 列表 ${TRACKERS.size} 个（在线 ${online.size}）",
             "DHT ${nodes()} 节点 · 外网能连进来：${if (s?.isFirewalled == false) "能" else "不能"} · Tracker 能用 $works/${tr.size}",
             "下 ${st.downloadPayloadRate() / 1024} KB/s · 收到 ${st.totalPayloadDownload() / 1024} KB · 核对过 ${st.totalWantedDone() / 1024} KB · 丢弃 ${st.totalFailedBytes() / 1024} KB",
         )

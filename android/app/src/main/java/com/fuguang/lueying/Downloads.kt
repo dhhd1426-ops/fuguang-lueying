@@ -81,6 +81,7 @@ object Downloads {
 
     fun init(ctx: Context, p: Prefs) {
         app = ctx.applicationContext; prefs = p
+        Torrent.init(File(app.filesDir, "torrent"))
         runCatching {
             val a = JSONArray(p.string("downloads") ?: return@runCatching)
             for (i in 0 until a.length()) {

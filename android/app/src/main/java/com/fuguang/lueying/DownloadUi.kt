@@ -229,7 +229,18 @@ private fun DlRow(d: Dl, i: Int, onAct: (android.net.Uri, String) -> Unit) {
             if (magnet && diag) {
                 var text by remember { mutableStateOf("") }
                 LaunchedEffect(Unit) { while (true) { text = withContext(kotlinx.coroutines.Dispatchers.IO) { Torrent.diag(d.id) }; delay(1000) } }
-                Txt(text, Page.muted.copy(alpha = .8f), 10.5.sp, Modifier.padding(top = 6.dp).background(Color.White.copy(alpha = .04f), RoundedCornerShape(8.dp)).padding(8.dp), lineHeight = 16.sp)
+                val ctx2 = LocalContext.current
+                // 长按复制（连磁力链接一起），发过来好照着排查
+                Txt(text + "\n长按复制", Page.muted.copy(alpha = .8f), 10.5.sp, Modifier.padding(top = 6.dp).background(Color.White.copy(alpha = .04f), RoundedCornerShape(8.dp))
+                    .pointerInput(Unit) { detectTapGestures(onLongPress = {
+                        (ctx2.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager)
+                            .setPrimaryClip(android.content.ClipData.newPlainText("磁力排查", d.title + "\n" + d.media.url + "\n" + text))
+                        Downloads.note = "排查信息已复制"
+                    }) }.padding(8.dp), lineHeight = 16.sp)
+            }
+            // 磁力一直没进度：回原网页下在线那份
+            if (magnet && d.state in setOf(1, 4, 5) && d.done < (1 shl 20) && d.media.page.startsWith("http")) Row(Modifier.padding(top = 8.dp)) {
+                SmallAct("回网页下在线版", false) { Downloads.open = false; DlPlay.close(); InBrowser.open(d.media.page) }
             }
             if (d.state == 3) Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 val u = Downloads.uri(d)

@@ -190,7 +190,8 @@ object DlPlay {
                 if (d.state == 4 || d.state == 5) Downloads.resume(d)
                 var u: String? = null
                 for (k in 0 until 120) { u = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { TorrentServe.url(d.id) }; if (u != null) break; kotlinx.coroutines.delay(500) }
-                u?.let { ProgressiveMediaSource.Factory(DefaultDataSource.Factory(ctx)).createMediaSource(MediaItem.fromUri(it)) }
+                // 本机小服务等块下到才交出来：读超时放到 2 分钟，不然 8 秒就报错重来
+                u?.let { ProgressiveMediaSource.Factory(DefaultHttpDataSource.Factory().setReadTimeoutMs(120_000).setConnectTimeoutMs(10_000)).createMediaSource(MediaItem.fromUri(it)) }
             }
             "hls" -> HlsMediaSource.Factory(up).createMediaSource(MediaItem.fromUri(d.variant ?: m.url))
             "ytdlp" -> {
@@ -306,7 +307,14 @@ private fun PlayerNote(d: Dl) {
     LaunchedEffect(wait) { if (wait) { delay(300); show = true } else show = false }
     val a by animateFloatAsState(if (show && wait) 1f else 0f, tween(180), label = "wait")
     if (a > 0f) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Box(Modifier.size(44.dp).graphicsLayer { alpha = a }.background(Color(0x8C1A1D23), CircleShape), contentAlignment = Alignment.Center) { LoadRing(FpWarm, 22.dp) }
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Box(Modifier.size(44.dp).graphicsLayer { alpha = a }.background(Color(0x8C1A1D23), CircleShape), contentAlignment = Alignment.Center) { LoadRing(FpWarm, 22.dp) }
+            // 磁力：转圈下面写清在等什么（连上几人、有没有人传过来、多快），不让人干等
+            if (d.media.kind == "magnet") Txt(
+                listOf(d.note, if (d.speed > 0) DownloadService.speed(d.speed) else "").filter { it.isNotBlank() }.joinToString(" · ").ifBlank { "在等人传过来" },
+                Color.White.copy(alpha = .75f), 12.sp, Modifier.padding(top = 10.dp).graphicsLayer { alpha = a }, maxLines = 1,
+            )
+        }
     }
 }
 

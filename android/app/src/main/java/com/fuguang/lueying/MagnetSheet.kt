@@ -70,7 +70,7 @@ private val down = Ic("M12 4v11M7.5 10.5L12 15l4.5-4.5M5 19h14")
  * 选好点「下载 · 7.33 GB」交给下载页；有视频时还能「边下边看」：开始下，同时打开下载页里那一行的播放器，读到哪先下哪。
  */
 @Composable
-fun MagnetSheet(onToast: (String) -> Unit) {
+fun MagnetSheet(online: Int = 0, onOnline: () -> Unit = {}, onToast: (String) -> Unit) {
     val ask = Magnet.ask
     var last by remember { mutableStateOf<Magnet.Ask?>(null) }
     if (ask != null) last = ask
@@ -141,6 +141,18 @@ fun MagnetSheet(onToast: (String) -> Unit) {
                     }
                     3 -> CardButton(0, BtnTone.Primary, "去下载页看", { Magnet.ask = null; Downloads.open = true }, Modifier.fillMaxWidth().padding(vertical = 6.dp)) { _, ink -> BtnLabel("去下载页看", ink) }
                     else -> if (m != null) Files(m, sel) { i -> sel = if (i in sel) sel - i else sel + i }
+                }
+            }
+            // 网页上本来就有在线视频：直接下在线那份，一般比磁力快得多（不靠有没有人做种）
+            if (online > 0 && already == null) PressSurface({ Magnet.ask = null; onOnline() }, Modifier.fillMaxWidth().padding(top = 10.dp), shape = RoundedCornerShape(14.dp),
+                fill = Color.White.copy(alpha = .05f), pressScale = .98f, label = "下在线视频") {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    SvgIcon(playIc, Warm, 14.dp, stroke = 2f); Spacer(Modifier.width(10.dp))
+                    Column(Modifier.weight(1f)) {
+                        Txt("这页能在线放（认出 $online 个视频）", Page.ink, 13.5.sp, maxLines = 1)
+                        Txt("下在线那份通常快得多，不用等人做种", Page.muted, 11.5.sp, Modifier.padding(top = 2.dp), maxLines = 1)
+                    }
+                    Txt("换这个", Warm, 12.5.sp, maxLines = 1)
                 }
             }
             if (m == null || already != null) return@Column
