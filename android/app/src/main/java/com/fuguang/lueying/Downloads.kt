@@ -206,8 +206,10 @@ object Downloads {
                         files = Thunder.download(d, w, bytes) { done, total, sp, line ->
                             d.done = done; d.total = total; d.speed = sp; d.frac = if (total > 0) done.toFloat() / total else 0f; d.note = line
                         }
-                    } catch (e: Thunder.Fallback) {
-                        File(w, "bt-only").writeText(e.message.orEmpty()); d.note = (e.message ?: "迅雷没下成") + "，换普通 BT"
+                    } catch (e: kotlinx.coroutines.CancellationException) { throw e
+                    } catch (e: Throwable) {
+                        // 迅雷不肯下、下不动、本机库出问题：都换回 libtorrent，不让 App 崩
+                        File(w, "bt-only").writeText(e.toString()); d.note = (if (e is Thunder.Fallback) e.message else "迅雷出错") + "，换普通 BT"
                     }
                     if (files == null) files = Torrent.download(d, w) { st ->
                         d.total = st.totalWanted(); d.done = st.totalWantedDone(); d.speed = st.downloadPayloadRate().toLong()

@@ -90,38 +90,8 @@ jobs:
           tail -n 150 probe.log > /tmp/tr/probe-tail.log
           find app/build/test-results -name "*Torrent*.xml" -exec cp {} /tmp/tr/ \; 2>/dev/null || true
 
-      - name: Enable KVM
-        if: github.ref == 'refs/heads/check' && contains(github.event.head_commit.message, '迅雷')
-        run: |
-          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
-          sudo udevadm control --reload-rules
-          sudo udevadm trigger --name-match=kvm
-
-      - name: Emulator probe
-        # 提交说明里带「迅雷」时：安卓模拟器（x86_64，靠系统自带的 ARM 翻译跑 arm64 的本机库）装上这次的安装包，
-        # 带 probe_magnet 启动，迅雷下 90 秒、试边下边看，logcat 里的 FGPROBE 写进 torrent-report 分支
-        if: github.ref == 'refs/heads/check' && contains(github.event.head_commit.message, '迅雷')
-        continue-on-error: true
-        timeout-minutes: 25
-        uses: reactivecircus/android-emulator-runner@v2
-        with:
-          api-level: 30
-          arch: x86_64
-          target: google_apis
-          cores: 4
-          ram-size: 4096M
-          emulator-boot-timeout: 1200
-          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot -camera-back none
-          disable-animations: true
-          script: bash android/probe-emulator.sh
-
-      - name: Emulator note
-        if: github.ref == 'refs/heads/check' && contains(github.event.head_commit.message, '迅雷')
-        run: |
-          mkdir -p /tmp/tr; [ -f /tmp/tr/emulator.txt ] || echo "模拟器没跑完（多半没开起来）。KVM: $(ls -l /dev/kvm 2>&1)" > /tmp/tr/emulator.txt
-
       - name: Push torrent report
-        if: github.ref == 'refs/heads/check' && (contains(github.event.head_commit.message, '磁力') || contains(github.event.head_commit.message, '迅雷'))
+        if: github.ref == 'refs/heads/check' && contains(github.event.head_commit.message, '磁力')
         continue-on-error: true
         run: |
           mkdir -p /tmp/tr && cd /tmp/tr
