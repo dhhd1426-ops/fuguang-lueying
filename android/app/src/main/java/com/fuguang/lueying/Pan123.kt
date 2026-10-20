@@ -41,6 +41,8 @@ object Pan123 : PanApi {
 
     private var app: Context? = null
     @Volatile private var token: String? = null
+    /** 上次读到「没登录」的时间；一分钟内不再开 WebView 重读。 */
+    @Volatile private var emptyAt = 0L
 
     fun init(ctx: Context) { app = ctx.applicationContext }
 
@@ -61,7 +63,7 @@ object Pan123 : PanApi {
         if (first.isEmpty()) throw PanError(OTHER, "123 没给下载地址", "123 · 无 DownloadURL")
         // DownloadURL 里的 params 是 base64 的下一跳；没有就直接用它
         val hop = Regex("""[?&]params=([^&]+)""").find(first)?.groupValues?.get(1)?.let { p ->
-            runCatching { String(Base64.getDecoder().decode(URLDecoder.decode(p, "UTF-8"))) }.getOrNull()
+            runCatching { String(Base64.getDecoder().decode(URLDecoder.decode(p.replace("+", "%2B"), "UTF-8"))) }.getOrNull()
         }?.takeIf { it.startsWith("http") }
             // 没有 params 的就是文件地址本身，不再请求（Pan.http 会把整个文件读进内存）
             ?: return Direct(first, mapOf("User-Agent" to Pan.PC_UA, "Referer" to "$ORIGIN/"), f.size)
@@ -159,9 +161,10 @@ object Pan123 : PanApi {
     /** 登录令牌：先看 Cookie（万一以后放进去），再读内置浏览器 www.123pan.com 的 localStorage.authorToken。没登过是空。 */
     private suspend fun token(): String {
         token?.let { return it }
+        if (System.currentTimeMillis() - emptyAt < 60_000) return ""
         val ck = Regex("""(?:^|;\s*)(?:authorToken|token)=([^;]+)""").find(Pan.cookie(Disk.P123))?.groupValues?.get(1)
         val t = clean(ck ?: readStorage().orEmpty())
-        if (t.isNotEmpty()) token = t
+        if (t.isNotEmpty()) token = t else emptyAt = System.currentTimeMillis()
         return t
     }
 
