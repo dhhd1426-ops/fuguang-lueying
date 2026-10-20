@@ -162,7 +162,7 @@ object PanStore {
         val u = it.share.disk.loginUrl ?: return
         it.waitingLogin = true; InBrowser.open(u)
         scope.launch {
-            repeat(600) {
+            repeat(600) { _ ->
                 delay(1000)
                 if (InBrowser.url == null) { it.waitingLogin = false; if (it.stage == 2 && it.err?.kind == PanError.Kind.LOGIN) open(it); return@launch }
                 if (it.share.disk.login == 2 && loggedIn(it.share.disk) && it.share.disk in setOf(Disk.BAIDU, Disk.P115, Disk.QUARK, Disk.UC)) {
