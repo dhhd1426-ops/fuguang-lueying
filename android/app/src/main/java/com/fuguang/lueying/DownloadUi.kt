@@ -228,7 +228,7 @@ private fun DlRow(d: Dl, i: Int, onAct: (android.net.Uri, String) -> Unit) {
                 Modifier.padding(top = 3.dp).then(if (magnet) Modifier.pointerInput(Unit) { detectTapGestures { diag = !diag } } else Modifier), maxLines = 2)
             if (magnet && diag) {
                 var text by remember { mutableStateOf("") }
-                LaunchedEffect(Unit) { while (true) { text = withContext(kotlinx.coroutines.Dispatchers.IO) { Torrent.diag(d.id) }; delay(1000) } }
+                LaunchedEffect(Unit) { while (true) { text = withContext(kotlinx.coroutines.Dispatchers.IO) { Thunder.diag(d.id) ?: Torrent.diag(d.id) }; delay(1000) } }
                 val ctx2 = LocalContext.current
                 // 长按复制（连磁力链接一起），发过来好照着排查
                 Txt(text + "\n长按复制", Page.muted.copy(alpha = .8f), 10.5.sp, Modifier.padding(top = 6.dp).background(Color.White.copy(alpha = .04f), RoundedCornerShape(8.dp))

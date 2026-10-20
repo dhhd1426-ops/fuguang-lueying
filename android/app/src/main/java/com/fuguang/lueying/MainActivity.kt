@@ -39,6 +39,7 @@ class MainActivity : ComponentActivity() {
         Downloads.init(this, prefs)
         YtDlp.init(this, prefs)
         if (intent?.getStringExtra("open") == "downloads") Downloads.open = true
+        intent?.getStringExtra("probe_magnet")?.let { MagnetProbe.run(this, it) }
         Skills.init(this, prefs)
         VideoStore.init(this, prefs)
         ClipLink.init(prefs)

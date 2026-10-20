@@ -151,9 +151,10 @@ object Torrent {
      * 下（在 Downloads.run 里调）：只要选中的文件；每秒报一次进度。下完从会话里拿掉（不做种），返回选中的文件和它们的名字。
      * 暂停 = 这个协程被取消：同样从会话里拿掉，已下的留在 [w] 里，再继续时 libtorrent 核对一遍接着下。
      */
-    suspend fun download(d: Dl, w: File, report: (TorrentStatus) -> Unit): List<Pair<File, String>> = withContext(Dispatchers.IO) {
+    /** 这一个下载的种子文件（存在 work/meta.torrent；没有就去找）。迅雷那条路也用它。 */
+    suspend fun metaBytes(d: Dl, w: File): ByteArray = withContext(Dispatchers.IO) {
         val metaFile = File(w, "meta.torrent")
-        val bytes = when {
+        when {
             metaFile.exists() -> metaFile.readBytes()
             pending[d.media.url] != null -> pending.remove(d.media.url)!!.also { metaFile.writeBytes(it) }
             else -> {
@@ -162,8 +163,15 @@ object Torrent {
                 (m ?: error("找不到人分享这个种子")).bytes.also { metaFile.writeBytes(it); pending.remove(d.media.url) }
             }
         }
+    }
+
+    /** 选中的文件序号（libtorrent 的序号）。 */
+    fun selected(d: Dl, n: Int): Set<Int> = d.variant.orEmpty().split(',').mapNotNull { it.trim().toIntOrNull() }.toSet().ifEmpty { (0 until n).toSet() }
+
+    suspend fun download(d: Dl, w: File, report: (TorrentStatus) -> Unit): List<Pair<File, String>> = withContext(Dispatchers.IO) {
+        val bytes = metaBytes(d, w)
         val ti = TorrentInfo(bytes)
-        val sel = d.variant.orEmpty().split(',').mapNotNull { it.trim().toIntOrNull() }.toSet().ifEmpty { (0 until ti.numFiles()).toSet() }
+        val sel = selected(d, ti.numFiles())
         val pr = Array(ti.numFiles()) { if (it in sel) Priority.DEFAULT else Priority.IGNORE }
         val dir = File(w, "data").apply { mkdirs() }
         val s = session()

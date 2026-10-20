@@ -82,6 +82,7 @@ object Downloads {
     fun init(ctx: Context, p: Prefs) {
         app = ctx.applicationContext; prefs = p
         Torrent.init(File(app.filesDir, "torrent"))
+        com.xunlei.downloadlib.XLDownloadManager.ctx = app
         runCatching {
             val a = JSONArray(p.string("downloads") ?: return@runCatching)
             for (i in 0 until a.length()) {
@@ -198,7 +199,17 @@ object Downloads {
                 }
                 // 磁力 / 种子：只下选中的文件，下完存好（视频进相册，别的进「下载」文件夹）
                 if (d.media.kind == "magnet") {
-                    val files = Torrent.download(d, w) { st ->
+                    // 先交给迅雷（国内的人和加速服务器都在它那张网里）；迅雷不肯下、下不动，再换 libtorrent
+                    var files: List<Pair<File, String>>? = null
+                    if (Thunder.ok() && !File(w, "bt-only").exists()) try {
+                        val bytes = Torrent.metaBytes(d, w)
+                        files = Thunder.download(d, w, bytes) { done, total, sp, line ->
+                            d.done = done; d.total = total; d.speed = sp; d.frac = if (total > 0) done.toFloat() / total else 0f; d.note = line
+                        }
+                    } catch (e: Thunder.Fallback) {
+                        File(w, "bt-only").writeText(e.message.orEmpty()); d.note = (e.message ?: "迅雷没下成") + "，换普通 BT"
+                    }
+                    if (files == null) files = Torrent.download(d, w) { st ->
                         d.total = st.totalWanted(); d.done = st.totalWantedDone(); d.speed = st.downloadPayloadRate().toLong()
                         d.frac = if (d.total > 0) d.done.toFloat() / d.total else 0f
                         d.note = Torrent.line(st)

@@ -189,7 +189,7 @@ object DlPlay {
             "magnet" -> {
                 if (d.state == 4 || d.state == 5) Downloads.resume(d)
                 var u: String? = null
-                for (k in 0 until 120) { u = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { TorrentServe.url(d.id) }; if (u != null) break; kotlinx.coroutines.delay(500) }
+                for (k in 0 until 120) { u = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { Thunder.url(d.id) ?: TorrentServe.url(d.id) }; if (u != null) break; kotlinx.coroutines.delay(500) }
                 // 本机小服务等块下到才交出来：读超时放到 2 分钟，不然 8 秒就报错重来
                 u?.let { ProgressiveMediaSource.Factory(DefaultHttpDataSource.Factory().setReadTimeoutMs(120_000).setConnectTimeoutMs(10_000)).createMediaSource(MediaItem.fromUri(it)) }
             }
