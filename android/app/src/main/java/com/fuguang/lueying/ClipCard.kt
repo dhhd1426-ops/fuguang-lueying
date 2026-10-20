@@ -72,7 +72,11 @@ private val OnWarm = Color(0xFF2A211B)
 fun ClipCards(links: List<String>) {
     if (links.isEmpty()) return
     Column(Modifier.padding(top = 10.dp, bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        links.forEach { l -> VideoStore.clip(l)?.let { ClipCard(it) } }
+        links.forEach { l ->
+            VideoStore.clip(l)?.let { ClipCard(it) }
+            // 网盘分享也挂在这里（方案三「聊天卡片」）；重开 App 后第一次看到就重新打开
+            if (VideoStore.clip(l) == null) androidx.compose.runtime.remember(l) { PanStore.item(l) ?: PanStore.offer(l) }?.let { PanCard(it) }
+        }
     }
 }
 

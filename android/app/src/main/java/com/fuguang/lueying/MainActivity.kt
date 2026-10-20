@@ -43,6 +43,7 @@ class MainActivity : ComponentActivity() {
         Skills.init(this, prefs)
         VideoStore.init(this, prefs)
         ClipLink.init(prefs)
+        PanStore.init(prefs)
         val controller = WindowCompat.getInsetsController(window, window.decorView)
         controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
 

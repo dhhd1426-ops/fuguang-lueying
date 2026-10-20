@@ -115,7 +115,7 @@ fun FuguangApp(prefs: Prefs, fullscreen: Boolean, setFullscreen: (Boolean) -> Un
 
     // 自动沉浸：停手 1 分钟进；最后 5 秒界面先淡一点。有东西开着、她在回答时一直从头算。
     var soon by remember { mutableStateOf(false) }
-    val held = Zen.held || chatState.busy || MineCard.open || NoteCard.open || CornerMenu.open || !foreground || InBrowser.url != null || Downloads.open || ClipLink.showing || ClipPlay.playing() != null
+    val held = Zen.held || chatState.busy || MineCard.open || NoteCard.open || CornerMenu.open || !foreground || InBrowser.url != null || Downloads.open || ClipLink.showing || PanLink.showing || ClipPlay.playing() != null
     LaunchedEffect(held, Zen.touchedAt, zen) {
         soon = false
         if (held || zen) { if (held) Zen.touch(); return@LaunchedEffect }
@@ -200,6 +200,7 @@ fun FuguangApp(prefs: Prefs, fullscreen: Boolean, setFullscreen: (Boolean) -> Un
             wakeAt?.let { at -> WakeRing(at) { wakeAt = null } }
             // 剪贴板里的抖音：顶上滑下的长条
             if (!zen) ClipPillLayer()
+            if (!zen) PanPillLayer()
         }
 
         // 悬浮卡片：在页面之上、圆钮卡片之下

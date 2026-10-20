@@ -25,13 +25,25 @@ object ClipLink {
     fun check(act: Activity) {
         val cm = act.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager ?: return
         val text = runCatching { cm.primaryClip?.getItemAt(0)?.coerceToText(act)?.toString() }.getOrNull() ?: return
-        val l = Douyin.link(text) ?: return
+        val l = Douyin.link(text) ?: return checkPan(text)
         val key = l.hashCode().toString()
         if (prefs?.string("clip-seen") == key) return
         VideoStore.clip(pill)?.let { if (showing && it.save == 1) return }   // 正在存的那条别被打断
         prefs?.putString("clip-seen", key)
         val c = VideoStore.offer(text) ?: return
         pill = c.link; showing = true
+    }
+
+    /** 网盘分享链接：同样只弹一次，交给 PanStore，顶上滑下网盘长条（PanPill）。 */
+    private fun checkPan(text: String) {
+        val l = Pan.link(text)?.link ?: return
+        val key = "pan" + l.hashCode()
+        if (prefs?.string("clip-seen") == key) return
+        if (PanLink.showing && PanStore.item(PanLink.pill)?.save == 1) return
+        prefs?.putString("clip-seen", key)
+        val it = PanStore.offer(text) ?: return
+        showing = false
+        PanLink.show(it.link)
     }
 
     fun dismiss() { showing = false }
