@@ -135,3 +135,24 @@ internal fun MineYuRow(i: Int, t: Float) {
         }
     }
 }
+
+/** Telegram：在长条里登录过就显示是谁，能退出；没登录过不起 TDLib（省电）。退出要点两下（第一下变「确认退出」）。 */
+@Composable
+internal fun MineTgRow(i: Int, t: Float) {
+    val scope = rememberCoroutineScope()
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    var sure by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+    androidx.compose.runtime.LaunchedEffect(Unit) { if (java.io.File(ctx.filesDir, "tdlib/td.binlog").exists()) Td.up() }
+    androidx.compose.runtime.LaunchedEffect(sure) { if (sure) { kotlinx.coroutines.delay(3000); sure = false } }
+    val on = Td.state == "ready"
+    val sub = if (on) "已登录" + (Td.me.takeIf { it.isNotBlank() }?.let { " · $it" } ?: "") else "复制频道里的链接回来就能下"
+    Box(Modifier.fillMaxWidth().mineRise(i, t).background(CardBlock, RoundedCornerShape(16.dp))) {
+        RowBody("Telegram", sub, glyph = { Txt("T", warm, 17.sp, family = Serif) }) {
+            if (on) PressSurface(
+                { if (sure) scope.launch { Td.logout(); sure = false } else sure = true },
+                fill = Color.White.copy(alpha = .08f), pressedFill = Color.White.copy(alpha = .14f), pressScale = .93f, label = "退出 Telegram",
+            ) { Txt(if (sure) "确认退出" else "退出", if (sure) ClipBad else Page.ink, 13.sp, Modifier.padding(horizontal = 13.dp, vertical = 7.dp)) }
+            else Txt("未登录", Page.muted, 13.sp)
+        }
+    }
+}

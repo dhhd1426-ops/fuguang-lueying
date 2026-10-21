@@ -25,7 +25,7 @@ object ClipLink {
     fun check(act: Activity) {
         val cm = act.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager ?: return
         val text = runCatching { cm.primaryClip?.getItemAt(0)?.coerceToText(act)?.toString() }.getOrNull() ?: return
-        val l = Douyin.link(text) ?: return checkPan(text)
+        val l = Douyin.link(text) ?: return (if (checkTg(text)) Unit else checkPan(text))
         val key = l.hashCode().toString()
         if (prefs?.string("clip-seen") == key) return
         VideoStore.clip(pill)?.let { if (showing && it.save == 1) return }   // 正在存的那条别被打断
@@ -44,6 +44,19 @@ object ClipLink {
         val it = PanStore.offer(text) ?: return
         showing = false
         PanLink.show(it.link)
+    }
+
+    /** Telegram 消息链接：同样只弹一次，交给 TgStore，顶上滑下 Telegram 长条（TgPill）。认出来了返回 true。 */
+    private fun checkTg(text: String): Boolean {
+        val l = TgLink.find(text)?.url ?: return false
+        val key = "tg" + l.hashCode()
+        if (prefs?.string("clip-seen") == key) return true
+        if (TgPill.showing && TgStore.item(TgPill.pill)?.save == 1) return true
+        prefs?.putString("clip-seen", key)
+        val it = TgStore.offer(text) ?: return true
+        showing = false; PanLink.dismiss()
+        TgPill.show(it.link)
+        return true
     }
 
     fun dismiss() { showing = false }

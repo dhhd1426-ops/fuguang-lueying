@@ -143,6 +143,8 @@ private fun MineCardBody(t: Float, onGo: (String) -> Unit) {
     Txt("连接器", Page.muted, 11.sp, Modifier.padding(start = 8.dp, top = 14.dp, bottom = 8.dp).mineRise(2, t), spacing = ls(2.75f, 11f))
     MineYuRow(3, t)
     Spacer(Modifier.height(6.dp))
+    MineTgRow(3, t)
+    Spacer(Modifier.height(6.dp))
     val n = Mcp.servers.size
     val on = Mcp.enabled().size
     MineRow(

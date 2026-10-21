@@ -201,6 +201,7 @@ fun FuguangApp(prefs: Prefs, fullscreen: Boolean, setFullscreen: (Boolean) -> Un
             // 剪贴板里的抖音：顶上滑下的长条
             if (!zen) ClipPillLayer()
             if (!zen) PanPillLayer()
+            if (!zen) TgPillLayer()
         }
 
         // 悬浮卡片：在页面之上、圆钮卡片之下

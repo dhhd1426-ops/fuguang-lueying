@@ -181,7 +181,7 @@ class ChatState(val history: ConvStore) {
         if (editing in messages.indices) while (messages.size > editing) messages.removeAt(messages.lastIndex)
         editing = -1
         // 文字里有抖音链接：卡片挂在这条消息下面（先是「正在认」，认出了就填满）
-        messages.add(ChatMsg("user", text, clips = listOfNotNull(VideoStore.offer(text)?.link, PanStore.offer(text)?.link)))
+        messages.add(ChatMsg("user", text, clips = listOfNotNull(VideoStore.offer(text)?.link, PanStore.offer(text)?.link, TgStore.offer(text)?.link)))
         Memory.touch(newChat = messages.size == 1)
         persist()
         sent++
@@ -445,7 +445,8 @@ fun ChatPage(
         InBrowser.ask = { t -> if (chat.busy) chat.draft = t else { chat.draft = t }; chat.focusTick++ }
         // 长条上「让她看看」：直接发出去（她在忙就排队）
         ClipLink.ask = { t -> chat.draft = t; val n = chat.send(scope, store); if (n >= 0) scope.launch { flight.launch(n) } }
-        onDispose { InBrowser.ask = null; ClipLink.ask = null }
+        TgPill.ask = ClipLink.ask
+        onDispose { InBrowser.ask = null; ClipLink.ask = null; TgPill.ask = null }
     }
     androidx.compose.runtime.SideEffect {
         Zen.held = menu || shelf || boards || workOpen != null || thinkOpen || picker || press != null || viewing != null || selectText != null || chat.draft.isNotBlank() || imeOpen

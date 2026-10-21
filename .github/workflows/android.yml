@@ -38,6 +38,21 @@ jobs:
           fonttools varLib.instancer bm.ttf wght=600 opsz=28 -o android/app/src/main/res/font/bodoni_moda_semibold_italic.ttf
           ls -la android/app/src/main/res/font
 
+      - name: Fetch TDLib
+        # Telegram 官方 TDLib（tdlib.yml 单独编好放在 Releases 的 tdlib-<版本>）：Java 绑定放进源码，libtdjni.so 放进 jniLibs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          gh release download tdlib-1.8.69 -p tdlib.zip -D /tmp/td -R "${{ github.repository }}"
+          cd /tmp/td && unzip -q tdlib.zip
+          so=$(find /tmp/td -name libtdjni.so -path "*arm64-v8a*" | head -n 1)
+          java=$(dirname "$(find /tmp/td -name Client.java -path "*org/drinkless/tdlib*" | head -n 1)")
+          mkdir -p "$GITHUB_WORKSPACE/android/app/src/main/jniLibs/arm64-v8a" "$GITHUB_WORKSPACE/android/app/src/main/java/org/drinkless/tdlib"
+          cp "$so" "$GITHUB_WORKSPACE/android/app/src/main/jniLibs/arm64-v8a/"
+          cp "$java"/*.java "$GITHUB_WORKSPACE/android/app/src/main/java/org/drinkless/tdlib/"
+          ls -la "$GITHUB_WORKSPACE/android/app/src/main/jniLibs/arm64-v8a" "$GITHUB_WORKSPACE/android/app/src/main/java/org/drinkless/tdlib"
+
       - name: Build APK
         working-directory: android
         run: |

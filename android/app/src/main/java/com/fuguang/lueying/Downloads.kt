@@ -225,6 +225,16 @@ object Downloads {
                     withContext(Dispatchers.Main) { save() }
                     return@launch
                 }
+                // Telegram（登录后 TDLib 下）：下在 TDLib 自己的目录，好了搬进相册，再让 TDLib 删掉它那份
+                if (d.media.kind == "tg") {
+                    val name = d.media.name.ifBlank { d.title }
+                    val (f, fid) = TgTd.fetch(d, d.media.url, d.variant?.toIntOrNull() ?: 0)
+                    d.state = 2; d.speed = 0; d.total = f.length(); d.done = d.total; d.frac = 1f
+                    d.out = if (d.gallery && Torrent.isMedia(name)) place(d, f, name) else placeFile(d, f, name)
+                    TgTd.drop(fid); runCatching { w.deleteRecursively() }; d.state = 3
+                    withContext(Dispatchers.Main) { save() }
+                    return@launch
+                }
                 // 网盘里的一个文件（PanStore 拿好了地址和请求头）：原样下，不转格式；视频声音进相册，别的进「下载」
                 if (d.media.kind == "pan") {
                     val name = d.media.name.ifBlank { d.title }

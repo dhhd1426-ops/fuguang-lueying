@@ -76,6 +76,8 @@ fun ClipCards(links: List<String>) {
             VideoStore.clip(l)?.let { ClipCard(it) }
             // 网盘分享也挂在这里（方案三「聊天卡片」）；重开 App 后第一次看到就重新打开
             if (VideoStore.clip(l) == null) androidx.compose.runtime.remember(l) { PanStore.item(l) ?: PanStore.offer(l) }?.let { PanCard(it) }
+            // Telegram 链接：同一个位置挂卡片；重开 App 后第一次看到就重新认
+            if (VideoStore.clip(l) == null && PanStore.item(l) == null) androidx.compose.runtime.remember(l) { TgStore.item(l) ?: TgStore.offer(l) }?.let { TgCard(it) }
         }
     }
 }

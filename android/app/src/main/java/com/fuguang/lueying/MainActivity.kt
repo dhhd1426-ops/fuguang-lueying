@@ -44,6 +44,7 @@ class MainActivity : ComponentActivity() {
         VideoStore.init(this, prefs)
         ClipLink.init(prefs)
         PanStore.init(prefs)
+        Td.init(this)
         PanAli.init(this)
         Pan123.init(this)
         val controller = WindowCompat.getInsetsController(window, window.decorView)
