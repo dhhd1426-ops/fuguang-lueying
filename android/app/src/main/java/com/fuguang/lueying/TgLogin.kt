@@ -54,6 +54,7 @@ internal fun TgLogin(onDone: () -> Unit) {
     val scope = rememberCoroutineScope()
     var busy by remember { mutableStateOf(false) }
     var err by remember { mutableStateOf("") }
+    var errCode by remember { mutableStateOf("") }
     var phone by remember { mutableStateOf("+86 ") }
     var phase by remember { mutableStateOf(if (Td.configured) "td" else "phone0") }
     var hash by remember { mutableStateOf("") }
@@ -65,10 +66,10 @@ internal fun TgLogin(onDone: () -> Unit) {
     }
     fun go(f: suspend () -> Unit) {
         if (busy) return
-        busy = true; err = ""
+        busy = true; err = ""; errCode = ""
         scope.launch {
             try { f(); busy = false } catch (e: Exception) {
-                err = Td.say(e); busy = false
+                err = Td.say(e); errCode = (e as? TgFail)?.code ?: (e as? TgManual)?.code ?: (e as? TgErr)?.let { x -> "TG · ${x.code} ${x.msg.take(30)}" }.orEmpty(); busy = false
                 dx.animateTo(0f, keyframes { durationMillis = 300; -6f at 75; 6f at 150; -3f at 225 })
             }
         }
@@ -95,15 +96,20 @@ internal fun TgLogin(onDone: () -> Unit) {
                         CardField(c, { c = it.trim() }, "例如 aB3xYz9KlmN")
                         Wide(if (busy) null else "开通", c.length >= 4) {
                             go {
-                                val tok = TgApp.login(num, hash, c)
+                                TgApp.login(num, hash, c)
                                 phase = "making"
-                                try { val (i, h) = TgApp.keys(tok); Td.keys(i, h) } catch (e: Exception) { phase = "code0"; throw e }
+                                val k = try { TgApp.keys() } catch (e: TgManual) { phase = "manual"; throw e } catch (e: Exception) { phase = "code0"; throw e }
+                                Td.keys(k.first, k.second)
                                 phase = "td"
                                 if (Td.up() == "phone") Td.phone(num)
                             }
                         }
                         Wide("换个号码", true, main = false) { phase = "phone0"; err = "" }
                     }
+                    "manual" -> TgManualStep(onKeys = { i, h ->
+                        Td.keys(i, h); err = ""; errCode = ""; phase = "td"
+                        scope.launch { if (Td.up() == "phone") go { Td.phone(num) } }
+                    })
                     "making" -> Row(verticalAlignment = Alignment.CenterVertically) {
                         LoadRing(ClipWarm, 14.dp); Spacer(Modifier.width(8.dp)); Txt("正在开通…", Page.muted, 12.sp)
                     }
@@ -130,12 +136,14 @@ internal fun TgLogin(onDone: () -> Unit) {
             }
         }
         if (err.isNotEmpty()) Txt(err, ClipBad, 12.sp)
+        // 原因码：真机截图时看得出卡在哪一步
+        if (errCode.isNotEmpty()) Txt(errCode, Page.muted.copy(alpha = .45f), 10.5.sp)
     }
 }
 
 /** 整行按钮；text = null 时转圈（处理中）。 */
 @Composable
-private fun Wide(text: String?, enabled: Boolean, main: Boolean = true, onClick: () -> Unit) {
+internal fun Wide(text: String?, enabled: Boolean, main: Boolean = true, onClick: () -> Unit) {
     PressSurface(
         onClick, Modifier.fillMaxWidth().height(38.dp), RoundedCornerShape(11.dp), enabled = enabled && text != null,
         fill = if (main) ClipWarm else Color.White.copy(alpha = .08f), pressedFill = if (main) ClipWarm.copy(alpha = .85f) else Color.White.copy(alpha = .14f),

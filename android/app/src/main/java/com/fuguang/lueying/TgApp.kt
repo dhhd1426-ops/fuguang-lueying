@@ -12,37 +12,58 @@ import org.jsoup.Jsoup
  */
 internal object TgApp {
     private const val SITE = "https://my.telegram.org"
+    /** 网页登录后的 Cookie（stel_token，还有服务器另发的 stel_ssid 等），整段带着走，像浏览器一样。 */
+    private val jar = LinkedHashMap<String, String>()
+    private fun ck() = mapOf("Cookie" to jar.entries.joinToString("; ") { "${it.key}=${it.value}" }, "Origin" to SITE, "Referer" to "$SITE/apps")
+    private fun keep(r: Pan.Resp) { r.setCookies().split("; ").forEach { kv -> if ('=' in kv) jar[kv.substringBefore('=')] = kv.substringAfter('=') } }
+    val token get() = jar["stel_token"].orEmpty()
 
     suspend fun send(phone: String): String {
-        val r = Pan.http("$SITE/auth/send_password", body = Pan.form("phone" to phone))
+        jar.clear()
+        val r = Pan.http("$SITE/auth/send_password", mapOf("Origin" to SITE, "Referer" to "$SITE/auth"), Pan.form("phone" to phone))
+        keep(r)
         val h = runCatching { JSONObject(r.body).optString("random_hash") }.getOrNull().orEmpty()
         if (h.isNotEmpty()) return h
         throw TgFail(if ("too many" in r.body.lowercase()) "试太多次了，过一会儿再来" else "Telegram 没发验证码，看看号码对不对", "TGAPP · send ${r.code} ${r.body.take(40)}")
     }
 
     suspend fun login(phone: String, hash: String, code: String): String {
-        val r = Pan.http("$SITE/auth/login", body = Pan.form("phone" to phone, "random_hash" to hash, "password" to code, "remember" to 1))
-        val tok = Regex("""stel_token=([^;]+)""").find(r.setCookies())?.groupValues?.get(1).orEmpty()
+        val r = Pan.http("$SITE/auth/login", ck() + ("Referer" to "$SITE/auth"), Pan.form("phone" to phone, "random_hash" to hash, "password" to code, "remember" to 1))
+        keep(r)
+        val tok = token
         if (r.body.trim() == "true" && tok.isNotEmpty()) return tok
         throw TgFail(if ("invalid" in r.body.lowercase()) "验证码不对" else "没登上，再试一次", "TGAPP · login ${r.code} ${r.body.take(40)}")
     }
 
-    /** 读 api_id / api_hash；没有就建一个。 */
-    suspend fun keys(token: String): Pair<Int, String> {
-        val ck = mapOf("Cookie" to "stel_token=$token")
-        read(Pan.http("$SITE/apps", ck).body)?.let { return it }
-        repeat(2) { n ->
-            val page = Jsoup.parse(Pan.http("$SITE/apps", ck).body)
-            val h = page.selectFirst("input[name=hash]")?.attr("value").orEmpty()
-            if (h.isEmpty()) throw TgFail("Telegram 没给开通页面，过会儿再试", "TGAPP · 没有 hash")
-            val short = "fuguang" + (1000..9999).random()
-            val r = Pan.http("$SITE/apps/create", ck + ("X-Requested-With" to "XMLHttpRequest"), Pan.form(
-                "hash" to h, "app_title" to "Fuguang Lueying", "app_shortname" to short, "app_url" to "", "app_platform" to "android", "app_desc" to "",
-            ))
-            read(Pan.http("$SITE/apps", ck).body)?.let { return it }
-            if (n == 1) throw TgFail("Telegram 没让建，换个网络再试", "TGAPP · create ${r.code} ${r.body.take(40)}")
-        }
-        throw TgFail("没开通成", "TGAPP · ?")
+    /**
+     * 读 api_id / api_hash；没有就试着建一个。TDLib 维护者说过 my.telegram.org 故意拦自动建（回一个「ERROR」），
+     * 拦了就抛 [TgManual]：让他在内置浏览器里自己点一下（Cookie 已经替他登好），或者粘贴已有的。
+     */
+    suspend fun keys(): Pair<Int, String> {
+        val first = Pan.http("$SITE/apps", ck()).also { keep(it) }
+        read(first.body)?.let { return it }
+        val h = Jsoup.parse(first.body).selectFirst("input[name=hash]")?.attr("value").orEmpty()
+        if (h.isEmpty()) throw TgManual("TGAPP · 没有开通表单 ${first.code}")
+        val r = Pan.http("$SITE/apps/create", ck() + ("X-Requested-With" to "XMLHttpRequest"), Pan.form(
+            "hash" to h, "app_title" to "Fuguang Lueying " + (100..999).random(), "app_shortname" to "fuguang" + (1000..9999).random(),
+            "app_url" to "", "app_platform" to "android", "app_desc" to "",
+        ))
+        keep(r)
+        read(Pan.http("$SITE/apps", ck()).body)?.let { return it }
+        throw TgManual("TGAPP · create ${r.code} ${r.body.trim().take(30)}")
+    }
+
+    /** 他在内置浏览器里建好以后：用浏览器的 Cookie 读一次。 */
+    suspend fun fromWeb(): Pair<Int, String>? {
+        val c = android.webkit.CookieManager.getInstance().getCookie(SITE)?.takeIf { it.isNotBlank() } ?: return null
+        return runCatching { read(Pan.http("$SITE/apps", mapOf("Cookie" to c)).body) }.getOrNull()
+    }
+
+    /** 把这里登好的 Cookie 交给内置浏览器，打开就是登录好的开通页。 */
+    fun toWeb() {
+        val cm = android.webkit.CookieManager.getInstance()
+        jar.forEach { (k, v) -> cm.setCookie(SITE, "$k=$v; path=/; secure") }
+        cm.flush()
     }
 
     private fun read(html: String): Pair<Int, String>? {
@@ -52,3 +73,6 @@ internal object TgApp {
         return if (id != null && hash.length >= 16) id to hash else null
     }
 }
+
+/** 自动开通被拦：要他在网页里点一下，或粘贴已有的 api_id。 */
+class TgManual(val code: String) : Exception("Telegram 不让自动开通")
