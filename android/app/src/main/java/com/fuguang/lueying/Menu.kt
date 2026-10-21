@@ -69,7 +69,7 @@ internal fun convIcon(c: Conv): Ic = when {
 }
 
 /**
- * 聊天页左侧栏（照 Claude App）：现在这位助理的名字（点开切换）+ 搜索 → 作品 / 手记 → 已置顶 → 她的最近对话 → 查看全部；
+ * 聊天页左侧栏（照 Claude App）：现在这位助理的名字（点开切换）+ 搜索 → 作品 / 画板 / 手记 / 下载 → 已置顶 → 她的最近对话 → 查看全部；
  * 底下左边是你的头像（去「我的」），右边「新对话」。长按一条对话：置顶 / 删除。
  */
 @Composable
@@ -124,6 +124,8 @@ private fun SideMain(
                 if (boards.isNotEmpty()) Txt(boards.size.toString(), SideFaint, 11.5.sp)
             }
             SideRow(SideIcons.pen, "手记", onJournal, modifier = Modifier.onGloballyPositioned { NoteCard.from = it.boundsInRoot().center })
+            // 下载：右边有在下的进度圈 / 没看过的杏色小点；点了从右边滑进下载页（侧栏留着，返回回到这里）
+            SideRow(Ic("M12 4v11M7.5 10.5L12 15l4.5-4.5M5 19h14"), "下载", { Downloads.open = true }) { DlSideTrail() }
             // 一道不碰边的细线
             Box(Modifier.padding(horizontal = 12.dp, vertical = 8.dp).fillMaxWidth().height(1.dp).background(rgba(255, 255, 255, .07f)))
             // 换了助理：她的对话列表交叉换上来（旧的淡出上移，新的淡入从下浮起）

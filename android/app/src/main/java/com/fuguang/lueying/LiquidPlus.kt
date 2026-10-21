@@ -51,7 +51,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
-/** 液态加号：长按加号，三颗小球（照片、拍照、文件）带着黏连从加号里“滴”出来；点 × 或空白处融回去。 */
+/** 液态加号：按住加号，三颗小球（照片、拍照、文件）带着黏连从加号里“滴”出来，后面整屏压暗；滑到一颗上松手就是选它，别处松手融回去。 */
 class LiquidPlusState {
     var open by mutableStateOf(false)
     /** 加号圆心，屏幕坐标（px）。 */
@@ -60,10 +60,13 @@ class LiquidPlusState {
     var origin by mutableStateOf(Offset.Zero)
     /** 手指正停在哪颗球上：-1 = 没有。 */
     var hover by mutableStateOf(-1)
+    /** 选了哪颗：0 照片、1 拍照、2 文件（AttachTray.kt 的 rememberAttachPick）。 */
+    var pick: (Int) -> Unit = {}
 }
 
 private val GooColor = Color(0xFF2B2F37)
 private val GooHover = Color(0xFF4A3F37)
+private val Warm = Color(0xFFE9B48E)
 private val Items = listOf("照片" to Ic("M4 7.5A2.5 2.5 0 0 1 6.5 5h11A2.5 2.5 0 0 1 20 7.5v9a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 16.5zM5 17l4.5-4.5 3.5 3.5 2.5-2.5L20 17", circles = listOf(floatArrayOf(9.5f, 10f, 1.6f))),
     "拍照" to Ic("M4 8.5A1.5 1.5 0 0 1 5.5 7H8l1.5-2h5L16 7h2.5A1.5 1.5 0 0 1 20 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 17.5z", circles = listOf(floatArrayOf(12f, 12.5f, 3.2f))),
     "文件" to Ic("M7 3.5h7l4 4V20.5H7zM14 3.5v4h4"))
@@ -139,7 +142,8 @@ fun LiquidPlusLayer(state: LiquidPlusState, onPick: (Int) -> Unit) {
     val c = state.center - origin
 
     Box(Modifier.fillMaxSize().onGloballyPositioned { origin = it.positionInRoot() }) {
-        // 点空白处收起
+        // 托底：后面整屏压暗，小球和字不再压在她的话上看不清；点空白处收起
+        Box(Modifier.fillMaxSize().graphicsLayer { alpha = base.value }.background(Color(0xA80A0B0E)))
         if (state.open) Box(Modifier.fillMaxSize().pointerInput(Unit) { detectTapGestures { state.open = false } })
         // 黏连层：模糊 + 透明度对比（Android 12 起有效；更早的系统就是普通的球）
         Canvas(
@@ -166,14 +170,15 @@ fun LiquidPlusLayer(state: LiquidPlusState, onPick: (Int) -> Unit) {
             Column(
                 Modifier
                     .offset { IntOffset((p.x - r).roundToInt(), (p.y - r).roundToInt()) }
+                    .graphicsLayer { val g = if (state.hover == k) 1.12f else 1f; scaleX = g; scaleY = g }
                     .alpha(((t - .35f) / .5f).coerceIn(0f, 1f)),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Box(
                     Modifier.size(44.dp).pointerInput(k) { detectTapGestures { onPick(k); state.open = false } },
                     contentAlignment = Alignment.Center,
-                ) { SvgIcon(Items[k].second, Page.ink, 19.dp) }
-                Txt(Items[k].first, if (state.hover == k) Page.ink else Page.muted, 11.sp, Modifier.padding(top = 4.dp))
+                ) { SvgIcon(Items[k].second, if (state.hover == k) Warm else Page.ink, 19.dp) }
+                Txt(Items[k].first, if (state.hover == k) Warm else Page.ink, 11.5.sp, Modifier.padding(top = 4.dp))
             }
         }
     }

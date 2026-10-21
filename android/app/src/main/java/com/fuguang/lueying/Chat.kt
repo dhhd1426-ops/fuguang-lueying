@@ -131,6 +131,8 @@ class ChatState(val history: ConvStore) {
     var error by mutableStateOf<String?>(null)
     var needsSetup by mutableStateOf(false)
     var draft by mutableStateOf("")
+    /** 输入框里排着要发的照片、文件（Attach.kt 的引用）。 */
+    val atts = mutableStateListOf<String>()
     /** 每发一条消息加一，用来触发“把这条消息滑到屏幕上方”。 */
     var sent by mutableIntStateOf(0)
     private var streamDone = false
@@ -173,15 +175,16 @@ class ChatState(val history: ConvStore) {
     /** 发出输入框里的话；编辑重发时，先删掉那条及之后的内容。返回新消息的序号，没发出去是 -1。 */
     fun send(scope: CoroutineScope, store: AssistantStore): Int {
         val text = draft.trim()
-        if (text.isEmpty() || (full && editing < 0)) return -1
-        // 她还在做：排在末尾，不打断她
-        if (busy) { draft = ""; editing = -1; queue.add(text); return -1 }
+        if ((text.isEmpty() && atts.isEmpty()) || (full && editing < 0)) return -1
+        // 她还在做：话排在末尾，不打断她；照片、文件留在输入框里，等她做完再一起发
+        if (busy) { if (text.isEmpty()) return -1; draft = ""; editing = -1; queue.add(text); return -1 }
         draft = ""
         error = null; needsSetup = false
         if (editing in messages.indices) while (messages.size > editing) messages.removeAt(messages.lastIndex)
         editing = -1
         // 文字里有抖音链接：卡片挂在这条消息下面（先是「正在认」，认出了就填满）
-        messages.add(ChatMsg("user", text, clips = listOfNotNull(VideoStore.offer(text)?.link, PanStore.offer(text)?.link, TgStore.offer(text)?.link)))
+        messages.add(ChatMsg("user", text, clips = listOfNotNull(VideoStore.offer(text)?.link, PanStore.offer(text)?.link, TgStore.offer(text)?.link), files = atts.toList()))
+        atts.clear()
         Memory.touch(newChat = messages.size == 1)
         persist()
         sent++
@@ -409,6 +412,7 @@ fun ChatPage(
 
     var picker by remember { mutableStateOf(false) }
     val plus = remember { LiquidPlusState() }
+    plus.pick = rememberAttachPick(chat)
     val flight = remember { SendFlight() }
     androidx.activity.compose.BackHandler(enabled = plus.open) { plus.open = false }
     /** 正在看哪条消息的思考：-1 = 正在进行的这一轮。 */
@@ -449,7 +453,7 @@ fun ChatPage(
         onDispose { InBrowser.ask = null; ClipLink.ask = null; TgPill.ask = null }
     }
     androidx.compose.runtime.SideEffect {
-        Zen.held = menu || shelf || boards || workOpen != null || thinkOpen || picker || press != null || viewing != null || selectText != null || chat.draft.isNotBlank() || imeOpen
+        Zen.held = menu || shelf || boards || workOpen != null || thinkOpen || picker || press != null || viewing != null || selectText != null || chat.draft.isNotBlank() || imeOpen || plus.open || chat.atts.isNotEmpty()
     }
     val menuW = min(width.value * .86f, 340f).dp
     val menuPx = with(density) { menuW.toPx() }
@@ -470,7 +474,7 @@ fun ChatPage(
             }
             Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                 ChatInput(
-                    compact, blur, title, store.activeModel, store.thinkLevel, chat, plus, flight,
+                    compact, blur, title, store.activeModel, store.activeProvider, store.thinkLevel, chat, plus, flight,
                     onPick = { picker = true },
                     onSend = {
                         val n = chat.send(scope, store)
@@ -510,7 +514,7 @@ fun ChatPage(
                 )
             }
         }
-        LiquidPlusLayer(plus) { /* 照片、拍照、文件：入口先放好，功能后面接 */ }
+        LiquidPlusLayer(plus) { plus.pick(it) }
         ModelDrawer(picker, store, compact, onClose = { picker = false })
         val liveThink = thinkOf < 0 || thinkOf >= chat.messages.size
         ThinkDrawer(
@@ -661,7 +665,12 @@ private fun Conversation(
                         Box(
                             Modifier.fillMaxWidth().padding(top = topPad, bottom = 16.dp),
                             contentAlignment = Alignment.CenterEnd,
-                        ) { UserBubble(m.text, compact, Modifier.longPressMsg(i, pressed == i, onLong).flightBubble(flight, i == flight.idx, 18.dp)) }
+                        ) {
+                            Column(horizontalAlignment = Alignment.End) {
+                                SentFiles(m.files, compact)
+                                if (m.text.isNotBlank() || m.files.isEmpty()) UserBubble(m.text, compact, Modifier.longPressMsg(i, pressed == i, onLong).flightBubble(flight, i == flight.idx, 18.dp))
+                            }
+                        }
                         if (m.clips.isNotEmpty()) Box(Modifier.fillMaxWidth().padding(top = 0.dp), contentAlignment = Alignment.CenterEnd) {
                             Box(Modifier.fillMaxWidth(.86f), contentAlignment = Alignment.CenterEnd) { ClipCards(m.clips) }
                         }
@@ -841,6 +850,7 @@ private fun ChatInput(
     blur: Dp,
     title: String,
     model: String,
+    provider: String,
     think: Int,
     chat: ChatState,
     plus: LiquidPlusState,
@@ -854,7 +864,7 @@ private fun ChatInput(
     val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
     val focus = androidx.compose.ui.platform.LocalFocusManager.current
     // 她在做时也能发：有字就是 ↑（排在末尾），没字才是 ■
-    val canSend = chat.draft.isNotBlank() && (!chat.full || chat.editing >= 0)
+    val canSend = (chat.draft.isNotBlank() || (chat.atts.isNotEmpty() && !chat.busy)) && (!chat.full || chat.editing >= 0)
     // 方案 2：开始打字，发送球从输入框里拉出来；删空了再被吸回去
     val t by androidx.compose.animation.core.animateFloatAsState(
         if (canSend) 1f else 0f,
@@ -915,6 +925,7 @@ private fun ChatInput(
                     }
                 }
             }
+            AttachTray(chat, Attach.vision(provider), model)
             val inputFocus = remember { androidx.compose.ui.focus.FocusRequester() }
             LaunchedEffect(chat.focusTick) { if (chat.focusTick > 0) runCatching { inputFocus.requestFocus() } }
             BasicTextField(
@@ -935,7 +946,7 @@ private fun ChatInput(
             )
             Spacer(Modifier.height(8.dp))
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                LiquidPlusButton(plus) { /* 照片、拍照、文件：功能后面接 */ }
+                LiquidPlusButton(plus) { plus.pick(it) }
                 Pressable(onPick, enabled = !chat.busy, label = "选择模型") { p ->
                     Row(
                         Modifier.widthIn(max = 240.dp)

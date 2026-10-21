@@ -29,6 +29,7 @@ class MainActivity : ComponentActivity() {
         PageGrab.init(this)
         Illust.init(this)
         Avatars.init(this)
+        Attach.init(this)
         Memory.init(prefs)
         Mcp.init(prefs)
         Backup.init(prefs)
@@ -37,6 +38,7 @@ class MainActivity : ComponentActivity() {
         Gallery.init(prefs)
         AdBlock.init(this, prefs)
         Downloads.init(this, prefs)
+        DlSeen.init(prefs)
         YtDlp.init(this, prefs)
         if (intent?.getStringExtra("open") == "downloads") Downloads.open = true
         intent?.getStringExtra("probe_magnet")?.let { MagnetProbe.run(this, it) }

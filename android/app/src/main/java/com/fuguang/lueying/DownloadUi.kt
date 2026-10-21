@@ -158,6 +158,8 @@ fun DownloadsLayer() {
     if (open) BackHandler { Downloads.open = false }
     // 关掉下载页时，正在放的也停掉
     LaunchedEffect(open) { if (!open) DlPlay.close() }
+    // 开着下载页、刚关上：下好的都算看过（侧栏那颗杏色小点灭掉）
+    LaunchedEffect(open, Downloads.list.count { it.state == 3 }) { if (open) DlSeen.mark() }
     val k by animateFloatAsState(if (open) 1f else 0f, tween(if (open) 340 else 220, easing = if (open) Curves.decel else Curves.accel), label = "dls")
     if (k <= 0f) return
     val ctx = LocalContext.current
@@ -168,17 +170,16 @@ fun DownloadsLayer() {
                 Txt("下载", Page.ink, 17.sp, Modifier.weight(1f), family = Serif, align = androidx.compose.ui.text.style.TextAlign.Center)
                 Spacer(Modifier.width(44.dp))
             }
-            val list = Downloads.list
-            if (list.isEmpty()) {
-                Txt("还没有下载。\n在内置浏览器里看到视频，右下角点「下载视频」。", Page.muted, 13.sp, Modifier.fillMaxWidth().padding(top = 80.dp, start = 30.dp, end = 30.dp), lineHeight = 22.sp, align = androidx.compose.ui.text.style.TextAlign.Center)
-            } else Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).windowInsetsPadding(WindowInsets.navigationBars).padding(horizontal = 14.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                list.forEachIndexed { i, d -> androidx.compose.runtime.key(d.id) { DlRow(d, i) { u, act ->
-                    when (act) {
-                        "play" -> DlPlay.toggle(ctx, d)
-                        "share" -> runCatching { ctx.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType(if (d.audioOnly) "audio/*" else "video/*").putExtra(Intent.EXTRA_STREAM, u).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION), d.title).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
-                    }
-                } } }
-                Txt("加了版权保护的视频下不了。下载的视频自己看，别拿去传播。", Page.muted.copy(alpha = .5f), 11.5.sp, Modifier.padding(top = 10.dp, start = 4.dp, bottom = 20.dp))
+            // 两栏：左「正在下载」，右「已完成」（DownloadTabs.kt）
+            Box(Modifier.weight(1f).windowInsetsPadding(WindowInsets.navigationBars)) {
+                Column {
+                    DlTabs { d, i -> DlRow(d, i) { u, act ->
+                        when (act) {
+                            "play" -> DlPlay.toggle(ctx, d)
+                            "share" -> runCatching { ctx.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType(if (d.audioOnly) "audio/*" else "video/*").putExtra(Intent.EXTRA_STREAM, u).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION), d.title).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+                        }
+                    } }
+                }
             }
         }
         // 删完的提示：浮上来停 2.4 秒

@@ -247,8 +247,8 @@ object AssistantApi {
 }
 
 /** 一条聊天消息。role = "user" / "assistant"。 */
-/** imgs：这条回复里引用到的羽的笔记图片，每项是 "笔记id/图片id"。works：这条回复里做的作品 id。steps：这轮用过的工具（思考过程时间线）。 */
-data class ChatMsg(val role: String, val text: String, val think: String = "", val imgs: List<String> = emptyList(), val at: Long = System.currentTimeMillis(), val works: List<String> = emptyList(), val steps: List<ToolStep> = emptyList(), val clips: List<String> = emptyList())
+/** files：你发来的照片和文件（Attach.kt 的引用）。imgs：这条回复里引用到的羽的笔记图片，每项是 "笔记id/图片id"。works：这条回复里做的作品 id。steps：这轮用过的工具（思考过程时间线）。 */
+data class ChatMsg(val role: String, val text: String, val think: String = "", val imgs: List<String> = emptyList(), val at: Long = System.currentTimeMillis(), val works: List<String> = emptyList(), val steps: List<ToolStep> = emptyList(), val clips: List<String> = emptyList(), val files: List<String> = emptyList())
 
 /** 把思考原文切成段：按空行分；只有一段时按句号分成几小段。 */
 fun thinkSegments(raw: String): List<String> {
@@ -375,8 +375,17 @@ object ChatApi {
         // 少一条就 400，然后会退成不带工具再发，她就只能嘴上说「做好了」（作品卡丢失的根子）
         val echo = p.id == "deepseek" && tools != null && level != 0
         // 做事中途收到新消息时，那一段回复可能没有正文：空的不带，免得供应商报错
-        history.filter { !(it.role == "assistant" && it.text.isBlank()) }.forEach {
-            val m = JSONObject().put("role", it.role).put("content", if (it.role == "assistant") ToolText.clean(it.text) else it.text)
+        // 你发来的照片、文件：最近两条带东西的原样带上，更早的只说一句
+        val withFiles = history.indices.filter { history[it].role == "user" && history[it].files.isNotEmpty() }.takeLast(2).toSet()
+        val sees = Attach.vision(p.id)
+        history.forEachIndexed { i, it ->
+            if (it.role == "assistant" && it.text.isBlank()) return@forEachIndexed
+            val body: Any = when {
+                it.role == "assistant" -> ToolText.clean(it.text)
+                it.files.isNotEmpty() -> Attach.content(it, anthropic, sees, i in withFiles)
+                else -> it.text
+            }
+            val m = JSONObject().put("role", it.role).put("content", body)
             if (echo && it.role == "assistant") m.put("reasoning_content", it.think)
             msgs.put(m)
         }

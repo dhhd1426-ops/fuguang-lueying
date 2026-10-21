@@ -113,7 +113,7 @@ fun FuguangApp(prefs: Prefs, fullscreen: Boolean, setFullscreen: (Boolean) -> Un
 
     BackHandler(enabled = zen) { zen = false; Zen.touch() }
 
-    // 自动沉浸：停手 1 分钟进；最后 5 秒界面先淡一点。有东西开着、她在回答时一直从头算。
+    // 自动沉浸：停手 7 秒进；最后 2 秒界面先淡一点。有东西开着、她在回答时一直从头算。
     var soon by remember { mutableStateOf(false) }
     val held = Zen.held || chatState.busy || MineCard.open || NoteCard.open || CornerMenu.open || !foreground || InBrowser.url != null || Downloads.open || ClipLink.showing || PanLink.showing || ClipPlay.playing() != null
     LaunchedEffect(held, Zen.touchedAt, zen) {
