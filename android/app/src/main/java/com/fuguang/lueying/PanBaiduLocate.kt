@@ -16,6 +16,27 @@ internal object PanBaiduLocate {
     private const val SALT = "ebrcUYiuxaZv2XGu7KIYKxUrqfnOfpDF"
     private val uids = HashMap<String, String>()
 
+    /**
+     * 是不是超级会员。百度只给超级会员提速：BaiduPCS-Go 的说明里写着，普通账号多开连接只快一小会儿，
+     * 很快就被限得更狠（几小时到几天各端都接近 0 速），所以普通账号只开一路，超级会员开 12 路（它建议 10–20）。
+     * 查法照 baiduwp-php（Account::checkStatus）：gettemplatevariable 的 is_svip / is_evip。查不到当普通账号。
+     */
+    @Volatile var svip = false; private set
+
+    suspend fun member(cookie: String) {
+        val r = runCatching { Pan.http("https://pan.baidu.com/api/gettemplatevariable?channel=chunlei&web=1&app_id=250528&clienttype=0",
+            mapOf("Cookie" to cookie), "fields=" + Pan.enc("""["is_vip","is_svip","is_evip"]""")) }.getOrNull() ?: return
+        val j = runCatching { JSONObject(r.body).optJSONObject("result") }.getOrNull() ?: return
+        svip = j.optInt("is_svip") == 1 || j.optInt("is_evip") == 1
+    }
+
+    /** 下百度的地址开几路；不是百度的给 null（照原来 16 路）。 */
+    fun lanes(url: String): Int? {
+        val host = runCatching { java.net.URI(url).host.orEmpty() }.getOrDefault("")
+        if (!host.endsWith("baidupcs.com") && !host.endsWith("baidu.com")) return null
+        return if (svip) 12 else 1
+    }
+
     suspend fun direct(bduss: String, path: String, size: Long): Direct {
         val uid = uid(bduss)
         val dev = hex(md5(bduss)).uppercase() + "|0"

@@ -16,7 +16,8 @@ import java.util.concurrent.atomic.AtomicLong
 import kotlin.coroutines.coroutineContext
 
 /**
- * 网盘文件多路下（像 IDM / aria2）：切成 2 MB 一块，16 路一起抢着下，谁空了就拿下一块；
+ * 网盘文件多路下（像 IDM / aria2）：切成 2 MB 一块，默认 16 路一起抢着下，谁空了就拿下一块；
+ * 百度普通账号只开一路、块切大（多开会被限得更狠，见 PanBaiduLocate.svip）；
  * 网盘给了几个服务器地址（百度 locatedownload 会给好几个），各路分着用。
  * 网盘按「一条连接」限速时，路数越多越快；它嫌连接太多回 403 / 429，那一路歇一下再试，连着不行就退出，路数自己降下来。
  * 断点：下好的块号记在 a.bin.chunks，暂停后接着下（没下完的那一块重下，最多丢 2 MB）。
@@ -26,7 +27,7 @@ internal object PanFetch {
     private const val WORKERS = 16
     private const val CHUNK = 2L shl 20
 
-    suspend fun run(d: Dl, urls: List<String>, dst: File, open: (String, Map<String, String>, String?) -> HttpURLConnection): File? = withContext(Dispatchers.IO) {
+    suspend fun run(d: Dl, urls: List<String>, dst: File, lanes: Int = WORKERS, open: (String, Map<String, String>, String?) -> HttpURLConnection): File? = withContext(Dispatchers.IO) {
         val h = d.media.headers
         val probe = runCatching { open(urls[0], h, "bytes=0-0") }.getOrNull() ?: return@withContext null
         val len = probe.getHeaderField("Content-Range")?.substringAfter('/')?.toLongOrNull() ?: -1
@@ -34,7 +35,7 @@ internal object PanFetch {
         probe.disconnect()
         if (!ok) return@withContext null
 
-        val chunk = maxOf(CHUNK, len / 512)
+        val chunk = if (lanes == 1) maxOf(16 * CHUNK, len / 64) else maxOf(CHUNK, len / 512)
         val n = ((len + chunk - 1) / chunk).toInt()
         fun size(i: Int) = minOf(len, (i + 1) * chunk) - i * chunk
         val marks = File(dst.parentFile, dst.name + ".chunks")
@@ -81,7 +82,7 @@ internal object PanFetch {
             } catch (e: Exception) { have.addAndGet(-got); return false }
         }
 
-        val live = AtomicInteger(minOf(WORKERS, queue.size))
+        val live = AtomicInteger(minOf(lanes, queue.size).coerceAtLeast(1))
         coroutineScope {
             repeat(live.get()) { w ->
                 launch {

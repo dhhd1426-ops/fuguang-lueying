@@ -228,8 +228,9 @@ object Downloads {
                 // 网盘里的一个文件（PanStore 拿好了地址和请求头）：原样下，不转格式；视频声音进相册，别的进「下载」
                 if (d.media.kind == "pan") {
                     val name = d.media.name.ifBlank { d.title }
-                    // 网盘：16 路分块一起下（网盘按连接限速）；不支持分段才走普通的
-                    val got = PanFetch.run(d, listOf(d.media.url) + d.media.alts, File(w, "a.bin")) { u, hh, r -> open(u, hh, r) }
+                    // 网盘：分块多路一起下（网盘按连接限速；百度普通账号只开一路）；不支持分段才走普通的
+                    val lanes = PanBaiduLocate.lanes(d.media.url) ?: 16
+                    val got = PanFetch.run(d, listOf(d.media.url) + d.media.alts, File(w, "a.bin"), lanes) { u, hh, r -> open(u, hh, r) }
                         ?: file(d, d.media.url, File(w, "a.bin"), share = 1f, base = 0f)
                     d.state = 2; d.speed = 0
                     d.total = got.length(); d.done = d.total; d.frac = 1f

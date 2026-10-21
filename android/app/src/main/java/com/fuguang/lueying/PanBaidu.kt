@@ -96,6 +96,7 @@ object PanBaidu : PanApi {
 
     override suspend fun direct(s: PanShare, f: PanFile): Direct {
         login()
+        PanBaiduLocate.member(ck(s))
         val first = try { return share(s, f) } catch (e: PanError) { e }
         // 分享没了、没登录、断网：借道也救不了，直接报
         if (first.kind == PanError.Kind.GONE || first.kind == PanError.Kind.LOGIN || first.kind == PanError.Kind.NET) throw first

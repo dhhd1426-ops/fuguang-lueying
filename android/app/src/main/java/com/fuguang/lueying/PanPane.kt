@@ -239,9 +239,9 @@ private fun Foot(it: PanItem, act: android.app.Activity?) {
                 }
             }
         }
-        // 百度给普通账号限速：说清楚是谁限的、App 做了什么，免得以为卡住了
-        if (it.save == 1 && it.share.disk == Disk.BAIDU && it.speed in 1 until 600_000)
-            Txt("百度给普通账号限速，已经 16 路一起下了", Page.muted.copy(alpha = .55f), 11.sp, maxLines = 1)
+        // 百度只给超级会员提速：说清楚是谁限的，免得以为卡住了
+        if (it.save == 1 && it.share.disk == Disk.BAIDU && !PanBaiduLocate.svip && it.speed in 1 until 600_000)
+            Txt("百度只给超级会员提速，普通账号多开反被限得更慢", Page.muted.copy(alpha = .55f), 11.sp, maxLines = 1)
         if (it.save == 3) it.why?.let { e ->
             Txt(e.why, Bad, 12.sp, lineHeight = 17.sp, maxLines = 3)
             Txt(e.code, Page.muted.copy(alpha = .45f), 10.5.sp)
