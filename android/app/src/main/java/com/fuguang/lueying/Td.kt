@@ -116,7 +116,7 @@ object Td {
     /** 登录时 Telegram 回的错误，换成人话。 */
     fun say(e: Throwable): String {
         if (e is TgFail) return e.why
-        if (e is TgManual) return "Telegram 不让 App 自动开通，下面点一下就好"
+        if (e is TgManual) return if ("too many" in e.code.lowercase()) "Telegram 说开通试太多次了，隔几个小时（最长一天）再点，期间别反复试" else "Telegram 不让 App 自动开通，下面点一下就好"
         if (e is PanError) return e.why
         val m = (e as? TgErr)?.msg ?: return "连不上 Telegram，看看网络"
         return when {
