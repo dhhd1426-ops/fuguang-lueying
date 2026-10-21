@@ -39,6 +39,8 @@ class PanItem(val share: PanShare) {
     var save by mutableIntStateOf(0)
     var step by mutableStateOf("")
     var frac by mutableFloatStateOf(0f)
+    /** 字节 / 秒，正在下的几个加起来。 */
+    var speed by androidx.compose.runtime.mutableLongStateOf(0L)
     var why by mutableStateOf<PanError?>(null)
     var got by mutableIntStateOf(0)
     var gotBytes by mutableStateOf(0L)

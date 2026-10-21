@@ -32,7 +32,7 @@ internal object PanRun {
                     failed += f to e; continue
                 }
                 val name = f.name.replace(Regex("[\\\\/:*?\"<>|\\n]"), "_")
-                Downloads.start(act, name, Sniffer.Media("pan", d.url, headers = d.headers, page = s.link, mime = Pan.mime(name), size = if (d.size > 0) d.size else f.size, name = name),
+                Downloads.start(act, name, Sniffer.Media("pan", d.url, headers = d.headers, page = s.link, mime = Pan.mime(name), size = if (d.size > 0) d.size else f.size, name = name, alts = d.alts),
                     "原文件", null, audioOnly = false, gallery = true, wifiOnly = false)
                 val dl = Downloads.list.firstOrNull() ?: continue
                 it.dls += dl.id; started += f to dl
@@ -65,6 +65,7 @@ internal object PanRun {
         val done = started.sumOf { p -> if (p.second.state == 3) p.first.size.coerceAtLeast(p.second.total) else p.second.done }
         val all = if (total > 0) total else started.sumOf { p -> p.second.total.coerceAtLeast(0) }
         if (all > 0) it.frac = (done.toFloat() / all).coerceIn(0f, .99f)
+        it.speed = started.filter { p -> active(p.second) }.sumOf { p -> p.second.speed }
     }
 
     /** 没打开过的文件夹：一层层列出来（最多 500 个文件，免得一下子下一整个网盘）。 */

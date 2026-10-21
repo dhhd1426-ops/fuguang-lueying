@@ -239,6 +239,9 @@ private fun Foot(it: PanItem, act: android.app.Activity?) {
                 }
             }
         }
+        // 百度给普通账号限速：说清楚是谁限的、App 做了什么，免得以为卡住了
+        if (it.save == 1 && it.share.disk == Disk.BAIDU && it.speed in 1 until 600_000)
+            Txt("百度给普通账号限速，已经 16 路一起下了", Page.muted.copy(alpha = .55f), 11.sp, maxLines = 1)
         if (it.save == 3) it.why?.let { e ->
             Txt(e.why, Bad, 12.sp, lineHeight = 17.sp, maxLines = 3)
             Txt(e.code, Page.muted.copy(alpha = .45f), 10.5.sp)
@@ -252,13 +255,13 @@ private fun MainButton(it: PanItem, onClick: () -> Unit) {
     val empty = PanStore.picked(it).isEmpty() && PanStore.pickedDirs(it).isEmpty()
     val fill = when (it.save) { 1 -> Color(0xFF3A3430); 3 -> Bad.copy(alpha = .16f); else -> Warm }
     val ink = when (it.save) { 1 -> Page.ink; 3 -> Bad; else -> OnWarmInk }
-    PressSurface(onClick, Modifier.width(132.dp).height(40.dp), RoundedCornerShape(20.dp), enabled = !empty || it.save == 1,
+    PressSurface(onClick, Modifier.width(156.dp).height(40.dp), RoundedCornerShape(20.dp), enabled = !empty || it.save == 1,
         fill = fill, pressedFill = fill.copy(alpha = fill.alpha * .85f), pressScale = .97f, label = "下载") {
         if (it.save == 1) Box(Modifier.align(Alignment.CenterStart).fillMaxHeight().fillMaxWidth(f.coerceIn(0f, 1f)).background(Warm.copy(alpha = .38f)))
         AnimatedContent(it.save, transitionSpec = { fadeIn(tween(220, 60)) togetherWith fadeOut(tween(120)) }, label = "panBtn") { s ->
             Row(verticalAlignment = Alignment.CenterVertically) {
                 when (s) {
-                    1 -> { LoadRing(Warm, 13.dp); Spacer(Modifier.width(7.dp)); Txt(if (it.frac > 0f) "${(it.frac * 100).toInt()}%" else it.step.ifBlank { "准备" }, ink, 13.sp, maxLines = 1) }
+                    1 -> { LoadRing(Warm, 13.dp); Spacer(Modifier.width(7.dp)); Txt(if (it.frac > 0f) "${(it.frac * 100).toInt()}%" + (if (it.speed > 0) " · " + rate(it.speed) else "") else it.step.ifBlank { "准备" }, ink, 13.sp, maxLines = 1) }
                     2 -> { DrawnCheck(Warm, 16.dp); Spacer(Modifier.width(5.dp)); Txt("下好了", Warm, 14.sp) }
                     3 -> Txt("再试一次", ink, 14.sp)
                     else -> Txt(if (PanStore.needLogin(it)) "先登录" else "下载", ink, 14.sp, weight = androidx.compose.ui.text.font.FontWeight.SemiBold)
@@ -285,3 +288,5 @@ private fun openPan(ctx: Context, it: PanItem) {
     }.onFailure { Downloads.open = true }
 }
 
+/** 速度：「820 KB/s」「2.4 MB/s」。 */
+private fun rate(b: Long): String = if (b >= 1_000_000) "%.1f MB/s".format(b / 1e6) else "${maxOf(1, b / 1000)} KB/s"

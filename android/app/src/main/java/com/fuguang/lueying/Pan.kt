@@ -65,7 +65,7 @@ class PanFile(
 class PanRoot(val title: String, val files: List<PanFile>, val owner: String = "")
 
 /** 一个文件真正的下载地址 + 下载时必须带的请求头（UA、Referer、Cookie）。 */
-class Direct(val url: String, val headers: Map<String, String> = emptyMap(), val size: Long = -1)
+class Direct(val url: String, val headers: Map<String, String> = emptyMap(), val size: Long = -1, val alts: List<String> = emptyList())
 
 /**
  * 出错按原因分开（第 212 版的规矩：说原因 + 一件能做的事 + 灰色原因码）。

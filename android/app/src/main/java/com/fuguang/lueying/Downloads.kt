@@ -88,7 +88,7 @@ object Downloads {
             for (i in 0 until a.length()) {
                 val o = a.getJSONObject(i)
                 val hs = o.optJSONObject("headers")?.let { h -> h.keys().asSequence().associateWith { k -> h.optString(k) } }.orEmpty()
-                val m = Sniffer.Media(o.optString("kind"), o.optString("url"), o.optString("audio").ifEmpty { null }, headers = hs, page = o.optString("page"), mime = o.optString("mime"), name = o.optString("name"))
+                val m = Sniffer.Media(o.optString("kind"), o.optString("url"), o.optString("audio").ifEmpty { null }, headers = hs, page = o.optString("page"), mime = o.optString("mime"), name = o.optString("name"), alts = o.optJSONArray("alts")?.let { a -> (0 until a.length()).map { a.optString(it) } }.orEmpty())
                 list += Dl(o.getString("id"), o.optString("title"), m, o.optString("quality"), o.optString("variant").ifEmpty { null }, o.optBoolean("audioOnly"), o.optBoolean("gallery"), o.optBoolean("wifi"), o.optLong("at")).also {
                     it.out = o.optString("out"); it.total = o.optLong("total")
                     if (o.optInt("state", 3) == 3) { it.state = 3; it.done = it.total; it.frac = 1f }
@@ -104,7 +104,7 @@ object Downloads {
             a.put(JSONObject().put("id", d.id).put("title", d.title).put("kind", d.media.kind).put("url", d.media.url).put("audio", d.media.audio ?: "")
                 .put("page", d.media.page).put("quality", d.quality).put("audioOnly", d.audioOnly).put("gallery", d.gallery).put("at", d.at).put("out", d.out).put("total", d.total)
                 .put("state", if (d.state == 3) 3 else 5).put("done", d.done).put("frac", d.frac.toDouble()).put("variant", d.variant ?: "").put("wifi", d.wifiOnly)
-                .put("headers", JSONObject(d.media.headers)).put("name", d.media.name).put("mime", d.media.mime))
+                .put("headers", JSONObject(d.media.headers)).put("name", d.media.name).put("mime", d.media.mime).put("alts", JSONArray(d.media.alts)))
         }
         prefs?.putString("downloads", a.toString())
     }
@@ -228,7 +228,9 @@ object Downloads {
                 // 网盘里的一个文件（PanStore 拿好了地址和请求头）：原样下，不转格式；视频声音进相册，别的进「下载」
                 if (d.media.kind == "pan") {
                     val name = d.media.name.ifBlank { d.title }
-                    val got = file(d, d.media.url, File(w, "a.bin"), share = 1f, base = 0f)
+                    // 网盘：16 路分块一起下（网盘按连接限速）；不支持分段才走普通的
+                    val got = PanFetch.run(d, listOf(d.media.url) + d.media.alts, File(w, "a.bin")) { u, hh, r -> open(u, hh, r) }
+                        ?: file(d, d.media.url, File(w, "a.bin"), share = 1f, base = 0f)
                     d.state = 2; d.speed = 0
                     d.total = got.length(); d.done = d.total; d.frac = 1f
                     d.out = if (d.gallery && Torrent.isMedia(name)) place(d, got, name) else placeFile(d, got, name)

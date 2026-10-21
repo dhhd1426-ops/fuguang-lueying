@@ -28,12 +28,11 @@ internal object PanBaiduLocate {
         val r = Pan.http(url, mapOf("User-Agent" to UA, "Cookie" to "BDUSS=$bduss"), body = "")
         val j = runCatching { JSONObject(r.body) }.getOrNull()
             ?: throw PanError(PanError.Kind.LIMIT, "百度没给下载地址", "BAIDU · 定位 HTTP ${r.code}")
+        // 会给好几个服务器：第一个当主地址，其他的多路下时分着用
         val urls = j.optJSONArray("urls")
-        if (urls != null) for (i in 0 until urls.length()) {
-            val o = urls.optJSONObject(i) ?: continue
-            if (o.optInt("encrypt", 0) == 0 && o.optString("url").startsWith("http"))
-                return Direct(o.optString("url"), mapOf("User-Agent" to UA, "Cookie" to "BDUSS=$bduss"), size)
-        }
+        val all = (0 until (urls?.length() ?: 0)).mapNotNull { i -> urls?.optJSONObject(i) }
+            .filter { o -> o.optInt("encrypt", 0) == 0 && o.optString("url").startsWith("http") }.map { o -> o.optString("url") }.distinct()
+        if (all.isNotEmpty()) return Direct(all[0], mapOf("User-Agent" to UA, "Cookie" to "BDUSS=$bduss"), size, all.drop(1))
         val e = j.optInt("error_code", j.optInt("errno", 0))
         throw PanError(PanError.Kind.LIMIT, "百度没给下载地址", "BAIDU · 定位 ${r.code}" + if (e != 0) "/$e" else "")
     }

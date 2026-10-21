@@ -16,6 +16,8 @@ object Sniffer {
         val kind: String, val url: String, val audio: String? = null,
         val headers: Map<String, String> = emptyMap(), val page: String = "",
         val mime: String = "", val size: Long = -1, val name: String = "",
+        /** 同一个文件的其他服务器地址（网盘多路下时分着用）。 */
+        val alts: List<String> = emptyList(),
     )
 
     val found = mutableStateListOf<Media>()
