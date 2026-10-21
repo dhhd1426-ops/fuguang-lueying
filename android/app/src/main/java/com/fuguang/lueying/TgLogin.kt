@@ -44,7 +44,8 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 
 /**
- * 方案一：在长条里原地长出来的 Telegram 登录。跟着 [Td.state] 一步步换（手机号 → 验证码 → 两步验证密码 → 好了），
+ * Telegram 授权（悬浮卡片里，[TgAuthLayer]）。第一次用先替他开通 api_id（[TgApp]，验证码一，发在他的 Telegram 里，是一串字母数字），
+ * 开通好马上用同一个号码登录 TDLib（验证码二，几位数字）→ 两步验证密码 → ✓。以后只走后半段。
  * 每步左右交叉滑过。按钮四段：按下、处理中转圈、错了抖一下写原因、好了画 ✓。登好调 [onDone]。
  */
 @Composable
@@ -53,38 +54,62 @@ internal fun TgLogin(onDone: () -> Unit) {
     val scope = rememberCoroutineScope()
     var busy by remember { mutableStateOf(false) }
     var err by remember { mutableStateOf("") }
+    var phone by remember { mutableStateOf("+86 ") }
+    var phase by remember { mutableStateOf(if (Td.configured) "td" else "phone0") }
+    var hash by remember { mutableStateOf("") }
     val dx = remember { Animatable(0f) }
-    LaunchedEffect(Unit) { Td.up() }
+    LaunchedEffect(phase) { if (phase == "td") Td.up() }
     LaunchedEffect(Td.state) {
         err = ""; busy = false
-        if (Td.state == "ready") { haptic.performHapticFeedback(HapticFeedbackType.LongPress); kotlinx.coroutines.delay(1100); onDone() }
+        if (Td.state == "ready" && phase == "td") { haptic.performHapticFeedback(HapticFeedbackType.LongPress); kotlinx.coroutines.delay(1100); onDone() }
     }
     fun go(f: suspend () -> Unit) {
         if (busy) return
         busy = true; err = ""
         scope.launch {
-            try { f() } catch (e: Exception) {
+            try { f(); busy = false } catch (e: Exception) {
                 err = Td.say(e); busy = false
                 dx.animateTo(0f, keyframes { durationMillis = 300; -6f at 75; 6f at 150; -3f at 225 })
             }
         }
     }
+    val num = phone.filter { it.isDigit() || it == '+' }
+    val step = if (phase == "td") Td.state else phase
     Column(Modifier.fillMaxWidth().graphicsLayer { translationX = dx.value * density }, verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        if (!Td.configured) { Txt("这一版还没配好 Telegram 登录，下一版就能用。", Page.muted, 12.sp, lineHeight = 18.sp); return@Column }
-        AnimatedContent(Td.state, transitionSpec = {
+        AnimatedContent(step, transitionSpec = {
             (slideInHorizontally(tween(320, easing = Curves.standard)) { it / 6 } + fadeIn(tween(220, 60))) togetherWith fadeOut(tween(140, easing = Curves.accel))
         }, label = "tgStep") { st ->
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 when (st) {
-                    "phone" -> {
-                        var n by remember { mutableStateOf("+86 ") }
-                        Txt("用你自己的 Telegram 账号登录一次，之后大视频、私有频道都能直接下。", Page.muted, 12.sp, lineHeight = 18.sp)
-                        CardField(n, { n = it }, "+86 138 0000 0000", keyboard = KeyboardType.Phone)
-                        Wide(if (busy) null else "发验证码", n.count { it.isDigit() } >= 7) { go { Td.phone(n) } }
+                    "phone0", "phone" -> {
+                        Txt(if (st == "phone0") "第一次用要授权一次：先替你在 Telegram 官网开通这台手机的通行证，再登录。会收到两次验证码，都在你的 Telegram 里。"
+                            else "用你自己的 Telegram 账号登录，之后大视频、私有频道都能直接下。", Page.muted, 12.sp, lineHeight = 18.sp)
+                        CardField(phone, { phone = it }, "+86 138 0000 0000", keyboard = KeyboardType.Phone)
+                        Wide(if (busy) null else "发验证码", num.count { it.isDigit() } >= 7) {
+                            go { if (st == "phone0") { hash = TgApp.send(num); phase = "code0" } else Td.phone(num) }
+                        }
+                    }
+                    "code0" -> {
+                        var c by remember { mutableStateOf("") }
+                        Txt("第一个验证码在你的 Telegram 里（Telegram 官方发来的一串字母和数字），整串复制过来。", Page.muted, 12.sp, lineHeight = 18.sp)
+                        CardField(c, { c = it.trim() }, "例如 aB3xYz9KlmN")
+                        Wide(if (busy) null else "开通", c.length >= 4) {
+                            go {
+                                val tok = TgApp.login(num, hash, c)
+                                phase = "making"
+                                try { val (i, h) = TgApp.keys(tok); Td.keys(i, h) } catch (e: Exception) { phase = "code0"; throw e }
+                                phase = "td"
+                                if (Td.up() == "phone") Td.phone(num)
+                            }
+                        }
+                        Wide("换个号码", true, main = false) { phase = "phone0"; err = "" }
+                    }
+                    "making" -> Row(verticalAlignment = Alignment.CenterVertically) {
+                        LoadRing(ClipWarm, 14.dp); Spacer(Modifier.width(8.dp)); Txt("正在开通…", Page.muted, 12.sp)
                     }
                     "code" -> {
                         var c by remember { mutableStateOf("") }
-                        Txt("验证码发在${Td.codeVia}，${Td.codeLen} 位数字。", Page.muted, 12.sp, lineHeight = 18.sp)
+                        Txt("再输一次：这次的验证码发在${Td.codeVia}，${Td.codeLen} 位数字。", Page.muted, 12.sp, lineHeight = 18.sp)
                         CodeBoxes(c, Td.codeLen) { v -> c = v; if (v.length == Td.codeLen) go { Td.code(v) } }
                         Wide("换个号码", true, main = false) { go { Td.restart() } }
                     }
@@ -96,7 +121,7 @@ internal fun TgLogin(onDone: () -> Unit) {
                     }
                     "ready" -> Row(verticalAlignment = Alignment.CenterVertically) {
                         DrawnCheck(ClipWarm, 16.dp); Spacer(Modifier.width(6.dp))
-                        Txt("已登录" + (Td.me.takeIf { it.isNotBlank() }?.let { " · $it" } ?: ""), ClipWarm, 13.sp)
+                        Txt("已授权" + (Td.me.takeIf { it.isNotBlank() }?.let { " · $it" } ?: ""), ClipWarm, 13.sp)
                     }
                     else -> Row(verticalAlignment = Alignment.CenterVertically) {
                         LoadRing(ClipWarm, 14.dp); Spacer(Modifier.width(8.dp)); Txt("正在连 Telegram", Page.muted, 12.sp)

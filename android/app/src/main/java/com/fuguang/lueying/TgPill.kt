@@ -48,6 +48,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -57,13 +59,13 @@ import androidx.compose.ui.unit.sp
 
 /**
  * 方案一「长条里展开」：复制了 Telegram 消息链接回到 App，顶上滑下长条（封面 · 标题 · 存下来 / 让她看看 / ×）。
- * 要登录的点「登录后下」、一条有好几个视频的点「选要存的」：长条原地往下长出登录或勾选，登好 / 选好收回去接着下。
+ * 要登录的点「授权后下」：从按钮长出授权弹窗（TgAuth），授权好缩回、接着下。一条有好几个视频的点「选要存的」：长条原地往下长出勾选。
  * 下好画 ✓、停一拍迸光点 + 轻震，2.6 秒后自己收。点 × 或返回：一次收完。
  */
 object TgPill {
     var pill by mutableStateOf<String?>(null)
     var showing by mutableStateOf(false)
-    /** 长条下面展开着：login 登录 · pick 勾选 · null 收着。 */
+    /** 长条下面展开着：pick 勾选 · null 收着（登录在悬浮卡片 TgAuth 里）。 */
     var open by mutableStateOf<String?>(null)
     /** 「让她看看」：发一条消息（聊天页挂上）。 */
     var ask: ((String) -> Unit)? = null
@@ -93,9 +95,7 @@ fun TgPillLayer() {
                     exit = shrinkVertically(tween(240, easing = Curves.accel), Alignment.Top) + fadeOut(tween(160))) {
                     val act = LocalContext.current as? Activity
                     Box(Modifier.padding(start = 12.dp, end = 12.dp, bottom = 12.dp)) {
-                        if (TgPill.open == "login") TgLogin {
-                            TgPill.open = null; TgStore.loggedIn(item, act)
-                        } else TgPick(item) { TgPill.open = null; TgStore.download(item, act) }
+                        TgPick(item) { TgPill.open = null; TgStore.download(item, act) }
                     }
                 }
             }
@@ -134,7 +134,9 @@ internal fun TgBody(item: TgItem, pill: Boolean) {
                         val login = item.needLogin && Td.state != "ready"
                         when {
                             item.stage == 2 -> Btn("再认一次", true) { TgStore.open(item) }
-                            login -> Btn("登录后下", true, enabled = item.stage == 1) { if (pill) TgPill.open = "login" else TgPill.show(item.link, "login") }
+                            login -> Box(Modifier.onGloballyPositioned { c -> TgAuth.from = c.boundsInRoot().center }) {
+                                Btn("授权后下", true, enabled = item.stage == 1) { TgAuth.show(item) }
+                            }
                             n > 1 -> Btn("选要存的", true) { if (pill) TgPill.open = "pick" else TgPill.show(item.link, "pick") }
                             else -> Btn(if (item.save == 3) "再试一次" else "存下来", true, enabled = item.stage == 1 && n > 0) { TgStore.download(item, act) }
                         }
@@ -165,8 +167,7 @@ private fun Kicker(it: TgItem) {
         it.save == 3 -> "没成：" + it.why
         it.stage == 0 -> "剪贴板里有一条 Telegram，正在认"
         it.stage == 2 -> it.why
-        TgPill.open == "login" -> "登录 Telegram"
-        it.needLogin && Td.state != "ready" -> if (it.l.private) "私有频道，要登录 Telegram 才能下" else "这条要登录 Telegram 才能下"
+        it.needLogin && Td.state != "ready" -> if (it.l.private) "私有频道，授权 Telegram 后能下" else "这条要授权 Telegram 才能下"
         n == 0 -> "这条里没有视频"
         n > 1 -> "剪贴板里有一条 Telegram · $n 个视频"
         else -> "剪贴板里有一条 Telegram 视频" + (secs.takeIf { s -> s > 0 }?.let { s -> " · %d:%02d".format(s / 60, s % 60) } ?: "")

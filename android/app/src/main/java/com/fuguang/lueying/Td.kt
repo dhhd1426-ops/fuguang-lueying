@@ -21,10 +21,13 @@ import kotlin.coroutines.resumeWithException
  * 下载照 TDLib 默认的连接数走（普通账号 2 路）：不硬调 session_count，免得账号被盯上。
  */
 object Td {
-    /** 在 my.telegram.org 申请的（每个 App 要用自己的）。 */
-    private const val API_ID = 0
-    private const val API_HASH = ""
-    val configured get() = API_ID != 0
+    /** 在 my.telegram.org 申请的（每个 App 要用自己的）：第一次登录时 [TgApp] 替他开通，存在 prefs `tg-api`（「id:hash」）。 */
+    private var apiId by mutableStateOf(0)
+    private var apiHash = ""
+    val configured get() = apiId != 0
+    private var prefs: Prefs? = null
+
+    fun keys(id: Int, hash: String) { apiId = id; apiHash = hash; prefs?.putString("tg-api", "$id:$hash") }
 
     var state by mutableStateOf("off")
     /** 验证码发到哪（「Telegram 里」/「短信」）、几位。 */
@@ -37,7 +40,10 @@ object Td {
     private var client: Client? = null
     internal val files = ConcurrentHashMap<Int, (TdApi.File) -> Unit>()
 
-    fun init(ctx: Context) { app = ctx.applicationContext }
+    fun init(ctx: Context, p: Prefs) {
+        app = ctx.applicationContext; prefs = p
+        p.string("tg-api")?.split(':', limit = 2)?.takeIf { it.size == 2 }?.let { (i, h) -> apiId = i.toIntOrNull() ?: 0; apiHash = h }
+    }
 
     /** 起 TDLib（已经起了就不动）；等它说清楚要不要登录，最多 10 秒。 */
     suspend fun up(): String {
@@ -65,7 +71,7 @@ object Td {
                 filesDirectory = File(app.filesDir, "tdlib/files").absolutePath
                 databaseEncryptionKey = ByteArray(0)
                 useFileDatabase = true; useChatInfoDatabase = true; useMessageDatabase = false; useSecretChats = false
-                apiId = API_ID; apiHash = API_HASH
+                apiId = this@Td.apiId; apiHash = this@Td.apiHash
                 systemLanguageCode = "zh-hans"; deviceModel = Build.MODEL ?: "Android"; systemVersion = Build.VERSION.RELEASE ?: ""
                 applicationVersion = "浮光掠影"
             })
@@ -109,6 +115,8 @@ object Td {
 
     /** 登录时 Telegram 回的错误，换成人话。 */
     fun say(e: Throwable): String {
+        if (e is TgFail) return e.why
+        if (e is PanError) return e.why
         val m = (e as? TgErr)?.msg ?: return "连不上 Telegram，看看网络"
         return when {
             "PHONE_NUMBER_INVALID" in m -> "号码不对，记得带国家区号"
