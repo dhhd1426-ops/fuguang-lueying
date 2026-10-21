@@ -227,6 +227,16 @@ class ChatState(val history: ConvStore) {
         ChatApi.topP = if (who.topOn) who.top else null
         job = scope.launch {
             try {
+                // 她看不了图：先请能看图的帮她看一眼（AttachLook.kt），时间线上记一步
+                if (!Attach.vision(p.id)) {
+                    val pics = history.filter { it.role == "user" && it.files.isNotEmpty() }.takeLast(2).flatMap { it.files }.filter { Attach.isImage(it) && AttachLook.seen(it) == null }
+                    if (pics.isNotEmpty()) {
+                        val idx = liveSteps.size
+                        liveSteps.add(ToolStep(0, Materials.LOOK, "正在看照片", "", done = false))
+                        val err = AttachLook.ensure(pics, store)
+                        if (idx < liveSteps.size) liveSteps[idx] = liveSteps[idx].copy(title = if (err == null) "看了${if (pics.size > 1) " ${pics.size} 张" else ""}照片" else "照片没看清", detail = err.orEmpty(), done = true)
+                    }
+                }
                 // 连接了羽：给模型查笔记的工具；开着跨聊天回忆：再给一个翻以前聊天的工具
                 Yu.refresh()
                 val yu = Yu.connected
@@ -413,6 +423,7 @@ fun ChatPage(
     var picker by remember { mutableStateOf(false) }
     val plus = remember { LiquidPlusState() }
     plus.pick = rememberAttachPick(chat)
+    AttachLook.store = store
     val flight = remember { SendFlight() }
     androidx.activity.compose.BackHandler(enabled = plus.open) { plus.open = false }
     /** 正在看哪条消息的思考：-1 = 正在进行的这一轮。 */
@@ -925,7 +936,7 @@ private fun ChatInput(
                     }
                 }
             }
-            AttachTray(chat, Attach.vision(provider), model)
+            AttachTray(chat, AttachLook.sees(provider, AttachLook.store), model)
             val inputFocus = remember { androidx.compose.ui.focus.FocusRequester() }
             LaunchedEffect(chat.focusTick) { if (chat.focusTick > 0) runCatching { inputFocus.requestFocus() } }
             BasicTextField(

@@ -112,7 +112,12 @@ object Attach {
         val docs = m.files.filterNot(::isImage)
         if (imgs.isNotEmpty()) when {
             !full -> notes.append("（这句话之前他发来过 ${imgs.size} 张照片。）\n")
-            !vision -> notes.append("（他发来了 ${imgs.size} 张照片，可你这会儿看不了图。如实告诉他。）\n")
+            !vision -> imgs.forEachIndexed { k, r ->
+                val look = AttachLook.seen(r)
+                val which = if (imgs.size > 1) "第 ${k + 1} 张" else "一张"
+                if (look != null) notes.append("（他发来了${which}照片，你看到的是：）\n").append(look).append("\n（照片到这里。）\n")
+                else notes.append("（他发来了${which}照片，可你这会儿看不清。如实告诉他。）\n")
+            }
             else -> imgs.forEach { r -> runCatching { image(parts, file(r).readBytes(), "image/jpeg", anthropic) } }
         }
         docs.forEach { r ->
