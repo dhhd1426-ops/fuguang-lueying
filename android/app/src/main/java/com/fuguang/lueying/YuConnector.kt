@@ -224,10 +224,17 @@ class ToolSpec(val name: String, val description: String, val schema: JSONObject
 class YuProvider : android.content.ContentProvider() {
     override fun onCreate(): Boolean = true
 
-    override fun call(method: String, arg: String?, extras: Bundle?): Bundle {
+    override fun call(method: String, arg: String?, extras: Bundle?): Bundle =
+        // 这里抛出去的任何东西，羽那边只看得到「需要更新」：一律接住，把原因写成原因码带回去
+        try { serve(method, arg, extras) } catch (t: Throwable) {
+            reply(JSONObject().put("error", "failed").put("message", "浮光掠影出错了 · FG " + t.javaClass.simpleName + " " + (t.message ?: t.cause?.message ?: "").take(80)))
+        }
+
+    private fun serve(method: String, arg: String?, extras: Bundle?): Bundle {
         val ctx = context ?: return reply(JSONObject().put("error", "failed").put("message", "浮光掠影还没准备好"))
         if (method != "outline") return reply(JSONObject().put("error", "failed").put("message", "没有这个接口：$method"))
         Yu.init(ctx) // 浮光掠影可能还没打开过，进程是被羽拉起来的
+        ModelFit.init(Prefs(ctx)) // 记过的「这个型号不收哪些参数」，没开过 App 时也要读到
         // 两道门：是羽本尊，而且羽那边还连着
         if (!callerIsYu(ctx) || !Yu.connectedNow()) return reply(JSONObject().put("error", "not_connected"))
         val text = arg.orEmpty().trim().take(20_000)
@@ -272,8 +279,8 @@ class YuProvider : android.content.ContentProvider() {
             }
         } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
             return JSONObject().put("error", "failed").put("message", "整理超时了，再试一次")
-        } catch (e: Exception) {
-            return JSONObject().put("error", "failed").put("message", e.message?.takeIf { it.isNotBlank() } ?: "模型没有回应")
+        } catch (e: Throwable) {
+            return JSONObject().put("error", "failed").put("message", (e.message?.takeIf { it.isNotBlank() } ?: "模型没有回应") + " · FG " + p.id + " " + store.activeModel)
         }
         val o = parse(raw) ?: return JSONObject().put("error", "failed").put("message", "模型给的结果读不懂，再试一次")
         return o
