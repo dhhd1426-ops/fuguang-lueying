@@ -38,6 +38,7 @@ object WebSearch {
     val sources = listOf(
         SearchSource("bing", "Bing", "本机 · 不要密钥", "B", 0xFF7FA7D9, free = true),
         SearchSource("ddg", "DuckDuckGo", "不要密钥", "D", 0xFFE0906A, free = true),
+        SearchSource("deepseek", "DeepSeek", "自家搜索引擎 · 聊天的 Key 就能用", "深", 0xFF8EA4E0, "platform.deepseek.com/api_keys"),
         SearchSource("tavily", "Tavily", "给 AI 用的搜索", "T", 0xFFE9B48E, "app.tavily.com", optName = "深度", opts = listOf("快" to "basic", "深" to "advanced"), optHint = "深：多花一倍额度，结果更全"),
         SearchSource("exa", "Exa", "语义搜索", "E", 0xFFA9B6CC, "dashboard.exa.ai/api-keys", optName = "方式", opts = listOf("自动" to "auto", "快速" to "fast", "深入" to "deep")),
         SearchSource("brave", "Brave", "独立索引", "Br", 0xFFD98A6A, "api.search.brave.com"),
@@ -74,7 +75,9 @@ object WebSearch {
 
     fun cfgOf(id: String) = cfg[id] ?: SearchCfg()
     fun setCfg(id: String, c: SearchCfg) { cfg = cfg + (id to c); save() }
-    fun ready(id: String): Boolean = source(id).let { s -> s.free || (if (s.needUrl) cfgOf(id).url.isNotBlank() else cfgOf(id).key.isNotBlank()) }
+    /** 这家用的 Key：DeepSeek 没单独填时，借聊天里配好的 DeepSeek Key（同一个账号、同一个 Key）。 */
+    fun keyOf(id: String): String = cfgOf(id).key.trim().ifEmpty { if (id == "deepseek") AttachLook.store?.config("deepseek")?.key?.trim().orEmpty() else "" }
+    fun ready(id: String): Boolean = source(id).let { s -> s.free || (if (s.needUrl) cfgOf(id).url.isNotBlank() else keyOf(id).isNotBlank()) }
     fun add(id: String) { if (id !in added) added = added + id; use = id; save() }
     fun remove(id: String) {
         added = (added - id).ifEmpty { listOf("bing") }
@@ -110,7 +113,7 @@ object WebSearch {
         val hits = search(use, q)
         if (hits.isEmpty()) return ToolOut("「$q」没查到东西。可以换个说法再查，或者如实说没查到。")
         val arr = JSONArray()
-        hits.forEach { h -> arr.put(JSONObject().put("title", h.title).put("url", h.url).put("text", h.text.take(600)).apply { if (h.date.isNotBlank()) put("date", h.date) }) }
+        hits.forEach { h -> arr.put(JSONObject().put("title", h.title).put("url", h.url).put("text", h.text.take(800)).apply { if (h.date.isNotBlank()) put("date", h.date) }) }
         return ToolOut(JSONObject().put("query", q).put("from", source(use).name).put("results", arr).toString())
     }
 
@@ -120,6 +123,9 @@ object WebSearch {
         val opt = s.opts.getOrNull(c.opt)?.second.orEmpty()
         val base = c.url.trim().trimEnd('/')
         val list: List<Hit> = when (id) {
+            // DeepSeek 2026-10-17 开放的自家搜索：summary 是给模型读的长摘要（600–800 字），query 最多 128 字
+            "deepseek" -> post(base.ifEmpty { "https://api.deepseek.com" } + "/v1/tools/search", JSONObject().put("query", q.take(128)).put("count", n.coerceIn(1, 50)), "Bearer ${keyOf(id)}")
+                .optJSONArray("results").hits { Hit(it.optString("title"), it.optString("url"), it.optString("summary").ifEmpty { it.optString("snippet") }, it.optString("date").takeIf { d -> d != "null" }.orEmpty()) }
             "tavily" -> post(base.ifEmpty { "https://api.tavily.com" } + "/search", JSONObject().put("query", q).put("max_results", n).put("search_depth", opt.ifEmpty { "basic" }), "Bearer ${c.key.trim()}")
                 .optJSONArray("results").hits { Hit(it.optString("title"), it.optString("url"), it.optString("content"), it.optString("published_date")) }
             "exa" -> post(base.ifEmpty { "https://api.exa.ai" } + "/search", JSONObject().put("query", q).put("numResults", n).put("type", opt.ifEmpty { "auto" })

@@ -208,7 +208,7 @@ internal fun SearchSourcePage(id: String, onBack: () -> Unit) {
         CardPageHead(s.name, s.sub, onBack = onBack)
         if (!s.free) {
             Label("API KEY")
-            CardField(c.key, { put(c.copy(key = it.trim())) }, if (s.needUrl) "不需要可以空着" else "贴进来，自动保存")
+            CardField(c.key, { put(c.copy(key = it.trim())) }, if (s.needUrl) "不需要可以空着" else if (id == "deepseek") "空着就用聊天里 DeepSeek 的 Key" else "贴进来，自动保存")
             Label(if (s.needUrl) "地址" else "自定义地址（可选）")
             CardField(c.url, { put(c.copy(url = it.trim())) }, if (s.needUrl) "https://你的 searxng 地址" else "用官方地址就空着")
         }
