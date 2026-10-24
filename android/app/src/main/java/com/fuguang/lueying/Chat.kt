@@ -962,7 +962,7 @@ private fun ChatInput(
         Box(Modifier.matchParentSize()) { SendGoo(t, pulse.value, pressed, inset, sep, ball) }
         val icon = when { canSend -> ChatIcons.up; chat.busy -> ChatIcons.stop; else -> ChatIcons.wave }
         Pressable(
-            { if (canSend) { onSend(); if (!chat.busy) { keyboard?.hide(); focus.clearFocus() } } else if (chat.busy) onStop() },
+            { if (canSend) { onSend(); keyboard?.hide(); focus.clearFocus() } else if (chat.busy) onStop() },  // 发出去就收起键盘
             Modifier.align(Alignment.BottomEnd).offset(x = -inset * (1f - t), y = -inset)
                 .onGloballyPositioned { flight.from = it.boundsInRoot().center },
             label = when { canSend -> "发送"; chat.busy -> "停止"; else -> "语音" },
