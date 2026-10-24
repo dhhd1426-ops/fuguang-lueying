@@ -65,7 +65,7 @@ fun CornerMenuButton(compact: Boolean) {
     ) { pressed ->
         Box(
             Modifier.size(round).clip(CircleShape)
-                .background(lerp(rgba(255, 255, 255, if (pressed) .12f else .04f), MenuApricot.copy(alpha = .16f), k))
+                .background(lerp(veil(if (pressed) .12f else .04f), MenuApricot.copy(alpha = .16f), k))
                 .border(1.dp, Page.line, CircleShape),
             contentAlignment = Alignment.Center,
         ) {
@@ -99,7 +99,7 @@ fun CornerMenuLayer(dim: Int, blur: Int, onDim: (Int) -> Unit, onBlur: (Int) -> 
                     val s = .18f + .82f * t
                     scaleX = s; scaleY = s; alpha = (t * 1.6f).coerceIn(0f, 1f)
                 }
-                .background(rgba(24, 28, 36, .94f), RoundedCornerShape(24.dp))
+                .background(Skin.sheet, RoundedCornerShape(24.dp))
                 .pointerInput(Unit) { detectTapGestures { } }
                 .padding(8.dp),
         ) {
@@ -108,9 +108,9 @@ fun CornerMenuLayer(dim: Int, blur: Int, onDim: (Int) -> Unit, onBlur: (Int) -> 
             fun Modifier.rise(): Modifier { val k = n++; return this.graphicsLayer { val v = ((t - .2f - k * .05f) / .4f).coerceIn(0f, 1f); alpha = v; translationY = (1f - v) * (-4).dp.toPx() } }
             MenuRow("手记", "浮光 · 掠影 · 绯句", false, Modifier.rise()) { close(); onNote() }
             Spacer(Modifier.height(8.dp))
-            Box(Modifier.padding(horizontal = 14.dp).fillMaxWidth().height(1.dp).background(rgba(255, 255, 255, .06f)))
+            Box(Modifier.padding(horizontal = 14.dp).fillMaxWidth().height(1.dp).background(veil(.06f)))
             Spacer(Modifier.height(10.dp))
-            Txt("显示", rgba(250, 245, 238, .34f), 11.sp, Modifier.rise().padding(start = 14.dp, bottom = 6.dp), spacing = ls(3f, 11f))
+            Txt("显示", Skin.ink.copy(alpha = .34f), 11.sp, Modifier.rise().padding(start = 14.dp, bottom = 6.dp), spacing = ls(3f, 11f))
             MenuSlider("暗度", dim, 0, 60, Modifier.rise(), onDim)
             MenuSlider("虚化", blur, 0, 24, Modifier.rise(), onBlur)
             Spacer(Modifier.height(6.dp))
@@ -124,7 +124,7 @@ private fun MenuRow(title: String, note: String, on: Boolean, modifier: Modifier
         Row(
             Modifier.fillMaxWidth()
                 .background(
-                    when { on -> MenuApricot.copy(alpha = .14f); pressed -> rgba(255, 255, 255, .06f); else -> Color.Transparent },
+                    when { on -> MenuApricot.copy(alpha = .14f); pressed -> veil(.06f); else -> Color.Transparent },
                     RoundedCornerShape(16.dp),
                 )
                 .padding(horizontal = 14.dp, vertical = 12.dp),
@@ -133,7 +133,7 @@ private fun MenuRow(title: String, note: String, on: Boolean, modifier: Modifier
             val fs = if (small) 14f else 16f
             Txt(title, if (on) Page.ink else Page.muted, fs.sp, spacing = ls(if (small) 2f else 3f, fs), family = Serif, maxLines = 1)
             Spacer(Modifier.weight(1f))
-            Txt(note, if (on) MenuApricot.copy(alpha = .8f) else rgba(250, 245, 238, .34f), 11.5.sp, maxLines = 1)
+            Txt(note, if (on) MenuApricot.copy(alpha = .8f) else Skin.ink.copy(alpha = .34f), 11.5.sp, maxLines = 1)
         }
     }
 }
@@ -142,6 +142,6 @@ private fun MenuRow(title: String, note: String, on: Boolean, modifier: Modifier
 private fun MenuSlider(label: String, v: Int, min: Int, max: Int, modifier: Modifier, onChange: (Int) -> Unit) {
     Row(modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
         Txt(label, Page.muted, 13.sp, Modifier.width(44.dp), maxLines = 1)
-        RangeSlider(v, min, max, MenuApricot, rgba(255, 255, 255, .15f), onChange, Modifier.weight(1f))
+        RangeSlider(v, min, max, MenuApricot, veil(.15f), onChange, Modifier.weight(1f))
     }
 }

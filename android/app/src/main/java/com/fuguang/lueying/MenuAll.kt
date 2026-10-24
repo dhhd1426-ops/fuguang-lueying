@@ -87,14 +87,14 @@ internal fun AllConvs(history: ConvStore, current: String?, busy: Boolean, onBac
             Txt("全部对话", Page.ink, 17.sp, Modifier.align(Alignment.Center), spacing = ls(3f, 17f), family = Serif, maxLines = 1)
         }
         Row(
-            Modifier.padding(horizontal = 14.dp).fillMaxWidth().background(rgba(255, 255, 255, .06f), RoundedCornerShape(14.dp)).padding(horizontal = 14.dp, vertical = 11.dp),
+            Modifier.padding(horizontal = 14.dp).fillMaxWidth().background(veil(.06f), RoundedCornerShape(14.dp)).padding(horizontal = 14.dp, vertical = 11.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             SvgIcon(SideIcons.search, Page.muted, 18.dp, stroke = 1.5f)
             Spacer(Modifier.width(10.dp))
             BasicTextField(
                 q, { q = it }, Modifier.weight(1f).focusRequester(focus), singleLine = true,
-                textStyle = TextStyle(color = Page.ink, fontSize = 14.5.sp), cursorBrush = SolidColor(SideWarm),
+                textStyle = TextStyle(fontFamily = Sans, color = Page.ink, fontSize = 14.5.sp), cursorBrush = SolidColor(SideWarm),
                 decorationBox = { inner -> Box { if (q.isEmpty()) Txt("搜索标题和内容", Page.muted, 14.5.sp); inner() } },
             )
         }
@@ -111,7 +111,7 @@ internal fun AllConvs(history: ConvStore, current: String?, busy: Boolean, onBac
                 Pressable({ onOpen(c) }, Modifier.fillMaxWidth(), label = c.title) { p ->
                     Row(
                         Modifier.fillMaxWidth()
-                            .background(if (on) SideWarm.copy(alpha = .13f) else if (p) rgba(255, 255, 255, .05f) else androidx.compose.ui.graphics.Color.Transparent, RoundedCornerShape(12.dp))
+                            .background(if (on) SideWarm.copy(alpha = .13f) else if (p) veil(.05f) else androidx.compose.ui.graphics.Color.Transparent, RoundedCornerShape(12.dp))
                             .padding(horizontal = 12.dp, vertical = 10.dp),
                     ) {
                         val owner = if (everyone) Memory.get(c.who) else null
@@ -121,13 +121,13 @@ internal fun AllConvs(history: ConvStore, current: String?, busy: Boolean, onBac
                         Column(Modifier.weight(1f)) {
                             androidx.compose.foundation.text.BasicText(
                                 marked(c.title.ifBlank { "新对话" }, key), maxLines = 1, overflow = TextOverflow.Ellipsis,
-                                style = TextStyle(color = SideInk, fontSize = 15.sp, fontWeight = FontWeight.Normal),
+                                style = TextStyle(fontFamily = Sans, color = SideInk, fontSize = 15.sp, fontWeight = FontWeight.Normal),
                             )
                             val meta = ago(c.updated) + (if (busy && on) " · 她在回答" else "")
                             androidx.compose.foundation.text.BasicText(
                                 buildAnnotatedString { append(meta); if (hit.isNotEmpty()) { append(" · "); append(marked(hit, key)) } },
                                 Modifier.padding(top = 3.dp), maxLines = 1, overflow = TextOverflow.Ellipsis,
-                                style = TextStyle(color = SideFaint, fontSize = 12.sp),
+                                style = TextStyle(fontFamily = Sans, color = SideFaint, fontSize = 12.sp),
                             )
                         }
                     }
@@ -142,7 +142,7 @@ internal fun AllConvs(history: ConvStore, current: String?, busy: Boolean, onBac
 private fun ScopeChip(on: Boolean, text: String, lead: (@Composable () -> Unit)? = null, onClick: () -> Unit) {
     Pressable(onClick, label = text) { p ->
         Row(
-            Modifier.background(if (on) SideWarm.copy(alpha = .16f) else rgba(255, 255, 255, if (p) .09f else .05f), RoundedCornerShape(50))
+            Modifier.background(if (on) SideWarm.copy(alpha = .16f) else veil(if (p) .09f else .05f), RoundedCornerShape(50))
                 .padding(start = if (lead != null) 5.dp else 13.dp, end = 13.dp, top = 6.dp, bottom = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {

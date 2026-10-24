@@ -60,7 +60,7 @@ fun TgAuthLayer() {
                     TgStore.loggedIn(f, act)
                 }
             }
-            Txt("浮光掠影用 Telegram 官方的 TDLib 登录，只用来下你复制的链接：不发消息、不动你的聊天。在「我的 → 连接器 → Telegram」里能退出。",
+            Txt("Vignette 用 Telegram 官方的 TDLib 登录，只用来下你复制的链接：不发消息、不动你的聊天。在「我的 → 连接器 → Telegram」里能退出。",
                 Page.muted.copy(alpha = .7f), 11.sp, Modifier.mineRise(2, rise), lineHeight = 17.sp)
         }
     }

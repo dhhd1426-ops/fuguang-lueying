@@ -248,7 +248,7 @@ internal fun DlInline(d: Dl) {
             if (pl != null && !DlPlay.full && DlPlay.fail == null) PlayerSurface(d, pl, mini = true)
             PlayerNote(d)
             // 放不了时控件不在了，留一个收起
-            if (DlPlay.fail != null && !DlPlay.fixing) Box(Modifier.align(Alignment.TopEnd).padding(6.dp)) { Chip("收起", { DlPlay.close() }) { SvgIcon(Ic("M6 6l12 12M18 6L6 18"), Page.ink, 13.dp, stroke = 1.8f) } }
+            if (DlPlay.fail != null && !DlPlay.fixing) Box(Modifier.align(Alignment.TopEnd).padding(6.dp)) { Chip("收起", { DlPlay.close() }) { SvgIcon(Ic("M6 6l12 12M18 6L6 18"), Page.INK, 13.dp, stroke = 1.8f) } }
         }
     }
 }
@@ -263,7 +263,7 @@ internal fun DlEmbed(d: Dl, surface: Boolean) {
         val pl = DlPlay.player
         if (pl != null && surface && !DlPlay.full && DlPlay.fail == null) PlayerSurface(d, pl, mini = true)
         PlayerNote(d)
-        if (DlPlay.fail != null && !DlPlay.fixing) Box(Modifier.align(Alignment.TopEnd).padding(6.dp)) { Chip("收起", { DlPlay.close() }) { SvgIcon(Ic("M6 6l12 12M18 6L6 18"), Page.ink, 13.dp, stroke = 1.8f) } }
+        if (DlPlay.fail != null && !DlPlay.fixing) Box(Modifier.align(Alignment.TopEnd).padding(6.dp)) { Chip("收起", { DlPlay.close() }) { SvgIcon(Ic("M6 6l12 12M18 6L6 18"), Page.INK, 13.dp, stroke = 1.8f) } }
     }
 }
 
@@ -356,9 +356,9 @@ private fun MiniControls(d: Dl, p: PlayerState, ctl: VidCtl, now: Double, dur: D
     Box(modifier.fillMaxSize()) {
         Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0x730A0B0E), Color.Transparent, Color.Transparent, Color(0x9E0A0B0E)))))
         Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-            Txt(d.title, Page.ink, 13.sp, Modifier.weight(1f).padding(start = 2.dp, end = 8.dp), family = Serif, maxLines = 1)
+            Txt(d.title, Page.INK, 13.sp, Modifier.weight(1f).padding(start = 2.dp, end = 8.dp), family = Serif, maxLines = 1)
             dlText(d)?.let { Txt(it, FpWarm, 11.5.sp, Modifier.padding(end = 6.dp), maxLines = 1) }
-            Chip("收起", { DlPlay.close() }) { SvgIcon(Ic("M6 6l12 12M18 6L6 18"), Page.ink, 13.dp, stroke = 1.8f) }
+            Chip("收起", { DlPlay.close() }) { SvgIcon(Ic("M6 6l12 12M18 6L6 18"), Page.INK, 13.dp, stroke = 1.8f) }
         }
         PressSurface({ ctl.toggle(); p.setPaused(!(p.state?.p ?: true)); p.poke++ }, Modifier.align(Alignment.Center).size(48.dp), shape = CircleShape, fill = FpGlass, pressScale = .92f, label = if (p.playing) "暂停" else "播放") {
             PlayGlyph(p.playing, Modifier.align(Alignment.Center).size(20.dp))
@@ -366,9 +366,9 @@ private fun MiniControls(d: Dl, p: PlayerState, ctl: VidCtl, now: Double, dur: D
         Column(Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(horizontal = 10.dp, vertical = 4.dp)) {
             ProgressBar(p, ctl, now, dur)
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Txt(if (dur > 0) fmtTime(now) + " / " + fmtTime(dur) else "正在读取", Page.ink, 11.5.sp, maxLines = 1)
+                Txt(if (dur > 0) fmtTime(now) + " / " + fmtTime(dur) else "正在读取", Page.INK, 11.5.sp, maxLines = 1)
                 Spacer(Modifier.weight(1f))
-                Chip("全屏", { DlPlay.full = true; p.poke++ }) { SvgIcon(Ic("M14 5h5v5M10 19H5v-5M19 5l-6 6M5 19l6-6"), Page.ink, 14.dp, stroke = 1.8f) }
+                Chip("全屏", { DlPlay.full = true; p.poke++ }) { SvgIcon(Ic("M14 5h5v5M10 19H5v-5M19 5l-6 6M5 19l6-6"), Page.INK, 14.dp, stroke = 1.8f) }
             }
             Spacer(Modifier.width(1.dp).height(2.dp))
         }

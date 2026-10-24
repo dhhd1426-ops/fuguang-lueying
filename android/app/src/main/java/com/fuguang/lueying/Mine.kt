@@ -77,7 +77,7 @@ private object MineIcons {
 }
 
 private val rose = css("#c98a86")
-private val glassFill = rgba(30, 34, 42, .42f)
+private val glassFill get() = Skin.tint(.42f)
 
 /** 「我的」卡片点进来的二级页：assistant / mcp → … 由 App 持有，返回键逐级退回，退到 mine 就回聊天。 */
 class MineNav {
@@ -96,6 +96,7 @@ class MineNav {
             screen == "search" || screen == "skills" || screen == "gallery" -> "features"
             screen.startsWith("skills/") -> "skills"
             screen == "features" -> "mine"
+            screen == "theme" -> "mine"
             screen.startsWith("mcp/") -> "mcp"
             screen == "mcp" -> "mine"
             screen == "providers" -> if (persona.isNotEmpty() && Memory.get(persona) != null) "persona" else "assistant"
@@ -159,14 +160,14 @@ private fun Field(
         value = value,
         onValueChange = onChange,
         singleLine = true,
-        textStyle = TextStyle(color = Page.ink, fontSize = 15.sp),
+        textStyle = TextStyle(fontFamily = Sans, color = Page.ink, fontSize = 15.sp),
         cursorBrush = SolidColor(Page.accent),
         visualTransformation = if (secret) PasswordVisualTransformation() else VisualTransformation.None,
         keyboardOptions = KeyboardOptions(keyboardType = keyboard),
         modifier = modifier.fillMaxWidth(),
         decorationBox = { inner ->
             Box(
-                Modifier.fillMaxWidth().background(rgba(0, 0, 0, .18f), shape).border(1.dp, Page.line, shape).padding(horizontal = 16.dp, vertical = 14.dp),
+                Modifier.fillMaxWidth().background(Skin.well(.18f), shape).border(1.dp, Page.line, shape).padding(horizontal = 16.dp, vertical = 14.dp),
             ) {
                 if (value.isEmpty()) Txt(placeholder, Page.muted.copy(alpha = .45f), 15.sp, maxLines = 1)
                 inner()
@@ -180,7 +181,7 @@ private fun Switch(on: Boolean, label: String, onChange: (Boolean) -> Unit) {
     Pressable({ onChange(!on) }, label = label) { _ ->
         Box(
             Modifier.width(48.dp).height(28.dp)
-                .background(if (on) rgba(233, 180, 142, .85f) else rgba(255, 255, 255, .12f), RoundedCornerShape(50))
+                .background(if (on) rgba(233, 180, 142, .85f) else veil(.12f), RoundedCornerShape(50))
                 .padding(3.dp),
             contentAlignment = if (on) Alignment.CenterEnd else Alignment.CenterStart,
         ) { Box(Modifier.size(22.dp).background(if (on) css("#2a211b") else Page.ink.copy(alpha = .7f), CircleShape)) }
@@ -191,9 +192,9 @@ private fun Switch(on: Boolean, label: String, onChange: (Boolean) -> Unit) {
 private fun PillButton(text: String, icon: Ic?, primary: Boolean, enabled: Boolean = true, modifier: Modifier = Modifier, onClick: () -> Unit) {
     Pressable(onClick, modifier, enabled = enabled, label = text) { pressed ->
         val fill = when {
-            !enabled -> rgba(255, 255, 255, .05f)
+            !enabled -> veil(.05f)
             primary -> rgba(233, 180, 142, if (pressed) .7f else .9f)
-            else -> rgba(255, 255, 255, if (pressed) .12f else .06f)
+            else -> veil(if (pressed) .12f else .06f)
         }
         val ink = when { !enabled -> Page.muted.copy(alpha = .5f); primary -> css("#2a211b"); else -> Page.ink }
         Row(
@@ -209,7 +210,7 @@ private fun PillButton(text: String, icon: Ic?, primary: Boolean, enabled: Boole
 }
 
 @Composable
-private fun Divider() { Box(Modifier.fillMaxWidth().height(1.dp).background(rgba(255, 255, 255, .08f))) }
+private fun Divider() { Box(Modifier.fillMaxWidth().height(1.dp).background(veil(.08f))) }
 
 /* ---------- 助理（方案 4：先选人，再进她的标签页） ---------- */
 
@@ -261,7 +262,7 @@ private fun ColumnScope.AssistantScreen(compact: Boolean, blur: Dp, nav: MineNav
             ) {
                 Txt("已删除 ${undo?.first?.name.orEmpty()} 和她的对话", Page.ink, 13.5.sp, Modifier.weight(1f), maxLines = 1)
                 Pressable({ undo?.let { (p, i, was) -> Memory.restore(p, i, was) }; undo = null }, label = "撤销") { pr ->
-                    Txt("撤销", warm, 13.5.sp, Modifier.background(if (pr) rgba(255, 255, 255, .06f) else Color.Transparent, RoundedCornerShape(12.dp)).padding(horizontal = 12.dp, vertical = 9.dp))
+                    Txt("撤销", warm, 13.5.sp, Modifier.background(if (pr) veil(.06f) else Color.Transparent, RoundedCornerShape(12.dp)).padding(horizontal = 12.dp, vertical = 9.dp))
                 }
             }
         }
@@ -287,7 +288,7 @@ private fun PersonaRow(p: Persona, blur: Dp, canDelete: Boolean, onOpen: () -> U
     ) {
         Box(
             Modifier.fillMaxWidth().padding(bottom = 10.dp)
-                .glass(RoundedCornerShape(20.dp), blur, fill = if (pressed) rgba(255, 255, 255, .08f) else glassFill)
+                .glass(RoundedCornerShape(20.dp), blur, fill = if (pressed) veil(.08f) else glassFill)
                 .pointerInput(p.id, canDelete) {
                     detectTapGestures(onPress = {
                         pressed = true
@@ -357,7 +358,7 @@ private fun SegTabs(tabs: List<String>, pager: androidx.compose.foundation.pager
         Box(
             Modifier.graphicsLayer { translationX = pos * tw }
                 .width(with(d) { tw.toDp() }).height(38.dp)
-                .background(rgba(255, 255, 255, .10f), RoundedCornerShape(12.dp)),
+                .background(veil(.10f), RoundedCornerShape(12.dp)),
         )
         Row(Modifier.fillMaxWidth()) {
             tabs.forEachIndexed { i, t ->
@@ -410,7 +411,7 @@ private fun ColumnScope.PersonaScreen(store: AssistantStore, p: Persona, compact
             ) {
                 Txt("已删除", Page.ink, 13.5.sp, Modifier.weight(1f))
                 Pressable({ undo?.let { (m, i) -> Memory.restore(p, m, i) }; undo = null }, label = "撤销") { pr ->
-                    Txt("撤销", warm, 13.5.sp, Modifier.background(if (pr) rgba(255, 255, 255, .06f) else Color.Transparent, RoundedCornerShape(12.dp)).padding(horizontal = 12.dp, vertical = 9.dp))
+                    Txt("撤销", warm, 13.5.sp, Modifier.background(if (pr) veil(.06f) else Color.Transparent, RoundedCornerShape(12.dp)).padding(horizontal = 12.dp, vertical = 9.dp))
                 }
             }
         }
@@ -425,7 +426,7 @@ private fun ColumnScope.BasicTab(store: AssistantStore, p: Persona, blur: Dp, na
     Box(Modifier.fillMaxWidth().glass(RoundedCornerShape(20.dp), blur, fill = glassFill)) {
         Pressable({ nav.screen = "providers" }, Modifier.fillMaxWidth(), label = "模型与供应商") { pressed ->
             Row(
-                Modifier.fillMaxWidth().background(if (pressed) rgba(255, 255, 255, .04f) else Color.Transparent).padding(horizontal = 18.dp, vertical = 18.dp),
+                Modifier.fillMaxWidth().background(if (pressed) veil(.04f) else Color.Transparent).padding(horizontal = 18.dp, vertical = 18.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Txt("模型与供应商", Page.ink, 15.sp, Modifier.weight(1f))
@@ -558,7 +559,7 @@ internal fun ChoiceChip(text: String, on: Boolean, onClick: () -> Unit) {
     Pressable(onClick, label = text) { pr ->
         Txt(
             text, if (on) warm else Page.muted, 12.sp,
-            Modifier.background(if (on) rgba(233, 180, 142, .16f) else rgba(255, 255, 255, if (pr) .1f else .06f), RoundedCornerShape(50)).padding(horizontal = 11.dp, vertical = 6.dp),
+            Modifier.background(if (on) rgba(233, 180, 142, .16f) else veil(if (pr) .1f else .06f), RoundedCornerShape(50)).padding(horizontal = 11.dp, vertical = 6.dp),
             maxLines = 1,
         )
     }
@@ -593,9 +594,9 @@ internal fun FeelSlider(value: Float, min: Float, max: Float, step: Float, ticks
             },
         contentAlignment = Alignment.CenterStart,
     ) {
-        Box(Modifier.fillMaxWidth().height(3.dp).background(rgba(255, 255, 255, .1f), RoundedCornerShape(2.dp)))
+        Box(Modifier.fillMaxWidth().height(3.dp).background(veil(.1f), RoundedCornerShape(2.dp)))
         if (ticks > 1) Row(Modifier.fillMaxWidth().padding(top = 16.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-            repeat(ticks) { Box(Modifier.width(1.dp).height(5.dp).background(rgba(255, 255, 255, .16f))) }
+            repeat(ticks) { Box(Modifier.width(1.dp).height(5.dp).background(veil(.16f))) }
         }
         Box(Modifier.fillMaxWidth(frac.coerceAtLeast(.001f)).height(3.dp).background(warm, RoundedCornerShape(2.dp)))
         val d = LocalDensity.current
@@ -619,7 +620,7 @@ private fun ColumnScope.PromptTab(p: Persona, blur: Dp) {
     BasicTextField(
         value = draft,
         onValueChange = { draft = it },
-        textStyle = TextStyle(color = Page.ink, fontSize = 14.5.sp, lineHeight = 24.sp),
+        textStyle = TextStyle(fontFamily = Sans, color = Page.ink, fontSize = 14.5.sp, lineHeight = 24.sp),
         cursorBrush = SolidColor(Page.accent),
         modifier = Modifier.fillMaxWidth(),
         decorationBox = { inner ->
@@ -633,7 +634,7 @@ private fun ColumnScope.PromptTab(p: Persona, blur: Dp) {
         Txt("写在这里的，就是她自己。她的名字和你的称呼会先告诉她；文中可以写 {char}、{name}、{model}、{date}。", Page.muted, 12.5.sp, Modifier.weight(1f), lineHeight = 20.sp)
         if (draft.trim() != Memory.DEFAULT_SYS) {
             Pressable({ draft = Memory.DEFAULT_SYS }, Modifier.padding(end = 8.dp), label = "恢复默认") { pr ->
-                Txt("恢复默认", Page.muted, 12.5.sp, Modifier.background(rgba(255, 255, 255, if (pr) .1f else .05f), RoundedCornerShape(50)).padding(horizontal = 12.dp, vertical = 8.dp))
+                Txt("恢复默认", Page.muted, 12.5.sp, Modifier.background(veil(if (pr) .1f else .05f), RoundedCornerShape(50)).padding(horizontal = 12.dp, vertical = 8.dp))
             }
         }
         SaveButton(dirty = draft != p.sys) { p.sys = draft; Memory.save() }
@@ -748,7 +749,7 @@ private fun SegPicker(labels: List<String>, counts: List<Int>, selected: Int, bl
         Box(
             Modifier.graphicsLayer { translationX = pos * tw }
                 .width(with(d) { tw.toDp() }).height(36.dp)
-                .background(rgba(255, 255, 255, .10f), RoundedCornerShape(12.dp)),
+                .background(veil(.10f), RoundedCornerShape(12.dp)),
         )
         Row(Modifier.fillMaxWidth()) {
             labels.forEachIndexed { i, t ->
@@ -833,7 +834,7 @@ private fun BookPage(p: Persona, b: Book, blur: Dp, onDeleted: (Mem, Int) -> Uni
             }
             Box(Modifier.graphicsLayer { alpha = drop.value.coerceIn(0f, 1f); translationY = (1f - drop.value) * -14.dp.toPx() }) {
                 Column {
-                    if (k > 0) Box(Modifier.fillMaxWidth().padding(end = 8.dp).height(1.dp).background(rgba(255, 255, 255, .07f)))
+                    if (k > 0) Box(Modifier.fillMaxWidth().padding(end = 8.dp).height(1.dp).background(veil(.07f)))
                     val isOpen = open == m.id
                     Row(Modifier.fillMaxWidth().padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                         Pressable({ open = if (isOpen) null else m.id }, Modifier.weight(1f), label = m.text) { _ ->
@@ -865,7 +866,7 @@ private fun BookPage(p: Persona, b: Book, blur: Dp, onDeleted: (Mem, Int) -> Uni
             Pressable({ all = !all }, label = "展开全部") { pr ->
                 Txt(
                     if (all) "收起" else "展开全部 ${list.size} 条", if (pr) Page.ink else Page.ink.copy(alpha = .8f), 13.sp,
-                    Modifier.padding(top = 6.dp, bottom = 4.dp).background(rgba(255, 255, 255, if (pr) .1f else .05f), RoundedCornerShape(50)).padding(horizontal = 16.dp, vertical = 9.dp),
+                    Modifier.padding(top = 6.dp, bottom = 4.dp).background(veil(if (pr) .1f else .05f), RoundedCornerShape(50)).padding(horizontal = 16.dp, vertical = 9.dp),
                 )
             }
         }
@@ -939,7 +940,7 @@ private fun ColumnScope.ProvidersScreen(store: AssistantStore, compact: Boolean,
             val c = store.config(p.id)
             Pressable({ nav.screen = "provider/${p.id}" }, Modifier.fillMaxWidth(), label = p.name) { pressed ->
                 Row(
-                    Modifier.fillMaxWidth().glass(RoundedCornerShape(20.dp), blur, fill = if (pressed) rgba(255, 255, 255, .08f) else glassFill)
+                    Modifier.fillMaxWidth().glass(RoundedCornerShape(20.dp), blur, fill = if (pressed) veil(.08f) else glassFill)
                         .padding(horizontal = 18.dp, vertical = 16.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -951,7 +952,7 @@ private fun ColumnScope.ProvidersScreen(store: AssistantStore, compact: Boolean,
                         Spacer(Modifier.height(8.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
                             when {
-                                c.enabled && c.configured -> Chip("启用", fill = Page.ink.copy(alpha = .92f), ink = css("#2a2f38"))
+                                c.enabled && c.configured -> Chip("启用", fill = Page.ink.copy(alpha = .92f), ink = Skin.onInk)
                                 c.configured -> Chip("未启用")
                                 else -> Chip("未配置")
                             }
@@ -978,7 +979,7 @@ private fun ColumnScope.ProviderScreen(store: AssistantStore, p: Provider, compa
         listOf("配置", "模型").forEach { t ->
             Pressable({ tab = t }, Modifier.weight(1f), label = t) { _ ->
                 Box(
-                    Modifier.fillMaxWidth().background(if (tab == t) rgba(0, 0, 0, .28f) else Color.Transparent, RoundedCornerShape(14.dp)).padding(vertical = 13.dp),
+                    Modifier.fillMaxWidth().background(if (tab == t) Skin.well(.28f) else Color.Transparent, RoundedCornerShape(14.dp)).padding(vertical = 13.dp),
                     contentAlignment = Alignment.Center,
                 ) { Txt(t, if (tab == t) Page.ink else Page.muted, 15.sp, spacing = ls(2f, 15f)) }
             }
@@ -1090,7 +1091,7 @@ private fun ModelsTab(store: AssistantStore, p: Provider, blur: Dp) {
             Pressable({ store.use(p.id, m) }, Modifier.fillMaxWidth(), label = "让 ${Memory.active.name} 用 $m") { pressed ->
                 Row(
                     Modifier.fillMaxWidth()
-                        .glass(RoundedCornerShape(20.dp), blur, fill = if (pressed) rgba(255, 255, 255, .08f) else glassFill, border = if (inUse) rose.copy(alpha = .7f) else Page.glassBorder)
+                        .glass(RoundedCornerShape(20.dp), blur, fill = if (pressed) veil(.08f) else glassFill, border = if (inUse) rose.copy(alpha = .7f) else Page.glassBorder)
                         .padding(start = 18.dp, end = 6.dp, top = 14.dp, bottom = 14.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -1198,7 +1199,7 @@ private fun ColumnScope.McpMarketTab(blur: Dp, nav: MineNav) {
     if (isUrl) {
         Pressable({ nav.screen = "mcp/new?" + java.net.URLEncoder.encode(query, "UTF-8") }, Modifier.fillMaxWidth().padding(bottom = 10.dp), label = "连接这个地址") { pressed ->
             Row(
-                Modifier.fillMaxWidth().glass(RoundedCornerShape(20.dp), blur, fill = if (pressed) rgba(255, 255, 255, .08f) else glassFill).padding(horizontal = 16.dp, vertical = 16.dp),
+                Modifier.fillMaxWidth().glass(RoundedCornerShape(20.dp), blur, fill = if (pressed) veil(.08f) else glassFill).padding(horizontal = 16.dp, vertical = 16.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column(Modifier.weight(1f)) {
@@ -1220,7 +1221,7 @@ private fun ColumnScope.McpMarketTab(blur: Dp, nav: MineNav) {
                 val have = Mcp.byCatalog(item.id)
                 Pressable({ nav.screen = if (have != null) "mcp/${have.id}" else "mcp/new:${item.id}" }, Modifier.fillMaxWidth(), label = item.name) { pressed ->
                     Row(
-                        Modifier.fillMaxWidth().background(if (pressed) rgba(255, 255, 255, .05f) else Color.Transparent).padding(horizontal = 16.dp, vertical = 13.dp),
+                        Modifier.fillMaxWidth().background(if (pressed) veil(.05f) else Color.Transparent).padding(horizontal = 16.dp, vertical = 13.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         McpIcon(item.id, item.name.take(1), 40.dp)
@@ -1265,7 +1266,7 @@ private fun ColumnScope.McpConnectedTab(blur: Dp, nav: MineNav) {
             if (i > 0) Divider()
             Pressable({ nav.screen = "mcp/${s.id}" }, Modifier.fillMaxWidth(), label = s.name) { pressed ->
                 Row(
-                    Modifier.fillMaxWidth().background(if (pressed) rgba(255, 255, 255, .05f) else Color.Transparent).padding(start = 16.dp, end = 12.dp, top = 12.dp, bottom = 12.dp),
+                    Modifier.fillMaxWidth().background(if (pressed) veil(.05f) else Color.Transparent).padding(start = 16.dp, end = 12.dp, top = 12.dp, bottom = 12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     McpIcon(s.catalog.ifEmpty { s.id }, s.initial, 40.dp)
@@ -1390,9 +1391,9 @@ private fun ColumnScope.McpServerScreen(key: String, compact: Boolean, blur: Dp,
                     if (i > 0) Divider()
                     val on = t.name !in off
                     Pressable({ off = if (on) off + t.name else off - t.name; existing?.let { it.off = off; Mcp.save() } }, Modifier.fillMaxWidth(), label = t.name) { pressed ->
-                        Row(Modifier.fillMaxWidth().background(if (pressed) rgba(255, 255, 255, .05f) else Color.Transparent).padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Row(Modifier.fillMaxWidth().background(if (pressed) veil(.05f) else Color.Transparent).padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                             Box(
-                                Modifier.size(20.dp).background(if (on) rgba(233, 180, 142, .9f) else rgba(255, 255, 255, .1f), RoundedCornerShape(6.dp)),
+                                Modifier.size(20.dp).background(if (on) rgba(233, 180, 142, .9f) else veil(.1f), RoundedCornerShape(6.dp)),
                                 contentAlignment = Alignment.Center,
                             ) { if (on) SvgIcon(Ic("M6 12.5l4 4 8-9"), css("#2a211b"), 14.dp, stroke = 2.2f) }
                             Spacer(Modifier.width(12.dp))

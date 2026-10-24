@@ -136,7 +136,7 @@ fun ThinkingMotion(
                     pop()
                 }
             },
-            style = TextStyle(fontSize = size),
+            style = TextStyle(fontFamily = Sans, fontSize = size),
             maxLines = 1,
             overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
         )

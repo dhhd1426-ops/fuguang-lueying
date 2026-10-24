@@ -146,7 +146,7 @@ fun MemoryCardHost() {
                         translationY = (o.y - center.y) * (1f - v)
                         alpha = (v * 2.6f).coerceIn(0f, 1f)
                     }
-                    .background(rgba(35, 39, 49, .985f), RoundedCornerShape(26.dp))
+                    .background(Skin.sheet, RoundedCornerShape(26.dp))
                     .pointerInput(Unit) { detectTapGestures { } }
                     .padding(start = 18.dp, end = 18.dp, top = 18.dp, bottom = 16.dp)
                     .graphicsLayer { alpha = ((prog.value - .45f) / .5f).coerceIn(0f, 1f) },
@@ -164,7 +164,7 @@ fun MemoryCardHost() {
                     modifier = Modifier.fillMaxWidth().focusRequester(focus).onFocusChanged { if (it.isFocused) editing = 0 },
                     decorationBox = { inner ->
                         Box(
-                            Modifier.fillMaxWidth().background(rgba(0, 0, 0, .24f), shape)
+                            Modifier.fillMaxWidth().background(Skin.well(.24f), shape)
                                 .border(1.dp, if (editing == 0) warm.copy(alpha = .4f) else Color.Transparent, shape)
                                 .padding(horizontal = 14.dp, vertical = 13.dp),
                         ) {
@@ -179,12 +179,12 @@ fun MemoryCardHost() {
                 Spacer(Modifier.height(10.dp))
                 BasicTextField(
                     value = body, onValueChange = { body = it.take(500) },
-                    textStyle = TextStyle(color = Page.ink, fontSize = 14.sp, lineHeight = 22.sp),
+                    textStyle = TextStyle(fontFamily = Sans, color = Page.ink, fontSize = 14.sp, lineHeight = 22.sp),
                     cursorBrush = SolidColor(warm),
                     modifier = Modifier.fillMaxWidth().onFocusChanged { if (it.isFocused) editing = 1 },
                     decorationBox = { inner ->
                         Box(
-                            Modifier.fillMaxWidth().heightIn(min = 76.dp).background(rgba(0, 0, 0, .24f), shape)
+                            Modifier.fillMaxWidth().heightIn(min = 76.dp).background(Skin.well(.24f), shape)
                                 .border(1.dp, if (editing == 1) warm.copy(alpha = .4f) else Color.Transparent, shape)
                                 .padding(14.dp),
                         ) {

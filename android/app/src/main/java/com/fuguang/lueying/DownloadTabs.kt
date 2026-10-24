@@ -90,7 +90,7 @@ private fun MiniRing(f: Float) {
         val w = 2.dp.toPx()
         val tl = Offset(w / 2, w / 2)
         val sz = androidx.compose.ui.geometry.Size(size.width - w, size.height - w)
-        drawArc(rgba(255, 255, 255, .13f), 0f, 360f, false, tl, sz, style = Stroke(w))
+        drawArc(veil(.13f), 0f, 360f, false, tl, sz, style = Stroke(w))
         drawArc(Warm, -90f, 360f * k.value, false, tl, sz, style = Stroke(w, cap = StrokeCap.Round))
     }
 }
@@ -118,12 +118,12 @@ fun DlTabs(row: @Composable (Dl, Int) -> Unit) {
         val items = if (page == 0) going else done
         if (items.isEmpty()) Txt(
             if (page == 0) "现在没有在下的。\n在内置浏览器里看到视频，右下角点「下载视频」。" else "下好的会排在这里。",
-            Page.muted, 13.sp, Modifier.fillMaxWidth().padding(top = 80.dp, start = 30.dp, end = 30.dp), lineHeight = 22.sp, align = TextAlign.Center,
+            Page.MUTED, 13.sp, Modifier.fillMaxWidth().padding(top = 80.dp, start = 30.dp, end = 30.dp), lineHeight = 22.sp, align = TextAlign.Center,
         )
         else LazyColumn(Modifier.fillMaxSize(), contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 14.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             itemsIndexed(items, key = { _, d -> d.id }) { i, d -> Box(Modifier.animateItem()) { row(d, i) } }
             item(key = "foot") {
-                Txt("加了版权保护的视频下不了。下载的视频自己看，别拿去传播。", Page.muted.copy(alpha = .5f), 11.5.sp, Modifier.padding(top = 10.dp, start = 4.dp, bottom = 40.dp))
+                Txt("加了版权保护的视频下不了。下载的视频自己看，别拿去传播。", Page.MUTED.copy(alpha = .5f), 11.5.sp, Modifier.padding(top = 10.dp, start = 4.dp, bottom = 40.dp))
             }
         }
     }
@@ -145,7 +145,7 @@ private fun DlSeg(tabs: List<Pair<String, Int>>, pos: Float, bump: Float, onPick
                 val near = (1f - kotlin.math.abs(pos - i)).coerceIn(0f, 1f)
                 Pressable({ onPick(i) }, Modifier.weight(1f), label = t) { _ ->
                     Row(Modifier.fillMaxWidth().height(36.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-                        Txt(t, lerp(Page.muted, Page.ink, near), 13.5.sp, maxLines = 1)
+                        Txt(t, lerp(Page.MUTED, Page.INK, near), 13.5.sp, maxLines = 1)
                         if (n > 0) Txt(
                             n.toString(), if (i == 1 && bump > 1.01f) Warm else SideFaint, 12.sp,
                             Modifier.padding(start = 5.dp).graphicsLayer { val s = if (i == 1) bump else 1f; scaleX = s; scaleY = s },

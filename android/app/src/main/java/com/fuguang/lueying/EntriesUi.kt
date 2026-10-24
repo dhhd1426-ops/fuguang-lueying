@@ -45,8 +45,8 @@ import androidx.compose.ui.unit.sp
  */
 
 private val warm = css("#e9b48e")
-private val cardFill = rgba(30, 34, 42, .42f)
-private val field = rgba(0, 0, 0, .22f)
+private val cardFill get() = Skin.tint(.42f)
+private val field get() = Skin.well(.22f)
 
 @Composable
 fun EntriesSection(p: Persona, blur: Dp) {
@@ -65,7 +65,7 @@ fun EntriesSection(p: Persona, blur: Dp) {
     }
     Column(Modifier.fillMaxWidth().glass(RoundedCornerShape(20.dp), blur, fill = cardFill).animateContentSize(spring(.9f, 500f))) {
         p.entries.forEachIndexed { i, e ->
-            if (i > 0) Box(Modifier.padding(horizontal = 18.dp).fillMaxWidth().height(1.dp).background(rgba(255, 255, 255, .06f)))
+            if (i > 0) Box(Modifier.padding(horizontal = 18.dp).fillMaxWidth().height(1.dp).background(veil(.06f)))
             EntryRow(e, open == e.id) { open = if (open == e.id) null else e.id }
             AnimatedVisibility(open == e.id, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
                 EntryEditor(p, e) { open = null }
@@ -78,10 +78,10 @@ fun EntriesSection(p: Persona, blur: Dp) {
 private fun EntryRow(e: Entry, open: Boolean, onTap: () -> Unit) {
     Pressable(onTap, Modifier.fillMaxWidth(), label = e.name.ifBlank { "未命名条目" }) { pr ->
         Row(
-            Modifier.fillMaxWidth().background(if (pr || open) rgba(255, 255, 255, .04f) else Color.Transparent).padding(horizontal = 18.dp, vertical = 15.dp),
+            Modifier.fillMaxWidth().background(if (pr || open) veil(.04f) else Color.Transparent).padding(horizontal = 18.dp, vertical = 15.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Box(Modifier.size(6.dp).background(if (e.on) warm else rgba(255, 255, 255, .2f), CircleShape))
+            Box(Modifier.size(6.dp).background(if (e.on) warm else veil(.2f), CircleShape))
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Txt(e.name.ifBlank { "未命名条目" }, if (e.on) Page.ink else Page.muted, 15.sp, maxLines = 1, family = Serif)
@@ -169,7 +169,7 @@ private fun DepthStrip(depth: Int, self: Boolean) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = if (mine) Arrangement.End else Arrangement.Start) {
                 Txt(
                     if (i == roles.size - 1) "最后一句" else r, Page.muted, 10.5.sp,
-                    Modifier.fillMaxWidth(.66f).background(rgba(255, 255, 255, if (mine) .07f else .04f), RoundedCornerShape(8.dp)).padding(horizontal = 10.dp, vertical = 4.dp),
+                    Modifier.fillMaxWidth(.66f).background(veil(if (mine) .07f else .04f), RoundedCornerShape(8.dp)).padding(horizontal = 10.dp, vertical = 4.dp),
                 )
             }
         }
@@ -185,7 +185,7 @@ private fun Label(t: String) = Txt(t, Page.muted, 11.5.sp, Modifier.padding(top 
 private fun Input(value: String, hint: String, single: Boolean = false, minH: Dp = 0.dp, onChange: (String) -> Unit) {
     BasicTextField(
         value = value, onValueChange = onChange, singleLine = single,
-        textStyle = TextStyle(color = Page.ink, fontSize = 14.5.sp, lineHeight = 23.sp),
+        textStyle = TextStyle(fontFamily = Sans, color = Page.ink, fontSize = 14.5.sp, lineHeight = 23.sp),
         cursorBrush = SolidColor(warm),
         modifier = Modifier.fillMaxWidth(),
         decorationBox = { inner ->

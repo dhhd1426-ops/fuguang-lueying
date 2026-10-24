@@ -73,9 +73,9 @@ object Curves {
     val accel = CubicBezierEasing(.3f, 0f, .8f, .15f)
 }
 
-val CardWell = rgba(0, 0, 0, .26f)
-val CardBlock = rgba(255, 255, 255, .045f)
-val CardBlockPress = rgba(255, 255, 255, .09f)
+val CardWell get() = Skin.well(.26f)
+val CardBlock get() = veil(.045f)
+val CardBlockPress get() = veil(.09f)
 val CardRose = css("#e8a1a1")
 private val warm = rgba(233, 180, 142, 1f)
 private val warmInk = css("#2a211b")
@@ -177,14 +177,14 @@ fun <S> CardButton(
     content: @Composable (S, Color) -> Unit,
 ) {
     val fillTarget = when (tone) {
-        BtnTone.Plain -> rgba(255, 255, 255, .09f)
+        BtnTone.Plain -> veil(.09f)
         BtnTone.Primary -> warm.copy(alpha = .92f)
         BtnTone.Quiet, BtnTone.Ok -> CardBlock
         BtnTone.Bad -> CardRose.copy(alpha = .12f)
     }
     val pressTarget = when (tone) {
         BtnTone.Primary -> css("#f4c9a8")
-        BtnTone.Plain -> rgba(255, 255, 255, .15f)
+        BtnTone.Plain -> veil(.15f)
         else -> CardBlockPress
     }
     val inkTarget = when (tone) {
@@ -236,7 +236,7 @@ fun CardField(
         value = value,
         onValueChange = onChange,
         singleLine = true,
-        textStyle = TextStyle(color = Page.ink, fontSize = 14.sp),
+        textStyle = TextStyle(fontFamily = Sans, color = Page.ink, fontSize = 14.sp),
         cursorBrush = SolidColor(Page.accent),
         visualTransformation = if (secret) PasswordVisualTransformation() else VisualTransformation.None,
         keyboardOptions = KeyboardOptions(keyboardType = keyboard),
@@ -254,7 +254,7 @@ fun CardField(
 @Composable
 fun CardSwitch(on: Boolean, label: String, onChange: (Boolean) -> Unit) {
     val x by animateFloatAsState(if (on) 1f else 0f, spring(dampingRatio = .6f, stiffness = 500f), label = "sw")
-    val track by animateColorAsState(if (on) warm.copy(alpha = .9f) else rgba(255, 255, 255, .12f), tween(220), label = "track")
+    val track by animateColorAsState(if (on) warm.copy(alpha = .9f) else veil(.12f), tween(220), label = "track")
     val knob by animateColorAsState(if (on) warmInk else css("#cfccc6"), tween(200), label = "knob")
     Pressable({ onChange(!on) }, label = label) { _ ->
         Box(Modifier.width(46.dp).height(26.dp).background(track, RoundedCornerShape(50)).padding(3.dp)) {
@@ -279,6 +279,6 @@ fun CardHeader(text: String, onBack: (() -> Unit)?) {
 /** 一行小标签：启用 / 未配置 / 2 个模型。 */
 @Composable
 fun CardTag(text: String, filled: Boolean = false) {
-    if (filled) Txt(text, css("#2a2f38"), 11.sp, Modifier.background(Page.ink.copy(alpha = .9f), RoundedCornerShape(50)).padding(horizontal = 8.dp, vertical = 2.dp), maxLines = 1)
+    if (filled) Txt(text, Skin.onInk, 11.sp, Modifier.background(Page.ink.copy(alpha = .9f), RoundedCornerShape(50)).padding(horizontal = 8.dp, vertical = 2.dp), maxLines = 1)
     else Txt(text, Page.muted, 11.5.sp, maxLines = 1)
 }

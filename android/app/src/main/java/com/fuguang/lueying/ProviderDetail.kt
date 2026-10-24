@@ -64,7 +64,7 @@ private fun DetailTabs(tab: Int, onTab: (Int) -> Unit) {
             .background(CardWell, RoundedCornerShape(13.dp)).padding(3.dp),
     ) {
         val half = maxWidth / 2
-        Box(Modifier.fillMaxHeight().width(half).graphicsLayer { translationX = x * half.toPx() }.background(rgba(255, 255, 255, .08f), RoundedCornerShape(10.dp)))
+        Box(Modifier.fillMaxHeight().width(half).graphicsLayer { translationX = x * half.toPx() }.background(veil(.08f), RoundedCornerShape(10.dp)))
         Row(Modifier.fillMaxSize()) {
             listOf("配置", "模型").forEachIndexed { i, t ->
                 Pressable({ onTab(i) }, Modifier.weight(1f).fillMaxHeight(), label = t) { _ ->
@@ -113,7 +113,7 @@ private fun ConfigPane(state: ProviderCardState, store: AssistantStore, p: Provi
             Spacer(Modifier.height(8.dp))
             ToggleRow("是否启用", d.enabled) { state.draft = d.copy(enabled = it) }
             if (p.hasBalance) {
-                Box(Modifier.fillMaxWidth().height(1.dp).background(rgba(255, 255, 255, .06f)))
+                Box(Modifier.fillMaxWidth().height(1.dp).background(veil(.06f)))
                 ToggleRow("获取账户余额", d.balance) { state.draft = d.copy(balance = it) }
                 if (d.balance && d.configured) store.balances[p.id]?.let { Txt(it, Page.muted, 12.sp, Modifier.padding(start = 4.dp, bottom = 8.dp)) }
             }

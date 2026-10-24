@@ -76,7 +76,7 @@ internal fun BrowserHome(play: Int, focus: Int, onGo: (String) -> Unit) {
             "Amor".forEachIndexed { i, c ->
                 val a = letters[i].value
                 androidx.compose.foundation.text.BasicText(c.toString(), Modifier.graphicsLayer { alpha = a; translationY = (1f - a) * 8.dp.toPx() },
-                    style = TextStyle(color = Page.ink, fontSize = 58.sp, fontFamily = Serif, fontStyle = FontStyle.Italic, letterSpacing = .02.em))
+                    style = TextStyle(color = Page.INK, fontSize = 58.sp, fontFamily = Serif, fontStyle = FontStyle.Italic, letterSpacing = .02.em))
             }
         }
         val g = grow.value
@@ -85,13 +85,13 @@ internal fun BrowserHome(play: Int, focus: Int, onGo: (String) -> Unit) {
                 .background(if (focused) Color(0xFF262B33) else Color(0xFF22262D), RoundedCornerShape(25.dp)),
         ) {
             Row(Modifier.fillMaxSize().padding(start = 16.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                SvgIcon(Ic("M20 20l-4.2-4.2", circles = listOf(floatArrayOf(11f, 11f, 6.5f))), Page.ink.copy(alpha = .5f), 17.dp, stroke = 1.9f)
+                SvgIcon(Ic("M20 20l-4.2-4.2", circles = listOf(floatArrayOf(11f, 11f, 6.5f))), Page.INK.copy(alpha = .5f), 17.dp, stroke = 1.9f)
                 Spacer(Modifier.width(8.dp))
                 Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
-                    if (q.isEmpty()) Txt("搜索，或输入网址", Page.ink.copy(alpha = .38f), 15.sp, maxLines = 1)
+                    if (q.isEmpty()) Txt("搜索，或输入网址", Page.INK.copy(alpha = .38f), 15.sp, maxLines = 1)
                     BasicTextField(
                         q, { q = it }, Modifier.fillMaxWidth().focusRequester(fr).onFocusChanged { focused = it.isFocused },
-                        singleLine = true, textStyle = TextStyle(color = Page.ink, fontSize = 15.sp), cursorBrush = SolidColor(FpWarm),
+                        singleLine = true, textStyle = TextStyle(fontFamily = Sans, color = Page.INK, fontSize = 15.sp), cursorBrush = SolidColor(FpWarm),
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go), keyboardActions = KeyboardActions(onGo = { submit(q) }),
                     )
                 }
@@ -112,7 +112,7 @@ internal fun BrowserHome(play: Int, focus: Int, onGo: (String) -> Unit) {
                 Suggest(Ic("M20 20l-4.2-4.2", circles = listOf(floatArrayOf(11f, 11f, 6.5f))), "搜索「$t」", "Bing") { fm.clearFocus(); q = ""; onGo(bing(t)) }
             }
         }
-        Txt("用 Bing 搜索", Page.ink.copy(alpha = .32f), 11.5.sp, Modifier.graphicsLayer { alpha = g })
+        Txt("用 Bing 搜索", Page.INK.copy(alpha = .32f), 11.5.sp, Modifier.graphicsLayer { alpha = g })
     }
 }
 
@@ -120,10 +120,10 @@ internal fun BrowserHome(play: Int, focus: Int, onGo: (String) -> Unit) {
 private fun Suggest(icon: Ic, text: String, tag: String?, onClick: () -> Unit) {
     PressSurface(onClick, Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp), fill = Color.Transparent, pressScale = .98f, label = text) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 11.dp), verticalAlignment = Alignment.CenterVertically) {
-            SvgIcon(icon, Page.ink.copy(alpha = .5f), 15.dp, stroke = 1.9f)
+            SvgIcon(icon, Page.INK.copy(alpha = .5f), 15.dp, stroke = 1.9f)
             Spacer(Modifier.width(10.dp))
-            Txt(text, Page.ink, 14.sp, Modifier.weight(1f), maxLines = 1)
-            if (tag != null) Txt(tag, Page.muted, 12.sp, maxLines = 1)
+            Txt(text, Page.INK, 14.sp, Modifier.weight(1f), maxLines = 1)
+            if (tag != null) Txt(tag, Page.MUTED, 12.sp, maxLines = 1)
         }
     }
 }

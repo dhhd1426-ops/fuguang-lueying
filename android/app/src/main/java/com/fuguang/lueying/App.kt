@@ -157,12 +157,15 @@ fun FuguangApp(prefs: Prefs, fullscreen: Boolean, setFullscreen: (Boolean) -> Un
         )
         Box(Modifier.fillMaxSize().blur(backBlur)) {
             Box(Modifier.fillMaxSize().hazeSource(haze)) {
-                SceneBackground(
-                    playing = playing,
-                    positionX = if (compact) .61f else .62f,
-                    onFailed = { paused = true },
-                )
-                Shade(dim = dim / 100f, compact = compact, zen = zen)
+                // 暗黑优雅、白色主题不放背景画面，整页是实底
+                if (Skin.frost) {
+                    SceneBackground(
+                        playing = playing,
+                        positionX = if (compact) .61f else .62f,
+                        onFailed = { paused = true },
+                    )
+                    Shade(dim = dim / 100f, compact = compact, zen = zen)
+                } else Box(Modifier.fillMaxSize().background(Skin.page))
             }
         }
 
@@ -205,9 +208,12 @@ fun FuguangApp(prefs: Prefs, fullscreen: Boolean, setFullscreen: (Boolean) -> Un
         }
 
         // 悬浮卡片：在页面之上、圆钮卡片之下
-        if (!zen) MineCardLayer(assistant, mineNav)
-        if (!zen) NoteCardLayer(store, prefs)
-        if (!zen) TgAuthLayer()
+        // 磨砂卡片要能透出背景画面，所以也放进 haze 里
+        CompositionLocalProvider(LocalHaze provides haze) {
+            if (!zen) MineCardLayer(assistant, mineNav)
+            if (!zen) NoteCardLayer(store, prefs)
+            if (!zen) TgAuthLayer()
+        }
 
         // 「这次用了」里点一样本事：去「我的 → 功能 → 技能」看它
         Skills.show = { id -> mineNav.screen = "skills/$id"; MineCard.open = true }

@@ -128,17 +128,17 @@ internal fun Controls(p: PlayerState, ctl: VidCtl, title: String, now: Double, d
         Box(Modifier.align(Alignment.BottomStart).fillMaxWidth().fillMaxHeight(.4f).background(Brush.verticalGradient(listOf(Color.Transparent, Color(0x990A0B0E)))))
         Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.displayCutout).padding(horizontal = 14.dp, vertical = 10.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Chip("退出全屏", onExit) { SvgIcon(FpIcons.shrink, Page.ink, 16.dp, stroke = 1.8f) }
-                Txt(title.ifBlank { "视频" }, Page.ink, 16.sp, Modifier.weight(1f).padding(horizontal = 12.dp), family = Serif, maxLines = 1)
+                Chip("退出全屏", onExit) { SvgIcon(FpIcons.shrink, Page.INK, 16.dp, stroke = 1.8f) }
+                Txt(title.ifBlank { "视频" }, Page.INK, 16.sp, Modifier.weight(1f).padding(horizontal = 12.dp), family = Serif, maxLines = 1)
                 if (extra != null) Txt(extra, FpWarm, 12.5.sp, Modifier.padding(end = 4.dp), maxLines = 1)
-                if (onDownload != null) Chip("下载", onDownload) { SvgIcon(FpIcons.down, Page.ink, 15.dp, stroke = 1.8f); Spacer(Modifier.width(5.dp)); Txt("下载", Page.ink, 12.5.sp, maxLines = 1) }
+                if (onDownload != null) Chip("下载", onDownload) { SvgIcon(FpIcons.down, Page.INK, 15.dp, stroke = 1.8f); Spacer(Modifier.width(5.dp)); Txt("下载", Page.INK, 12.5.sp, maxLines = 1) }
             }
             Spacer(Modifier.weight(1f))
             ProgressBar(p, ctl, now, dur)
             Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                Txt(if (dur > 0) fmtTime(now) + " / " + fmtTime(dur) else "直播", Page.ink, 12.5.sp, maxLines = 1)
+                Txt(if (dur > 0) fmtTime(now) + " / " + fmtTime(dur) else "直播", Page.INK, 12.5.sp, maxLines = 1)
                 Spacer(Modifier.weight(1f))
-                Chip("倍速", { p.menu = !p.menu; p.poke++ }) { Txt(rateText(p.state?.r ?: 1.0), if (p.menu) FpWarm else Page.ink, 12.5.sp, maxLines = 1) }
+                Chip("倍速", { p.menu = !p.menu; p.poke++ }) { Txt(rateText(p.state?.r ?: 1.0), if (p.menu) FpWarm else Page.INK, 12.5.sp, maxLines = 1) }
             }
         }
         PressSurface({ ctl.toggle(); p.setPaused(!(p.state?.p ?: true)); p.poke++ }, Modifier.align(Alignment.Center).size(58.dp), shape = CircleShape, fill = FpGlass, pressScale = .92f, label = if (p.playing) "暂停" else "播放") {
@@ -155,7 +155,7 @@ private fun RateMenu(p: PlayerState, ctl: VidCtl, modifier: Modifier) {
         listOf(2.0, 1.5, 1.25, 1.0, .75).forEach { v ->
             val on = kotlin.math.abs(v - cur) < .01
             PressSurface({ ctl.rate(v); p.setRate(v); p.menu = false; p.poke++ }, Modifier.width(76.dp), shape = RoundedCornerShape(9.dp), fill = if (on) FpWarm.copy(alpha = .12f) else Color.Transparent, pressScale = .96f, label = rateText(v)) {
-                Txt(rateText(v), if (on) FpWarm else Page.ink, 13.sp, Modifier.padding(horizontal = 14.dp, vertical = 8.dp), maxLines = 1)
+                Txt(rateText(v), if (on) FpWarm else Page.INK, 13.sp, Modifier.padding(horizontal = 14.dp, vertical = 8.dp), maxLines = 1)
             }
         }
     }
@@ -170,7 +170,7 @@ internal fun Chip(label: String, onClick: () -> Unit, content: @Composable () ->
 
 /** 播放三角 / 暂停两竖，实心。 */
 @Composable
-internal fun PlayGlyph(playing: Boolean, modifier: Modifier, color: Color = Page.ink) {
+internal fun PlayGlyph(playing: Boolean, modifier: Modifier, color: Color = Page.INK) {
     Canvas(modifier) {
         val s = size.minDimension / 24f
         if (playing) {
@@ -188,8 +188,8 @@ internal fun ProgressBar(p: PlayerState, ctl: VidCtl, now: Double, dur: Double) 
         val knob by animateFloatAsState(if (p.dragging) 1.25f else 1f, tween(160), label = "kn")
         Canvas(Modifier.fillMaxSize()) {
             val y = size.height / 2; val h = th.dp.toPx(); val w = size.width
-            drawRoundRect(Page.ink.copy(alpha = .22f), Offset(0f, y - h / 2), Size(w, h), androidx.compose.ui.geometry.CornerRadius(h / 2))
-            drawRoundRect(Page.ink.copy(alpha = .22f), Offset(0f, y - h / 2), Size(w * b, h), androidx.compose.ui.geometry.CornerRadius(h / 2))
+            drawRoundRect(Page.INK.copy(alpha = .22f), Offset(0f, y - h / 2), Size(w, h), androidx.compose.ui.geometry.CornerRadius(h / 2))
+            drawRoundRect(Page.INK.copy(alpha = .22f), Offset(0f, y - h / 2), Size(w * b, h), androidx.compose.ui.geometry.CornerRadius(h / 2))
             drawRoundRect(FpWarm, Offset(0f, y - h / 2), Size(w * f, h), androidx.compose.ui.geometry.CornerRadius(h / 2))
             if (dur > 0) {
                 drawCircle(FpWarm.copy(alpha = .18f), 10.dp.toPx() * knob, Offset(w * f, y))

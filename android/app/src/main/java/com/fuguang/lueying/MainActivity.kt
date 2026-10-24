@@ -35,6 +35,7 @@ class MainActivity : ComponentActivity() {
         Backup.init(prefs)
         ModelFit.init(prefs)
         WebSearch.init(prefs)
+        Skin.init(prefs)
         Gallery.init(prefs)
         AdBlock.init(this, prefs)
         Downloads.init(this, prefs)
@@ -54,6 +55,12 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             var fullscreen by remember { mutableStateOf(false) }
+            // 白色主题：状态栏、导航栏换深色图标
+            val light = Skin.light
+            androidx.compose.runtime.SideEffect {
+                controller.isAppearanceLightStatusBars = light
+                controller.isAppearanceLightNavigationBars = light
+            }
             FuguangApp(
                 prefs = prefs,
                 fullscreen = fullscreen,

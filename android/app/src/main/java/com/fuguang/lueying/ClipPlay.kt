@@ -92,7 +92,7 @@ fun ClipPlayLayer() {
                         Box(Modifier.size(26.dp).background(Color(0x99000000), CircleShape), contentAlignment = Alignment.Center) { PlayGlyph(playing, Modifier.size(12.dp)) }
                     }
                     Pressable({ DlPlay.close(); ClipPlay.mini = false }, Modifier.align(Alignment.TopEnd).padding(4.dp), label = "停掉") { _ ->
-                        Box(Modifier.size(24.dp).background(Color(0x99000000), CircleShape), contentAlignment = Alignment.Center) { SvgIcon(Icons.close, Page.ink, 12.dp, stroke = 1.8f) }
+                        Box(Modifier.size(24.dp).background(Color(0x99000000), CircleShape), contentAlignment = Alignment.Center) { SvgIcon(Icons.close, Page.INK, 12.dp, stroke = 1.8f) }
                     }
                 }
             }

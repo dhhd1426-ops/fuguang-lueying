@@ -190,16 +190,16 @@ fun InBrowserLayer() {
                     val total = remember(blockedTick) { blocked.sum() }
                     PressSurface({ shieldOpen = !shieldOpen; menu = false }, Modifier.height(30.dp), shape = RoundedCornerShape(15.dp), fill = if (on) Warm.copy(alpha = .1f) else Color.White.copy(alpha = .05f), pressScale = .92f, label = "去广告") {
                         Row(Modifier.padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                            SvgIcon(BrIcons.shield, if (on) Warm else Page.muted, 13.dp, stroke = 2f)
+                            SvgIcon(BrIcons.shield, if (on) Warm else Page.MUTED, 13.dp, stroke = 2f)
                             Spacer(Modifier.width(4.dp))
-                            Txt(if (on) "$total" else "关", if (on) Warm else Page.muted, 11.5.sp, maxLines = 1)
+                            Txt(if (on) "$total" else "关", if (on) Warm else Page.MUTED, 11.5.sp, maxLines = 1)
                         }
                     }
                     Column(Modifier.weight(1f).padding(horizontal = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                        Txt(if (home) "主页" else title.ifBlank { "正在打开…" }, Page.ink, 14.sp, maxLines = 1)
+                        Txt(if (home) "主页" else title.ifBlank { "正在打开…" }, Page.INK, 14.sp, maxLines = 1)
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            if (secure) { SvgIcon(BrIcons.lock, Page.muted.copy(alpha = .6f), 10.dp, stroke = 2.2f); Spacer(Modifier.width(3.dp)) }
-                            Txt(if (home) "Amor" else host, Page.muted.copy(alpha = .6f), 11.sp, maxLines = 1)
+                            if (secure) { SvgIcon(BrIcons.lock, Page.MUTED.copy(alpha = .6f), 10.dp, stroke = 2.2f); Spacer(Modifier.width(3.dp)) }
+                            Txt(if (home) "Amor" else host, Page.MUTED.copy(alpha = .6f), 11.sp, maxLines = 1)
                         }
                     }
                     IconBtn(BrIcons.more, "更多") { menu = !menu; shieldOpen = false }
@@ -315,7 +315,7 @@ fun InBrowserLayer() {
                     shape = RoundedCornerShape(20.dp), fill = Color(0xE6262A32), pressScale = .92f, label = "下载视频") {
                     Row(Modifier.padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically) {
                         SvgIcon(BrIcons.down, Warm, 16.dp, stroke = 2f); Spacer(Modifier.width(6.dp))
-                        Txt(if (vids <= 1) "下载视频" else "下载 · $vids 个", Page.ink, 13.sp, maxLines = 1)
+                        Txt(if (vids <= 1) "下载视频" else "下载 · $vids 个", Page.INK, 13.sp, maxLines = 1)
                     }
                 }
                 // 主页盖在网页上：淡入淡出 260ms；搜或开网址就回到网页
@@ -345,14 +345,14 @@ fun InBrowserLayer() {
         // 盾牌卡片：这页拦了什么、这个网站要不要拦
         Pop(shieldOpen, Alignment.TopStart) {
             val tick = blockedTick
-            Txt("这页拦掉了 ${blocked.sum()} 个", Page.ink, 15.sp)
-            Txt("只拦广告和跟踪，不拦网页本身。", Page.muted, 12.5.sp, Modifier.padding(top = 2.dp, bottom = 10.dp))
+            Txt("这页拦掉了 ${blocked.sum()} 个", Page.INK, 15.sp)
+            Txt("只拦广告和跟踪，不拦网页本身。", Page.MUTED, 12.5.sp, Modifier.padding(top = 2.dp, bottom = 10.dp))
             listOf("横幅、浮窗广告" to blocked[0], "跟踪你的统计代码" to blocked[1], "跳别的 App、应用商店" to blocked[2]).forEach { (a, b) ->
-                Row(Modifier.fillMaxWidth().padding(vertical = 3.dp)) { Txt(a, Page.ink.copy(alpha = .86f), 13.sp, Modifier.weight(1f)); Txt("$b", Warm, 13.sp) }
+                Row(Modifier.fillMaxWidth().padding(vertical = 3.dp)) { Txt(a, Page.INK.copy(alpha = .86f), 13.sp, Modifier.weight(1f)); Txt("$b", Warm, 13.sp) }
             }
             Spacer(Modifier.height(10.dp))
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Txt("在 ${host.ifBlank { "这个网站" }} 去广告", Page.ink, 13.5.sp, Modifier.weight(1f), maxLines = 1)
+                Txt("在 ${host.ifBlank { "这个网站" }} 去广告", Page.INK, 13.5.sp, Modifier.weight(1f), maxLines = 1)
                 CardSwitch(AdBlock.on(host), "在这个网站去广告") { AdBlock.allow(host, it); shieldOpen = false; toast = if (it) "这个网站重新去广告" else "这个网站不拦了"; web?.reload() }
             }
         }
@@ -378,7 +378,7 @@ fun InBrowserLayer() {
         val ta by animateFloatAsState(if (toast != null) 1f else 0f, tween(240), label = "toast")
         var lastToast by remember { mutableStateOf("") }
         toast?.let { lastToast = it }
-        if (ta > 0f) Txt(lastToast, Page.ink, 13.sp, Modifier.align(Alignment.BottomCenter).windowInsetsPadding(WindowInsets.navigationBars).padding(bottom = 70.dp)
+        if (ta > 0f) Txt(lastToast, Page.INK, 13.sp, Modifier.align(Alignment.BottomCenter).windowInsetsPadding(WindowInsets.navigationBars).padding(bottom = 70.dp)
             .graphicsLayer { alpha = ta; translationY = (1f - ta) * 10.dp.toPx() }.background(Color(0xFF3A404C), RoundedCornerShape(12.dp)).padding(horizontal = 14.dp, vertical = 9.dp), maxLines = 1)
 
         // 选清晰度
@@ -397,7 +397,7 @@ fun InBrowserLayer() {
 @Composable
 private fun IconBtn(icon: Ic, label: String, enabled: Boolean = true, tint: Color? = null, onClick: () -> Unit) {
     PressSurface(onClick, Modifier.size(44.dp), shape = CircleShape, fill = Color.Transparent, pressScale = .88f, enabled = enabled, label = label) {
-        SvgIcon(icon, tint ?: Page.ink.copy(alpha = if (enabled) .9f else .3f), 20.dp, stroke = 1.8f)
+        SvgIcon(icon, tint ?: Page.INK.copy(alpha = if (enabled) .9f else .3f), 20.dp, stroke = 1.8f)
     }
 }
 
@@ -420,7 +420,7 @@ private fun Pop(open: Boolean, align: Alignment, content: @Composable androidx.c
 private fun MenuItem(icon: Ic, text: String, onClick: () -> Unit) {
     PressSurface(onClick, Modifier.fillMaxWidth(), shape = RoundedCornerShape(10.dp), fill = Color.Transparent, pressScale = .98f, label = text) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 11.dp), verticalAlignment = Alignment.CenterVertically) {
-            SvgIcon(icon, Page.ink.copy(alpha = .8f), 16.dp, stroke = 1.7f); Spacer(Modifier.width(10.dp)); Txt(text, Page.ink, 14.sp, maxLines = 1)
+            SvgIcon(icon, Page.INK.copy(alpha = .8f), 16.dp, stroke = 1.7f); Spacer(Modifier.width(10.dp)); Txt(text, Page.INK, 14.sp, maxLines = 1)
         }
     }
 }

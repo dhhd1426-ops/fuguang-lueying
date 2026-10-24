@@ -112,14 +112,14 @@ fun MagnetSheet(online: Int = 0, onOnline: () -> Unit = {}, onToast: (String) ->
                 Box(Modifier.size(34.dp).background(Warm.copy(alpha = .12f), RoundedCornerShape(10.dp)), contentAlignment = Alignment.Center) { SvgIcon(magnetIc, Warm, 17.dp, stroke = 1.7f) }
                 Spacer(Modifier.width(10.dp))
                 Column(Modifier.weight(1f)) {
-                    Txt(m?.name ?: Torrent.nameOf(a.key).ifBlank { if (a.file) "种子文件" else "磁力链接" }, Page.ink, 15.sp, family = Serif, maxLines = 2)
+                    Txt(m?.name ?: Torrent.nameOf(a.key).ifBlank { if (a.file) "种子文件" else "磁力链接" }, Page.INK, 15.sp, family = Serif, maxLines = 2)
                     val sub = when {
                         already != null -> "已经在下载里了"
                         m != null -> "${m.items.size} 个文件 · 共 ${mb(m.items.sumOf { it.size })}"
                         failed -> "没找到"
                         else -> "磁力"
                     }
-                    Txt(sub, Page.muted, 12.sp, Modifier.padding(top = 2.dp), maxLines = 1)
+                    Txt(sub, Page.MUTED, 12.sp, Modifier.padding(top = 2.dp), maxLines = 1)
                 }
             }
             Spacer(Modifier.size(12.dp))
@@ -129,10 +129,10 @@ fun MagnetSheet(online: Int = 0, onOnline: () -> Unit = {}, onToast: (String) ->
                     0 -> Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             LoadRing(Warm, 15.dp); Spacer(Modifier.width(9.dp))
-                            Txt("在找种子信息 · $secs 秒", Page.ink, 13.5.sp)
+                            Txt("在找种子信息 · $secs 秒", Page.INK, 13.5.sp)
                         }
                         val nodes = remember(secs) { Torrent.nodes() }
-                        Txt((if (nodes > 0) "已连上 $nodes 个节点。" else "正在连 DHT 网络。") + "冷门的种子可能要等一两分钟。", Page.muted, 12.sp, Modifier.padding(top = 6.dp, start = 24.dp), lineHeight = 19.sp)
+                        Txt((if (nodes > 0) "已连上 $nodes 个节点。" else "正在连 DHT 网络。") + "冷门的种子可能要等一两分钟。", Page.MUTED, 12.sp, Modifier.padding(top = 6.dp, start = 24.dp), lineHeight = 19.sp)
                     }
                     1 -> Column(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
                         Txt("等了一分半钟，没找到分享这个种子的人。可能太冷门，或者这个网络连不上 DHT。", Rose, 13.sp, lineHeight = 20.sp)
@@ -149,8 +149,8 @@ fun MagnetSheet(online: Int = 0, onOnline: () -> Unit = {}, onToast: (String) ->
                 Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                     SvgIcon(playIc, Warm, 14.dp, stroke = 2f); Spacer(Modifier.width(10.dp))
                     Column(Modifier.weight(1f)) {
-                        Txt("这页能在线放（认出 $online 个视频）", Page.ink, 13.5.sp, maxLines = 1)
-                        Txt("下在线那份通常快得多，不用等人做种", Page.muted, 11.5.sp, Modifier.padding(top = 2.dp), maxLines = 1)
+                        Txt("这页能在线放（认出 $online 个视频）", Page.INK, 13.5.sp, maxLines = 1)
+                        Txt("下在线那份通常快得多，不用等人做种", Page.MUTED, 11.5.sp, Modifier.padding(top = 2.dp), maxLines = 1)
                     }
                     Txt("换这个", Warm, 12.5.sp, maxLines = 1)
                 }
@@ -207,8 +207,8 @@ private fun Files(m: Torrent.Meta, sel: Set<Int>, onFlip: (Int) -> Unit) {
                     }
                     Spacer(Modifier.width(10.dp))
                     Column(Modifier.weight(1f)) {
-                        Txt(it.name, if (on) Page.ink else Page.ink.copy(alpha = .78f), 13.5.sp, maxLines = 2)
-                        Txt(listOf(mb(it.size).ifBlank { "很小" }, if (it.video) "视频" else Torrent.ext(it.name).uppercase()).filter { s -> s.isNotBlank() }.joinToString(" · "), Page.muted.copy(alpha = .7f), 11.5.sp, Modifier.padding(top = 2.dp), maxLines = 1)
+                        Txt(it.name, if (on) Page.INK else Page.INK.copy(alpha = .78f), 13.5.sp, maxLines = 2)
+                        Txt(listOf(mb(it.size).ifBlank { "很小" }, if (it.video) "视频" else Torrent.ext(it.name).uppercase()).filter { s -> s.isNotBlank() }.joinToString(" · "), Page.MUTED.copy(alpha = .7f), 11.5.sp, Modifier.padding(top = 2.dp), maxLines = 1)
                     }
                 }
             }

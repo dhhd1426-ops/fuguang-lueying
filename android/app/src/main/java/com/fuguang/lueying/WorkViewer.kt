@@ -99,10 +99,10 @@ fun WorkCards(ids: List<String>, onOpen: (String) -> Unit) {
                     ) { SvgIcon(WorkIcons.of(w.kind), Apricot, 24.dp, stroke = 1.5f) }
                     Spacer(Modifier.width(14.dp))
                     Column(Modifier.weight(1f)) {
-                        Txt(w.title, Page.ink, 16.sp, family = Serif, maxLines = 1)
+                        Txt(w.title, Page.INK, 16.sp, family = Serif, maxLines = 1)
                         Spacer(Modifier.height(4.dp))
                         val kind = if (w.kind == "board") "画板" else if (used.isEmpty()) "作品 · ${w.kindName}" else w.kindName
-                        Txt(kind + (if (used.isEmpty()) "" else " · 用了 ${used.size} 件素材"), Page.muted, 12.5.sp, maxLines = 1)
+                        Txt(kind + (if (used.isEmpty()) "" else " · 用了 ${used.size} 件素材"), Page.MUTED, 12.5.sp, maxLines = 1)
                     }
                 }
             }
@@ -154,13 +154,13 @@ fun WorkViewer(id: String?, onClose: () -> Unit, onFix: (String) -> Unit = {}) {
                     .windowInsetsPadding(WindowInsets.statusBars).padding(horizontal = 10.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Pressable(onClose, label = "关闭") { p -> SvgIcon(WorkIcons.close, Page.ink.copy(alpha = if (p) 1f else .82f), 22.dp, modifier = Modifier.padding(10.dp)) }
-                Txt(w?.title ?: "作品", Page.ink, 16.5.sp, Modifier.weight(1f), family = Serif, align = TextAlign.Center, maxLines = 1)
-                Pressable({ sheet = true }, label = "分享") { p -> SvgIcon(WorkIcons.share, Page.ink.copy(alpha = if (p) 1f else .82f), 22.dp, modifier = Modifier.padding(10.dp)) }
+                Pressable(onClose, label = "关闭") { p -> SvgIcon(WorkIcons.close, Page.INK.copy(alpha = if (p) 1f else .82f), 22.dp, modifier = Modifier.padding(10.dp)) }
+                Txt(w?.title ?: "作品", Page.INK, 16.5.sp, Modifier.weight(1f), family = Serif, align = TextAlign.Center, maxLines = 1)
+                Pressable({ sheet = true }, label = "分享") { p -> SvgIcon(WorkIcons.share, Page.INK.copy(alpha = if (p) 1f else .82f), 22.dp, modifier = Modifier.padding(10.dp)) }
             }
             Box(Modifier.weight(1f).fillMaxWidth()) {
                 if (html == null) {
-                    Txt("这件作品找不到了", Page.muted, 14.sp, Modifier.align(Alignment.Center))
+                    Txt("这件作品找不到了", Page.MUTED, 14.sp, Modifier.align(Alignment.Center))
                 } else {
                     AndroidView(
                         factory = { c ->
@@ -276,8 +276,8 @@ fun WorkViewer(id: String?, onClose: () -> Unit, onFix: (String) -> Unit = {}) {
                             Modifier.fillMaxWidth().background(rgba(255, 255, 255, if (p) .07f else 0f), RoundedCornerShape(12.dp)).padding(horizontal = 14.dp, vertical = 14.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Txt(name, Page.ink, 15.sp, Modifier.weight(1f))
-                            Txt(note, Page.muted, 12.sp, maxLines = 1)
+                            Txt(name, Page.INK, 15.sp, Modifier.weight(1f))
+                            Txt(note, Page.MUTED, 12.sp, maxLines = 1)
                         }
                     }
                 }

@@ -223,9 +223,9 @@ internal fun GestureMarks(p: PlayerState) {
             Canvas(Modifier.fillMaxSize()) {
                 val rr = size.height * 1.3f
                 val cx = if (p.ripSide < 0) size.width * .8f - rr else size.width * .2f + rr
-                drawCircle(Page.ink.copy(alpha = .10f), rr, Offset(cx, size.height / 2))
+                drawCircle(Page.INK.copy(alpha = .10f), rr, Offset(cx, size.height / 2))
             }
-            Txt(if (p.ripSide < 0) "−10 秒" else "+10 秒", Page.ink, 13.sp, Modifier.align(Alignment.Center), maxLines = 1)
+            Txt(if (p.ripSide < 0) "−10 秒" else "+10 秒", Page.INK, 13.sp, Modifier.align(Alignment.Center), maxLines = 1)
         }
 
         LaunchedEffect(p.flashKey) { if (p.flashKey > 0) { delay(500); p.flash = null } }
@@ -242,7 +242,7 @@ internal fun GestureMarks(p: PlayerState) {
             if (seekKind) {
                 Txt(fmtTime(lastPv), FpWarm, 22.sp, family = Serif, maxLines = 1)
                 val dd = (lastPv - p.seekFrom).roundToInt()
-                Txt((if (dd >= 0) "+" else "−") + abs(dd) + " 秒 · 共 " + fmtTime(p.state?.d ?: 0.0), Page.ink, 12.5.sp, maxLines = 1)
+                Txt((if (dd >= 0) "+" else "−") + abs(dd) + " 秒 · 共 " + fmtTime(p.state?.d ?: 0.0), Page.INK, 12.5.sp, maxLines = 1)
             } else PlayGlyph(lastFl, Modifier.size(28.dp))
         }
 

@@ -73,7 +73,7 @@ private fun Label(text: String) = Txt(text, Page.muted, 11.sp, Modifier.padding(
 @Composable
 private fun StatePill(s: GallerySource) {
     val (t, c) = when { s.free -> "不要 Key" to okInk; Gallery.ready(s.id) -> "已填 Key" to okInk; else -> "缺 Key" to warm }
-    Txt(t, c, 11.sp, Modifier.background(rgba(255, 255, 255, .06f), RoundedCornerShape(50)).padding(horizontal = 8.dp, vertical = 3.dp), maxLines = 1)
+    Txt(t, c, 11.sp, Modifier.background(veil(.06f), RoundedCornerShape(50)).padding(horizontal = 8.dp, vertical = 3.dp), maxLines = 1)
 }
 
 /**

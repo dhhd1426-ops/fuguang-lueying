@@ -92,7 +92,7 @@ fun ClipPillLayer() {
                     Spacer(Modifier.width(10.dp))
                     Column(Modifier.weight(1f)) { Body(clip, act) { into = true; ClipLink.handOver() } }
                     Pressable({ into = false; ClipLink.dismiss() }, Modifier.padding(start = 4.dp), label = "不用") { _ ->
-                        SvgIcon(Icons.close, Page.muted, 16.dp, modifier = Modifier.padding(4.dp))
+                        SvgIcon(Icons.close, Page.MUTED, 16.dp, modifier = Modifier.padding(4.dp))
                     }
                 }
                 burst?.let { Burst(it, Modifier.matchParentSize()) { burst = null } }
@@ -108,7 +108,7 @@ private fun Cover(c: Clip) {
         if (pic != null) Image(pic, null, Modifier.matchParentSize(), contentScale = ContentScale.Crop)
         else if (c.parse == 0) LoadRing(Warm.copy(alpha = .8f), 14.dp)
         val n = c.item?.images?.size ?: 0
-        if (n > 1) Txt("$n 张", Page.ink, 9.sp, Modifier.align(Alignment.BottomEnd).padding(3.dp).background(Color.Black.copy(alpha = .45f), RoundedCornerShape(4.dp)).padding(horizontal = 4.dp, vertical = 1.dp))
+        if (n > 1) Txt("$n 张", Page.INK, 9.sp, Modifier.align(Alignment.BottomEnd).padding(3.dp).background(Color.Black.copy(alpha = .45f), RoundedCornerShape(4.dp)).padding(horizontal = 4.dp, vertical = 1.dp))
     }
 }
 
@@ -130,8 +130,8 @@ private fun Body(c: Clip, act: Activity?, onAsk: () -> Unit) {
         } else Txt(kicker, if (c.save == 3) Bad else Warm, 11.sp, spacing = .3.sp, maxLines = 1)
     }
     Spacer(Modifier.height(3.dp))
-    Txt(i?.title ?: c.link, Page.ink, 13.5.sp, maxLines = 1)
-    i?.author?.takeIf { it.isNotBlank() }?.let { Txt("@$it", Page.muted, 11.sp, Modifier.padding(top = 1.dp), maxLines = 1) }
+    Txt(i?.title ?: c.link, Page.INK, 13.5.sp, maxLines = 1)
+    i?.author?.takeIf { it.isNotBlank() }?.let { Txt("@$it", Page.MUTED, 11.sp, Modifier.padding(top = 1.dp), maxLines = 1) }
     Spacer(Modifier.height(8.dp))
     when (c.save) {
         1 -> Progress(c)
@@ -158,5 +158,5 @@ private fun Btn(text: String, main: Boolean, enabled: Boolean = true, onClick: (
         onClick, Modifier.height(30.dp), shape = RoundedCornerShape(8.dp), enabled = enabled,
         fill = if (main) Warm else Color.White.copy(alpha = .08f), pressedFill = if (main) Warm.copy(alpha = .85f) else Color.White.copy(alpha = .14f),
         pressScale = .95f, label = text,
-    ) { Txt(text, if (main) Color(0xFF2A211B) else Page.ink, 12.sp, Modifier.padding(horizontal = 12.dp)) }
+    ) { Txt(text, if (main) Color(0xFF2A211B) else Page.INK, 12.sp, Modifier.padding(horizontal = 12.dp)) }
 }

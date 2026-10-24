@@ -43,10 +43,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-internal val SidePanel = Color(0xFF14171D)
+internal val SidePanel get() = if (Skin.frost) rgba(18, 21, 27, .72f) else Skin.panel
 internal val SideWarm = Color(0xFFE9B48E)
-internal val SideFaint = rgba(250, 245, 238, .34f)
-internal val SideInk = rgba(250, 245, 238, .86f)
+internal val SideFaint get() = Skin.ink.copy(alpha = .34f)
+internal val SideInk get() = Skin.ink.copy(alpha = .86f)
 
 /** 侧栏里用到的小图标。 */
 internal object SideIcons {
@@ -127,7 +127,7 @@ private fun SideMain(
             // 下载：右边有在下的进度圈 / 没看过的杏色小点；点了从右边滑进下载页（侧栏留着，返回回到这里）
             SideRow(Ic("M12 4v11M7.5 10.5L12 15l4.5-4.5M5 19h14"), "下载", { Downloads.open = true }) { DlSideTrail() }
             // 一道不碰边的细线
-            Box(Modifier.padding(horizontal = 12.dp, vertical = 8.dp).fillMaxWidth().height(1.dp).background(rgba(255, 255, 255, .07f)))
+            Box(Modifier.padding(horizontal = 12.dp, vertical = 8.dp).fillMaxWidth().height(1.dp).background(veil(.07f)))
             // 换了助理：她的对话列表交叉换上来（旧的淡出上移，新的淡入从下浮起）
             AnimatedContent(
                 Memory.activeId,
@@ -174,7 +174,7 @@ internal fun SideRow(icon: Ic, label: String, onClick: () -> Unit, selected: Boo
     Pressable(onClick, modifier.fillMaxWidth(), label = label) { p ->
         Row(
             Modifier.fillMaxWidth()
-                .background(if (selected || p) rgba(255, 255, 255, if (p) .06f else .08f) else Color.Transparent, RoundedCornerShape(14.dp))
+                .background(if (selected || p) veil(if (p) .06f else .08f) else Color.Transparent, RoundedCornerShape(14.dp))
                 .padding(horizontal = 12.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -241,9 +241,9 @@ private fun SideFoot(modifier: Modifier, onMine: () -> Unit, onNew: () -> Unit) 
                 Modifier.background(Page.ink.copy(alpha = if (p) .8f else 1f), RoundedCornerShape(50)).padding(horizontal = 18.dp, vertical = 11.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                SvgIcon(SideIcons.plus, Color(0xFF1B1A1A), 15.dp, stroke = 2f)
+                SvgIcon(SideIcons.plus, Skin.onInk, 15.dp, stroke = 2f)
                 Spacer(Modifier.width(8.dp))
-                Txt("新对话", Color(0xFF1B1A1A), 14.5.sp, weight = FontWeight.Medium)
+                Txt("新对话", Skin.onInk, 14.5.sp, weight = FontWeight.Medium)
             }
         }
     }
@@ -254,7 +254,7 @@ internal fun MenuAction(text: String, danger: Boolean = false, onClick: () -> Un
     Pressable(onClick, label = text) { pressed ->
         Txt(
             text, if (danger) Color(0xFFD79A94) else Page.ink, 12.sp,
-            Modifier.background(rgba(255, 255, 255, if (pressed) .12f else .06f), RoundedCornerShape(50)).padding(horizontal = 12.dp, vertical = 6.dp),
+            Modifier.background(veil(if (pressed) .12f else .06f), RoundedCornerShape(50)).padding(horizontal = 12.dp, vertical = 6.dp),
         )
     }
 }

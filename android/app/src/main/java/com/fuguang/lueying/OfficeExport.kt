@@ -342,7 +342,7 @@ object Docx {
 
 private fun core(title: String) = "$XH<cp:coreProperties xmlns:cp=\"http://schemas.openxmlformats.org/package/2006/metadata/core-properties\" " +
     "xmlns:dc=\"http://purl.org/dc/elements/1.1/\" xmlns:dcterms=\"http://purl.org/dc/terms/\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\">" +
-    "<dc:title>${xml(title)}</dc:title><dc:creator>浮光掠影</dc:creator></cp:coreProperties>"
+    "<dc:title>${xml(title)}</dc:title><dc:creator>Vignette</dc:creator></cp:coreProperties>"
 
 object Pptx {
     private const val NS = "xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\" " +

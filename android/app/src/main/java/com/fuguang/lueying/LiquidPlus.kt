@@ -84,7 +84,7 @@ fun LiquidPlusButton(state: LiquidPlusState, onPick: (Int) -> Unit) {
         Modifier
             .size(36.dp)
             .onGloballyPositioned { state.center = it.boundsInRoot().center; state.origin = it.positionInRoot() }
-            .border(1.dp, Page.line, CircleShape)
+            .border(1.dp, Page.LINE, CircleShape)
             .pointerInput(Unit) {
                 awaitEachGesture {
                     awaitFirstDown(requireUnconsumed = false)
@@ -117,7 +117,7 @@ fun LiquidPlusButton(state: LiquidPlusState, onPick: (Int) -> Unit) {
                 }
             },
         contentAlignment = Alignment.Center,
-    ) { SvgIcon(Ic("M12 5v14M5 12h14"), Page.ink, 18.dp, modifier = Modifier.rotate(rot.value)) }
+    ) { SvgIcon(Ic("M12 5v14M5 12h14"), Page.INK, 18.dp, modifier = Modifier.rotate(rot.value)) }
 }
 
 /** 盖在整页上的液态层：黏连的球 + 球上的图标。只在打开或动画中绘制。 */
@@ -177,8 +177,8 @@ fun LiquidPlusLayer(state: LiquidPlusState, onPick: (Int) -> Unit) {
                 Box(
                     Modifier.size(44.dp).pointerInput(k) { detectTapGestures { onPick(k); state.open = false } },
                     contentAlignment = Alignment.Center,
-                ) { SvgIcon(Items[k].second, if (state.hover == k) Warm else Page.ink, 19.dp) }
-                Txt(Items[k].first, if (state.hover == k) Warm else Page.ink, 11.5.sp, Modifier.padding(top = 4.dp))
+                ) { SvgIcon(Items[k].second, if (state.hover == k) Warm else Page.INK, 19.dp) }
+                Txt(Items[k].first, if (state.hover == k) Warm else Page.INK, 11.5.sp, Modifier.padding(top = 4.dp))
             }
         }
     }

@@ -73,7 +73,7 @@ object Td {
                 useFileDatabase = true; useChatInfoDatabase = true; useMessageDatabase = false; useSecretChats = false
                 apiId = this@Td.apiId; apiHash = this@Td.apiHash
                 systemLanguageCode = "zh-hans"; deviceModel = Build.MODEL ?: "Android"; systemVersion = Build.VERSION.RELEASE ?: ""
-                applicationVersion = "浮光掠影"
+                applicationVersion = "Vignette"
             })
             is TdApi.AuthorizationStateWaitPhoneNumber -> state = "phone"
             is TdApi.AuthorizationStateWaitCode -> {

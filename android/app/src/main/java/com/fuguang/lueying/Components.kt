@@ -163,6 +163,20 @@ fun Modifier.glass(shape: Shape, blur: Dp, fill: Color = Page.glassFill, border:
         .border(1.dp, border, shape)
 }
 
+/** 透明磨砂主题的侧栏、悬浮卡片：把后面的背景画面磨砂了透上来，再压一层 fill。没有画面可透时就是实底。 */
+@Composable
+fun Modifier.frost(shape: Shape, fill: Color, blur: Dp = 30.dp): Modifier {
+    val haze = LocalHaze.current ?: return this.background(fill.copy(alpha = (fill.alpha + .4f).coerceAtMost(1f)), shape)
+    val style = HazeStyle(
+        backgroundColor = Page.ground,
+        tints = listOf(HazeTint(fill)),
+        blurRadius = blur,
+        noiseFactor = 0f,
+        fallbackTint = HazeTint(fill.copy(alpha = (fill.alpha + .4f).coerceAtMost(1f))),
+    )
+    return this.clip(shape).hazeEffect(haze, style)
+}
+
 /** 网站 input[type=range]：细轨 + 圆点，可拖动、可点按定位。 */
 @Composable
 fun RangeSlider(value: Int, min: Int, max: Int, accent: Color, track: Color, onChange: (Int) -> Unit, modifier: Modifier = Modifier) {

@@ -227,11 +227,11 @@ class YuProvider : android.content.ContentProvider() {
     override fun call(method: String, arg: String?, extras: Bundle?): Bundle =
         // 这里抛出去的任何东西，羽那边只看得到「需要更新」：一律接住，把原因写成原因码带回去
         try { serve(method, arg, extras) } catch (t: Throwable) {
-            reply(JSONObject().put("error", "failed").put("message", "浮光掠影出错了 · FG " + t.javaClass.simpleName + " " + (t.message ?: t.cause?.message ?: "").take(80)))
+            reply(JSONObject().put("error", "failed").put("message", "Vignette 出错了 · FG " + t.javaClass.simpleName + " " + (t.message ?: t.cause?.message ?: "").take(80)))
         }
 
     private fun serve(method: String, arg: String?, extras: Bundle?): Bundle {
-        val ctx = context ?: return reply(JSONObject().put("error", "failed").put("message", "浮光掠影还没准备好"))
+        val ctx = context ?: return reply(JSONObject().put("error", "failed").put("message", "Vignette 还没准备好"))
         if (method != "outline") return reply(JSONObject().put("error", "failed").put("message", "没有这个接口：$method"))
         Yu.init(ctx) // 浮光掠影可能还没打开过，进程是被羽拉起来的
         ModelFit.init(Prefs(ctx)) // 记过的「这个型号不收哪些参数」，没开过 App 时也要读到

@@ -1,5 +1,6 @@
 package com.fuguang.lueying
 
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.SizeTransform
@@ -61,7 +62,7 @@ open class FloatCard {
 
 internal const val RISE_MS = 570f
 private val arrowOut = Ic("M7 17L17 7M9 7h8v8")
-private val cardFill = Color(0xFF22262F)
+
 
 /** 一项按顺序浮出：开卡后 70ms 起，每项晚 40ms，各走 340ms。 */
 internal fun Modifier.mineRise(i: Int, t: Float) = graphicsLayer {
@@ -144,7 +145,7 @@ fun CenterCardLayer(
                     clip = true
                     shadowElevation = 24.dp.toPx() * (1f - fv)
                 }
-                .background(cardFill)
+                .then(if (Skin.frost) Modifier.frost(RectangleShape, Skin.card) else Modifier.background(Skin.card))
                 .pointerInput(Unit) { detectTapGestures { } },
         ) {
             val pad = Modifier.fillMaxSize().padding(

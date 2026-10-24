@@ -4,7 +4,9 @@ import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 
 /** CSS 写法的颜色：#rrggbb 或 #rrggbbaa（透明度在末尾）。 */
 fun css(hex: String): Color {
@@ -18,20 +20,32 @@ fun css(hex: String): Color {
 
 fun rgba(r: Int, g: Int, b: Int, a: Float) = Color(r, g, b, (a * 255).toInt())
 
-val Serif: FontFamily = FontFamily.Serif
-val Sans: FontFamily = FontFamily.SansSerif
+/** 照 Claude App：界面全用无衬线（英文 DM Sans，中文落到系统黑体），标题也不再用宋体。 */
+val Sans: FontFamily = FontFamily(
+    Font(R.font.dm_sans_regular, FontWeight.Normal),
+    Font(R.font.dm_sans_medium, FontWeight.Medium),
+    Font(R.font.dm_sans_semibold, FontWeight.SemiBold),
+    Font(R.font.dm_sans_semibold, FontWeight.Bold),
+)
+/** 以前的宋体标题，现在和正文同一套字。 */
+val Serif: FontFamily = Sans
 
 /** 首页（不随主题变化，与网站一致）。 */
 object Page {
-    val ground = css("#343c44")
-    val ink = css("#faf5ee")
-    val muted = rgba(250, 245, 238, .6f)
-    val line = rgba(255, 255, 255, .2f)
+    /** 跟着主题走（见 Skin.kt）。 */
+    val ground: Color get() = Skin.page
+    val ink: Color get() = Skin.ink
+    val muted: Color get() = Skin.muted
+    val line: Color get() = Skin.line
+    /** 一直是深色的地方（播放器、浏览器、作品全屏）用这三个。 */
+    val INK = css("#faf5ee")
+    val MUTED = rgba(250, 245, 238, .6f)
+    val LINE = rgba(255, 255, 255, .2f)
     val accent = css("#edc6a5")
     val eyebrow = css("#ebd0b9")
     val dot = css("#efc5a6")
-    val glassFill = rgba(225, 229, 233, .065f)
-    val glassBorder = rgba(255, 255, 255, .17f)
+    val glassFill: Color get() = if (Skin.light) rgba(0, 0, 0, .045f) else rgba(225, 229, 233, .065f)
+    val glassBorder: Color get() = if (Skin.light) rgba(0, 0, 0, .08f) else rgba(255, 255, 255, .17f)
 }
 
 /** 弹层颜色：深色为默认，浅色对应网站 [data-theme=light]。 */

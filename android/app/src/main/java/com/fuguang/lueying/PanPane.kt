@@ -104,9 +104,9 @@ private fun Head(it: PanItem) {
         DiskMark(d)
         Spacer(Modifier.width(10.dp))
         Column(Modifier.weight(1f)) {
-            Txt(it.title.ifBlank { if (it.stage == 2) "这个分享" else "正在看里面有什么" }, Page.ink, 15.sp, family = Serif, lineHeight = 21.sp, maxLines = 2)
+            Txt(it.title.ifBlank { if (it.stage == 2) "这个分享" else "正在看里面有什么" }, Page.INK, 15.sp, family = Serif, lineHeight = 21.sp, maxLines = 2)
             val sub = d.label + if (it.share.code.isNotEmpty()) " · 提取码 ${it.share.code} 已带上" else ""
-            Txt(sub, Page.muted, 11.5.sp, Modifier.padding(top = 1.dp), maxLines = 1)
+            Txt(sub, Page.MUTED, 11.5.sp, Modifier.padding(top = 1.dp), maxLines = 1)
         }
     }
 }
@@ -121,14 +121,14 @@ internal fun DiskMark(d: Disk, s: Int = 34) {
 @Composable
 private fun Note(t: String) {
     Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(11.dp)).background(Color.White.copy(alpha = .04f)).padding(horizontal = 11.dp, vertical = 9.dp)) {
-        Txt("◇", Warm, 12.sp); Spacer(Modifier.width(8.dp)); Txt(t, Page.muted, 12.sp, lineHeight = 18.sp)
+        Txt("◇", Warm, 12.sp); Spacer(Modifier.width(8.dp)); Txt(t, Page.MUTED, 12.sp, lineHeight = 18.sp)
     }
 }
 
 @Composable
 private fun LoginRow(it: PanItem) {
     Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(11.dp)).background(Warm.copy(alpha = .09f)).padding(start = 12.dp, end = 6.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-        Txt(if (it.waitingLogin) "登好了会自己回来" else "${it.share.disk.label}要先登录一次", Page.ink, 13.sp, Modifier.weight(1f))
+        Txt(if (it.waitingLogin) "登好了会自己回来" else "${it.share.disk.label}要先登录一次", Page.INK, 13.sp, Modifier.weight(1f))
         PanSmall(if (it.waitingLogin) "再开一次" else "去登录") { PanStore.login(it) }
     }
 }
@@ -139,13 +139,13 @@ private fun Broken(it: PanItem, onClose: () -> Unit) {
     val e = it.err
     var code by remember { mutableStateOf(it.share.code) }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Txt(e?.why ?: "没打开", Page.ink, 13.sp, lineHeight = 19.sp)
-        e?.code?.let { c -> Txt(c, Page.muted.copy(alpha = .45f), 10.5.sp) }
+        Txt(e?.why ?: "没打开", Page.INK, 13.sp, lineHeight = 19.sp)
+        e?.code?.let { c -> Txt(c, Page.MUTED.copy(alpha = .45f), 10.5.sp) }
         when (e?.kind) {
             PanError.Kind.CODE -> Row(verticalAlignment = Alignment.CenterVertically) {
-                Txt("提取码", Page.muted, 12.5.sp); Spacer(Modifier.width(8.dp))
+                Txt("提取码", Page.MUTED, 12.5.sp); Spacer(Modifier.width(8.dp))
                 BasicTextField(code, { v -> code = v.filter { ch -> ch.isLetterOrDigit() }.take(8) }, Modifier.width(84.dp).clip(RoundedCornerShape(8.dp)).background(Color.White.copy(alpha = .08f)).padding(horizontal = 9.dp, vertical = 7.dp),
-                    textStyle = TextStyle(color = Page.ink, fontSize = 13.sp, letterSpacing = 2.sp), singleLine = true, cursorBrush = SolidColor(Warm))
+                    textStyle = TextStyle(fontFamily = Sans, color = Page.INK, fontSize = 13.sp, letterSpacing = 2.sp), singleLine = true, cursorBrush = SolidColor(Warm))
                 Spacer(Modifier.width(8.dp)); PanSmall("再试") { PanStore.retry(it, code) }
             }
             PanError.Kind.LOGIN -> LoginRow(it)
@@ -175,16 +175,16 @@ private fun Node(it: PanItem, n: PanNode) {
             fill = Color.Transparent, pressedFill = Color.White.copy(alpha = .06f), pressScale = .985f, label = n.f.name) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 val rot by animateFloatAsState(if (n.open) 90f else 0f, tween(240, easing = Curves.standard), label = "car")
-                Box(Modifier.size(14.dp).graphicsLayer { rotationZ = rot; alpha = if (n.f.dir) 1f else 0f }, contentAlignment = Alignment.Center) { Txt("›", Page.muted, 14.sp) }
+                Box(Modifier.size(14.dp).graphicsLayer { rotationZ = rot; alpha = if (n.f.dir) 1f else 0f }, contentAlignment = Alignment.Center) { Txt("›", Page.MUTED, 14.sp) }
                 Spacer(Modifier.width(4.dp))
                 Check(st) { if (!busy) PanStore.flip(n) }
                 Spacer(Modifier.width(9.dp))
                 Box(Modifier.size(24.dp).clip(RoundedCornerShape(7.dp)).background(Color.White.copy(alpha = .06f)), contentAlignment = Alignment.Center) {
-                    if (n.loading) LoadRing(Warm, 11.dp) else Txt(kindGlyph(n.f), Page.muted, 10.sp)
+                    if (n.loading) LoadRing(Warm, 11.dp) else Txt(kindGlyph(n.f), Page.MUTED, 10.sp)
                 }
                 Spacer(Modifier.width(9.dp))
-                Txt(n.f.name, Page.ink, 13.5.sp, Modifier.weight(1f), maxLines = 1)
-                Txt(if (n.f.dir) (n.kids?.let { k -> "${k.size} 个" } ?: "") else Pan.size(n.f.size), Page.muted, 11.5.sp, Modifier.padding(start = 8.dp, end = 4.dp))
+                Txt(n.f.name, Page.INK, 13.5.sp, Modifier.weight(1f), maxLines = 1)
+                Txt(if (n.f.dir) (n.kids?.let { k -> "${k.size} 个" } ?: "") else Pan.size(n.f.size), Page.MUTED, 11.5.sp, Modifier.padding(start = 8.dp, end = 4.dp))
             }
         }
     }
@@ -223,9 +223,9 @@ private fun Foot(it: PanItem, act: android.app.Activity?) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 val fs = PanStore.picked(it)
-                Txt(if (it.save == 2) "${it.got} 个下好了 · ${Pan.size(it.gotBytes)}" else PanStore.summary(it), Page.muted, 12.sp, maxLines = 1)
+                Txt(if (it.save == 2) "${it.got} 个下好了 · ${Pan.size(it.gotBytes)}" else PanStore.summary(it), Page.MUTED, 12.sp, maxLines = 1)
                 val where = when { fs.isEmpty() -> ""; fs.all { f -> Torrent.isMedia(f.name) } -> "存进相册「浮光掠影」"; fs.any { f -> Torrent.isMedia(f.name) } -> "视频进相册，其他进下载"; else -> "存进 下载/浮光掠影" }
-                if (where.isNotEmpty() && it.save != 2) Txt(where, Page.muted.copy(alpha = .5f), 11.sp, maxLines = 1)
+                if (where.isNotEmpty() && it.save != 2) Txt(where, Page.MUTED.copy(alpha = .5f), 11.sp, maxLines = 1)
             }
             Spacer(Modifier.width(10.dp))
             if (it.save == 2) Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -241,10 +241,10 @@ private fun Foot(it: PanItem, act: android.app.Activity?) {
         }
         // 百度只给超级会员提速：说清楚是谁限的，免得以为卡住了
         if (it.save == 1 && it.share.disk == Disk.BAIDU && !PanBaiduLocate.svip && it.speed in 1 until 600_000)
-            Txt("百度只给超级会员提速，普通账号多开反被限得更慢", Page.muted.copy(alpha = .55f), 11.sp, maxLines = 1)
+            Txt("百度只给超级会员提速，普通账号多开反被限得更慢", Page.MUTED.copy(alpha = .55f), 11.sp, maxLines = 1)
         if (it.save == 3) it.why?.let { e ->
             Txt(e.why, Bad, 12.sp, lineHeight = 17.sp, maxLines = 3)
-            Txt(e.code, Page.muted.copy(alpha = .45f), 10.5.sp)
+            Txt(e.code, Page.MUTED.copy(alpha = .45f), 10.5.sp)
         }
     }
 }
@@ -254,7 +254,7 @@ private fun MainButton(it: PanItem, onClick: () -> Unit) {
     val f by animateFloatAsState(it.frac, tween(200), label = "panFrac")
     val empty = PanStore.picked(it).isEmpty() && PanStore.pickedDirs(it).isEmpty()
     val fill = when (it.save) { 1 -> Color(0xFF3A3430); 3 -> Bad.copy(alpha = .16f); else -> Warm }
-    val ink = when (it.save) { 1 -> Page.ink; 3 -> Bad; else -> OnWarmInk }
+    val ink = when (it.save) { 1 -> Page.INK; 3 -> Bad; else -> OnWarmInk }
     PressSurface(onClick, Modifier.width(156.dp).height(40.dp), RoundedCornerShape(20.dp), enabled = !empty || it.save == 1,
         fill = fill, pressedFill = fill.copy(alpha = fill.alpha * .85f), pressScale = .97f, label = "下载") {
         if (it.save == 1) Box(Modifier.align(Alignment.CenterStart).fillMaxHeight().fillMaxWidth(f.coerceIn(0f, 1f)).background(Warm.copy(alpha = .38f)))
@@ -274,7 +274,7 @@ private fun MainButton(it: PanItem, onClick: () -> Unit) {
 @Composable
 internal fun PanSmall(text: String, onClick: () -> Unit) {
     PressSurface(onClick, Modifier.height(30.dp), RoundedCornerShape(9.dp), fill = Color.White.copy(alpha = .08f), pressedFill = Color.White.copy(alpha = .14f), pressScale = .95f, label = text) {
-        Txt(text, Page.ink, 12.5.sp, Modifier.padding(horizontal = 12.dp))
+        Txt(text, Page.INK, 12.5.sp, Modifier.padding(horizontal = 12.dp))
     }
 }
 

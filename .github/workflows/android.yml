@@ -36,6 +36,11 @@ jobs:
           # 深度思考 max 字样：Bodoni Moda 斜体 600（OFL），光学尺寸取 28
           curl -fsSL -o bm.ttf "https://github.com/google/fonts/raw/main/ofl/bodonimoda/BodoniModa-Italic%5Bopsz%2Cwght%5D.ttf"
           fonttools varLib.instancer bm.ttf wght=600 opsz=28 -o android/app/src/main/res/font/bodoni_moda_semibold_italic.ttf
+          # 全局界面字体（照 Claude App 的无衬线）：DM Sans（OFL），取 400 / 500 / 600 三个静态字重；中文缺字自动落到系统黑体
+          curl -fsSL -o dm.ttf "https://github.com/google/fonts/raw/main/ofl/dmsans/DMSans%5Bopsz%2Cwght%5D.ttf"
+          for w in 400:regular 500:medium 600:semibold; do
+            fonttools varLib.instancer dm.ttf wght=${w%%:*} opsz=14 -o android/app/src/main/res/font/dm_sans_${w##*:}.ttf
+          done
           ls -la android/app/src/main/res/font
 
       - name: Fetch TDLib

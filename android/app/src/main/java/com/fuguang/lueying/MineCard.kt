@@ -82,7 +82,7 @@ private val warmInk = Color(0xFF2A211B)
 /** 页面深度：往深处走新页从右边进，往回走从左边进。 */
 private fun depth(s: String) = when {
     s == "mine" -> 0
-    s == "assistant" || s == "mcp" || s == "about" || s == "features" -> 1
+    s == "assistant" || s == "mcp" || s == "about" || s == "features" || s == "theme" -> 1
     s == "persona" || s.startsWith("mcp/") || s == "search" || s == "skills" || s == "gallery" -> 2
     s.startsWith("search/") || s.startsWith("skills/") || s.startsWith("gallery/") -> 3
     s == "providers" -> 3
@@ -94,7 +94,7 @@ private fun depth(s: String) = when {
 fun MineCardLayer(store: AssistantStore, nav: MineNav) {
     CenterCardLayer(
         MineCard, nav.screen, ::depth,
-        onBack = { if (nav.screen == "about") { nav.screen = "mine"; true } else nav.screen != "mine" && nav.back() },
+        onBack = { if (nav.screen == "about" || nav.screen == "theme") { nav.screen = "mine"; true } else nav.screen != "mine" && nav.back() },
         onClosed = { nav.screen = "mine"; nav.persona = "" },
         above = { MemoryCardHost(); AvatarCropHost() },
     ) { screen, rise ->
@@ -103,6 +103,7 @@ fun MineCardLayer(store: AssistantStore, nav: MineNav) {
                 MineCardBody(rise) { nav.screen = it }
             }
             "about" -> AboutPage { nav.screen = "mine" }
+            "theme" -> ThemePage { nav.screen = "mine" }
             "features" -> FeaturesPage({ nav.screen = "mine" }, { nav.screen = "search" }, { nav.screen = "gallery" }) { nav.screen = "skills" }
             "gallery" -> GalleryPage({ nav.screen = "features" }) { nav.screen = "gallery/$it" }
             "skills" -> SkillsPage({ nav.screen = "features" }) { nav.screen = "skills/$it" }
@@ -161,10 +162,14 @@ private fun MineCardBody(t: Float, onGo: (String) -> Unit) {
         }
         SvgIcon(chevron, Page.muted.copy(alpha = .6f), 15.dp, stroke = 1.8f)
     }
+    Txt("主题", Page.muted, 11.sp, Modifier.padding(start = 8.dp, top = 14.dp, bottom = 8.dp).mineRise(5, t), spacing = ls(2.75f, 11f))
+    MineRow(5, t, "主题", Skin.name(), { onGo("theme") }, glyph = { ThemeGlyph(warm) }) {
+        SvgIcon(chevron, Page.muted.copy(alpha = .6f), 15.dp, stroke = 1.8f)
+    }
     Txt("其他", Page.muted, 11.sp, Modifier.padding(start = 8.dp, top = 14.dp, bottom = 8.dp).mineRise(5, t), spacing = ls(2.75f, 11f))
     BackupRow(6, t)
     Spacer(Modifier.height(6.dp))
-    MineRow(7, t, "关于浮光掠影", "背景作品 · 版权", { onGo("about") }, glyph = { SvgIcon(Icons.spark, warm, 18.dp, stroke = 1.1f) }) {
+    MineRow(7, t, "关于 Vignette", "背景作品 · 版权", { onGo("about") }, glyph = { SvgIcon(Icons.spark, warm, 18.dp, stroke = 1.1f) }) {
         SvgIcon(chevron, Page.muted.copy(alpha = .6f), 15.dp, stroke = 1.8f)
     }
     Spacer(Modifier.height(8.dp))
@@ -174,7 +179,7 @@ private fun MineCardBody(t: Float, onGo: (String) -> Unit) {
 @Composable
 private fun AboutPage(onBack: () -> Unit) {
     Column(Modifier.widthIn(max = 560.dp).fillMaxSize().verticalScroll(rememberScrollState())) {
-        CardPageHead("关于浮光掠影", onBack = onBack)
+        CardPageHead("关于 Vignette", onBack = onBack)
         Txt("那些日子像掠过水面的影子，来不及看清，就已远去，只留下淡淡的怅惘。", Page.ink.copy(alpha = .86f), 13.5.sp, Modifier.padding(horizontal = 8.dp), lineHeight = 26.sp)
         Spacer(Modifier.height(16.dp))
         Txt("背景作品：WLOP-Sky2-海琴烟。作品版权归原作者所有。", Page.muted, 12.5.sp, Modifier.padding(horizontal = 8.dp), lineHeight = 24.sp)

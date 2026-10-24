@@ -118,7 +118,7 @@ private fun TrayItem(ref: String, onRemove: () -> Unit) {
 
 @Composable
 private fun FileChip(ref: String, modifier: Modifier) {
-    Row(modifier.background(rgba(255, 255, 255, .07f), RoundedCornerShape(14.dp)).padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(modifier.background(veil(.07f), RoundedCornerShape(14.dp)).padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
         SvgIcon(FileIc, Warm, 18.dp, stroke = 1.5f)
         Spacer(Modifier.width(8.dp))
         Column {
@@ -143,7 +143,7 @@ private fun Thumb(ref: String, modifier: Modifier, px: Int = 360) {
             }.getOrNull()
         }
     }
-    Box(modifier.background(rgba(255, 255, 255, .06f))) {
+    Box(modifier.background(veil(.06f))) {
         img?.let { Image(it, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
     }
 }

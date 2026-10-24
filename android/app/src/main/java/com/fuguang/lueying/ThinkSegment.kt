@@ -151,7 +151,7 @@ fun ThinkSegment(level: Int, providerId: String, onChange: (Int) -> Unit) {
 
     val isMax = shown == 5 && !dragging
     val off = shown == 0
-    val blockColor by animateColorAsState(if (off) rgba(255, 255, 255, .2f) else Apricot, tween(260), label = "blk")
+    val blockColor by animateColorAsState(if (off) veil(.2f) else Apricot, tween(260), label = "blk")
     val inkOn by animateColorAsState(if (off) Page.ink else OnApricot, tween(260), label = "ink")
     val squeeze by animateFloatAsState(if (pressed && !dragging) .955f else 1f, spring(dampingRatio = .6f, stiffness = 900f), label = "press")
 
@@ -208,7 +208,7 @@ fun ThinkSegment(level: Int, providerId: String, onChange: (Int) -> Unit) {
 
     Column(
         Modifier.fillMaxWidth()
-            .background(rgba(255, 255, 255, .06f), RoundedCornerShape(14.dp))
+            .background(veil(.06f), RoundedCornerShape(14.dp))
             .padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 12.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -229,7 +229,7 @@ fun ThinkSegment(level: Int, providerId: String, onChange: (Int) -> Unit) {
         Spacer(Modifier.height(12.dp))
         Box(
             Modifier.fillMaxWidth().height(44.dp)
-                .background(rgba(255, 255, 255, .05f), RoundedCornerShape(12.dp))
+                .background(veil(.05f), RoundedCornerShape(12.dp))
                 .onSizeChanged { width = it.width.toFloat() }
                 .semantics { contentDescription = "深度思考：" + THINK_LEVELS[shown] }
                 .pointerInput(cw) {
@@ -350,7 +350,7 @@ private fun RainbowWord(text: String) {
         text,
         style = TextStyle(
             brush = Brush.linearGradient(RAINBOW, start = Offset(-p * w * 2, 0f), end = Offset(-p * w * 2 + w * 2, 0f), tileMode = TileMode.Repeated),
-            fontSize = 13.sp, fontWeight = FontWeight.Bold,
+            fontFamily = Sans, fontSize = 13.sp, fontWeight = FontWeight.Bold,
         ),
     )
 }

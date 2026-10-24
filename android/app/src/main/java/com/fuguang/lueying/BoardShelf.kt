@@ -115,15 +115,15 @@ fun BoardShelf(open: Boolean, onClose: () -> Unit, onOpen: (String) -> Unit, onA
             Box(Modifier.align(Alignment.CenterHorizontally).padding(bottom = 14.dp).width(40.dp).height(4.dp).background(rgba(255, 255, 255, .25f), RoundedCornerShape(2.dp)))
             Box(Modifier.fillMaxWidth()) {
                 Pressable(onClose, Modifier.align(Alignment.CenterStart), label = "关闭") { _ ->
-                    SvgIcon(Icons.close, Page.ink, 20.dp, modifier = Modifier.padding(6.dp))
+                    SvgIcon(Icons.close, Page.INK, 20.dp, modifier = Modifier.padding(6.dp))
                 }
-                Txt("画板", Page.ink, 16.5.sp, Modifier.align(Alignment.Center), family = Serif, weight = FontWeight.SemiBold, maxLines = 1)
+                Txt("画板", Page.INK, 16.5.sp, Modifier.align(Alignment.Center), family = Serif, weight = FontWeight.SemiBold, maxLines = 1)
             }
             if (all.isNotEmpty()) Row(Modifier.padding(top = 12.dp, bottom = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 listOf("全部", "没做完", "你改过").forEachIndexed { i, s -> ChoiceChip(s, f == i) { f = i } }
             }
             Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(top = 10.dp, bottom = 30.dp)) {
-                if (all.isEmpty()) Txt("还没有画板。\n计划、安排、日程、清单，让她搭一块：读书会、搬家、这周吃什么都行。", Page.muted, 13.sp, Modifier.fillMaxWidth().padding(vertical = 40.dp, horizontal = 10.dp), lineHeight = 22.sp, align = androidx.compose.ui.text.style.TextAlign.Center)
+                if (all.isEmpty()) Txt("还没有画板。\n计划、安排、日程、清单，让她搭一块：读书会、搬家、这周吃什么都行。", Page.MUTED, 13.sp, Modifier.fillMaxWidth().padding(vertical = 40.dp, horizontal = 10.dp), lineHeight = 22.sp, align = androidx.compose.ui.text.style.TextAlign.Center)
                 val cells: List<BoardInfo?> = show + listOf(null)
                 cells.chunked(2).forEachIndexed { r, pair ->
                     Row(Modifier.fillMaxWidth().padding(bottom = 14.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -158,7 +158,7 @@ private fun BoardCell(b: BoardInfo, i: Int, onClick: () -> Unit) {
             Column(Modifier.fillMaxSize().padding(horizontal = 11.dp, vertical = 12.dp)) {
                 Txt(b.glyph, b.acc, 30.sp, family = Serif, maxLines = 1)
                 Spacer(Modifier.height(6.dp))
-                Txt(b.title, Page.ink, 12.sp, family = Serif, maxLines = 1)
+                Txt(b.title, Page.INK, 12.sp, family = Serif, maxLines = 1)
                 Spacer(Modifier.height(8.dp))
                 MiniBlocks(b)
             }
@@ -168,8 +168,8 @@ private fun BoardCell(b: BoardInfo, i: Int, onClick: () -> Unit) {
             }
         }
         Spacer(Modifier.height(8.dp))
-        Txt(b.title, Page.ink, 13.5.sp, maxLines = 1)
-        Txt(day(b.updated) + if (b.of > 0) " · ${b.done}/${b.of}" else "", Page.muted.copy(alpha = .6f), 11.sp, Modifier.padding(top = 2.dp), maxLines = 1)
+        Txt(b.title, Page.INK, 13.5.sp, maxLines = 1)
+        Txt(day(b.updated) + if (b.of > 0) " · ${b.done}/${b.of}" else "", Page.MUTED.copy(alpha = .6f), 11.sp, Modifier.padding(top = 2.dp), maxLines = 1)
     }
 }
 
@@ -204,7 +204,7 @@ private fun AskCell(i: Int, onAsk: () -> Unit) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             SvgIcon(SideIcons.plus, css("#e9b48e"), 22.dp, stroke = 1.6f)
             Spacer(Modifier.height(8.dp))
-            Txt("让她搭一块", Page.muted, 12.5.sp, maxLines = 1)
+            Txt("让她搭一块", Page.MUTED, 12.5.sp, maxLines = 1)
         }
     }
 }

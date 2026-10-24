@@ -253,14 +253,14 @@ fun ThinkDrawer(open: Boolean, raw: String, steps: List<ToolStep>, live: Boolean
         Column(
             Modifier.align(Alignment.BottomCenter).widthIn(max = 640.dp).fillMaxWidth().height(maxHeight * .92f)
                 .graphicsLayer { translationY = off }
-                .background(rgba(20, 24, 31, .97f), RoundedCornerShape(topStart = 26.dp, topEnd = 26.dp))
+                .background(Skin.sheet, RoundedCornerShape(topStart = 26.dp, topEnd = 26.dp))
                 .pointerInput(Unit) { detectTapGestures { } },
         ) {
             Column(
                 Modifier.fillMaxWidth().draggable(rememberDraggableState { drag(it) }, Orientation.Vertical, onDragStopped = { settle(it) })
                     .padding(start = 22.dp, end = 22.dp, top = 10.dp),
             ) {
-                Box(Modifier.align(Alignment.CenterHorizontally).width(40.dp).height(4.dp).background(rgba(255, 255, 255, .25f), RoundedCornerShape(2.dp)))
+                Box(Modifier.align(Alignment.CenterHorizontally).width(40.dp).height(4.dp).background(veil(.25f), RoundedCornerShape(2.dp)))
                 Spacer(Modifier.height(14.dp))
                 Box(Modifier.fillMaxWidth()) {
                     Pressable(onClose, Modifier.align(Alignment.CenterStart), label = "关闭") { _ ->
@@ -297,18 +297,18 @@ fun ThinkDrawer(open: Boolean, raw: String, steps: List<ToolStep>, live: Boolean
 private fun TrailNode(it: TrailItem, last: Boolean, open: Boolean, onToggle: () -> Unit) {
     val enter = remember { Animatable(0f) }
     LaunchedEffect(Unit) { enter.animateTo(1f, tween(360, easing = Curves.standard)) }
-    val dot by animateColorAsState(if (it.live) TrailLive else rgba(255, 255, 255, .32f), tween(400), label = "dot")
+    val dot by animateColorAsState(if (it.live) TrailLive else veil(.32f), tween(400), label = "dot")
     val tint by animateColorAsState(if (it.live) TrailApricot else Page.muted, tween(400), label = "tint")
     val breath = rememberInfiniteTransition(label = "breath").animateFloat(.12f, .2f, infiniteRepeatable(tween(800), RepeatMode.Reverse), label = "b")
     Pressable({ if (!it.live) onToggle() }, Modifier.fillMaxWidth().graphicsLayer { alpha = enter.value; translationY = (1f - enter.value) * 6.dp.toPx() }, label = it.title) { pressed ->
-        Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min).background(if (pressed) rgba(255, 255, 255, .04f) else Color.Transparent, RoundedCornerShape(12.dp))) {
+        Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min).background(if (pressed) veil(.04f) else Color.Transparent, RoundedCornerShape(12.dp))) {
             Box(Modifier.width(26.dp).fillMaxHeight()) {
                 val top = if (it.tool != null) 32.dp else 21.dp
-                if (!last) Box(Modifier.padding(top = top, bottom = 4.dp).align(Alignment.TopCenter).width(1.dp).fillMaxHeight().background(rgba(255, 255, 255, .12f)))
+                if (!last) Box(Modifier.padding(top = top, bottom = 4.dp).align(Alignment.TopCenter).width(1.dp).fillMaxHeight().background(veil(.12f)))
                 if (it.tool != null) {
                     Box(
                         Modifier.align(Alignment.TopCenter).size(26.dp)
-                            .background(if (it.live) TrailApricot.copy(alpha = breath.value) else rgba(255, 255, 255, .06f), RoundedCornerShape(8.dp)),
+                            .background(if (it.live) TrailApricot.copy(alpha = breath.value) else veil(.06f), RoundedCornerShape(8.dp)),
                         contentAlignment = Alignment.Center,
                     ) { SvgIcon(Trail.icon(it.tool.name), tint, 15.dp, stroke = 1.5f) }
                 } else Box(Modifier.padding(top = 8.dp).align(Alignment.TopCenter).size(7.dp).background(dot, CircleShape))

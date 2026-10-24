@@ -154,11 +154,11 @@ fun AvatarCropHost() {
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Txt("小", Page.muted, 12.sp)
+                    Txt("小", Page.MUTED, 12.sp)
                     Box(Modifier.weight(1f).padding(horizontal = 12.dp)) { FeelSlider(k, 1f, 3f, .01f, onDone = {}) { k = it; clamp() } }
-                    Txt("大", Page.muted, 12.sp)
+                    Txt("大", Page.MUTED, 12.sp)
                 }
-                Txt("拖着挪位置", Page.muted.copy(alpha = .6f), 12.sp, Modifier.padding(top = 12.dp, bottom = 16.dp))
+                Txt("拖着挪位置", Page.MUTED.copy(alpha = .6f), 12.sp, Modifier.padding(top = 12.dp, bottom = 16.dp))
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     CropButton("取消", false, Modifier.weight(1f)) { cancel() }
                     CropButton("用这张", true, Modifier.weight(1f)) { use() }
@@ -184,6 +184,6 @@ fun AvatarCropHost() {
 @Composable
 private fun CropButton(text: String, main: Boolean, modifier: Modifier, onClick: () -> Unit) {
     PressSurface(onClick, modifier.height(44.dp), fill = if (main) warm else Color.White.copy(alpha = .08f), pressedFill = if (main) warm.copy(alpha = .85f) else Color.White.copy(alpha = .13f), pressScale = .96f, label = text) {
-        Txt(text, if (main) Color(0xFF2A211B) else Page.ink, 14.5.sp)
+        Txt(text, if (main) Color(0xFF2A211B) else Page.INK, 14.5.sp)
     }
 }

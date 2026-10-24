@@ -46,14 +46,14 @@ fun WorksShelf(open: Boolean, onClose: () -> Unit, onOpen: (String) -> Unit) {
             Box(Modifier.align(Alignment.CenterHorizontally).padding(bottom = 14.dp).widthIn(min = 40.dp, max = 40.dp).height(4.dp).background(rgba(255, 255, 255, .25f), RoundedCornerShape(2.dp)))
             Box(Modifier.fillMaxWidth()) {
                 Pressable(onClose, Modifier.align(Alignment.CenterStart), label = "关闭") { _ ->
-                    SvgIcon(Icons.close, Page.ink, 20.dp, modifier = Modifier.padding(6.dp))
+                    SvgIcon(Icons.close, Page.INK, 20.dp, modifier = Modifier.padding(6.dp))
                 }
-                Txt("作品", Page.ink, 16.5.sp, Modifier.align(Alignment.Center), family = Serif, weight = FontWeight.SemiBold, maxLines = 1)
+                Txt("作品", Page.INK, 16.5.sp, Modifier.align(Alignment.Center), family = Serif, weight = FontWeight.SemiBold, maxLines = 1)
             }
             Spacer(Modifier.height(6.dp))
             if (ids.isEmpty()) {
                 Box(Modifier.fillMaxWidth().padding(top = 60.dp), contentAlignment = Alignment.Center) {
-                    Txt("还没有作品。让她画点什么、做个页面，就会出现在这里。", Page.muted, 13.sp, lineHeight = 22.sp)
+                    Txt("还没有作品。让她画点什么、做个页面，就会出现在这里。", Page.MUTED, 13.sp, lineHeight = 22.sp)
                 }
             } else Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(bottom = 30.dp)) {
                 WorkCards(ids, onOpen)

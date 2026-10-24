@@ -1,5 +1,6 @@
 package com.fuguang.lueying
 
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -468,7 +469,7 @@ fun ChatPage(
     }
     val menuW = min(width.value * .86f, 340f).dp
     val menuPx = with(density) { menuW.toPx() }
-    Box(Modifier.fillMaxSize().background(rgba(14, 17, 23, .38f))) {
+    Box(Modifier.fillMaxSize().background(Skin.shade(.38f))) {
       Box(Modifier.fillMaxSize()) {
         Column(
             Modifier
@@ -509,7 +510,7 @@ fun ChatPage(
             Box(
                 Modifier.fillMaxHeight().width(menuW)
                     .graphicsLayer { translationX = (menuT - 1f) * menuPx }
-                    .background(rgba(20, 23, 29, 1f))
+                    .then(if (Skin.frost) Modifier.frost(RectangleShape, Skin.panel) else Modifier.background(Skin.panel))
                     .pointerInput(Unit) { detectTapGestures { } }
                     .windowInsetsPadding(WindowInsets.safeDrawing),
             ) {
@@ -731,7 +732,7 @@ private fun Conversation(
                 label = "回到最新",
             ) { _ ->
                 Box(
-                    Modifier.size(40.dp).background(rgba(30, 34, 42, .88f), CircleShape).border(1.dp, Page.line, CircleShape),
+                    Modifier.size(40.dp).background(Skin.tint(.88f), CircleShape).border(1.dp, Page.line, CircleShape),
                     contentAlignment = Alignment.Center,
                 ) { SvgIcon(ChatIcons.down, Page.ink, 18.dp) }
             }
@@ -743,10 +744,10 @@ private fun Conversation(
 fun UserBubble(text: String, compact: Boolean, modifier: Modifier = Modifier) {
     Box(
         modifier.widthIn(max = if (compact) 300.dp else 460.dp)
-            .background(rgba(255, 255, 255, .08f), RoundedCornerShape(18.dp))
-            .border(1.dp, rgba(255, 255, 255, .1f), RoundedCornerShape(18.dp))
+            .background(veil(.08f), RoundedCornerShape(18.dp))
+            .border(1.dp, veil(.1f), RoundedCornerShape(18.dp))
             .padding(horizontal = 16.dp, vertical = 11.dp),
-    ) { BasicText(userLinks(text), style = TextStyle(color = Page.ink, fontSize = 15.sp, lineHeight = 24.sp)) }
+    ) { BasicText(userLinks(text), style = TextStyle(fontFamily = Sans, color = Page.ink, fontSize = 15.sp, lineHeight = 24.sp)) }
 }
 
 private val urlRe = Regex("https?://[A-Za-z0-9._~:/?#\\[\\]@!$&'*+,;=%-]+")
@@ -765,7 +766,7 @@ private fun SmallButton(text: String, onClick: () -> Unit) {
     Pressable(onClick, label = text) { pressed ->
         Txt(
             text, Page.ink, 13.sp,
-            Modifier.background(rgba(255, 255, 255, if (pressed) .14f else .07f), RoundedCornerShape(50))
+            Modifier.background(veil(if (pressed) .14f else .07f), RoundedCornerShape(50))
                 .border(1.dp, Page.line, RoundedCornerShape(50)).padding(horizontal = 16.dp, vertical = 8.dp),
         )
     }
@@ -773,7 +774,7 @@ private fun SmallButton(text: String, onClick: () -> Unit) {
 
 /* ---------------- 回复的排版：段落、**粗体**、列表、标题、代码 ---------------- */
 
-private val replyStyle = TextStyle(color = Page.ink.copy(alpha = .9f), fontSize = 15.5.sp, lineHeight = 27.sp, letterSpacing = .01.em)
+private val replyStyle get() = TextStyle(fontFamily = Sans, color = Page.ink.copy(alpha = .9f), fontSize = 15.5.sp, lineHeight = 27.sp, letterSpacing = .01.em)
 
 @Composable
 private fun Reply(raw: String, compact: Boolean, fadeTail: Boolean) {
@@ -791,7 +792,7 @@ private fun Reply(raw: String, compact: Boolean, fadeTail: Boolean) {
                 val code = block.trim().removePrefix("```").substringAfter('\n', "").removeSuffix("```").trimEnd()
                 BasicText(
                     code,
-                    Modifier.fillMaxWidth().background(rgba(0, 0, 0, .25f), RoundedCornerShape(12.dp)).padding(14.dp),
+                    Modifier.fillMaxWidth().background(Skin.well(.25f), RoundedCornerShape(12.dp)).padding(14.dp),
                     style = replyStyle.copy(fontFamily = FontFamily.Monospace, fontSize = 13.sp, lineHeight = 21.sp),
                 )
             } else {
@@ -898,7 +899,7 @@ private fun ChatInput(
             Modifier
                 .fillMaxWidth()
                 .padding(end = sep * t.coerceAtLeast(0f))
-                .glass(shape, blur, fill = rgba(30, 34, 42, .42f))
+                .glass(shape, blur, fill = Skin.tint(.42f))
                 .padding(start = 16.dp, end = inset, top = 12.dp, bottom = inset),
         ) {
             // 上下文消息限制到顶：输入框上方展开一行杏色提示，发送键变灰，提示里直接开新对话
@@ -942,7 +943,7 @@ private fun ChatInput(
             BasicTextField(
                 value = chat.draft,
                 onValueChange = { chat.draft = it },
-                textStyle = TextStyle(color = Page.ink, fontSize = if (compact) 15.sp else 16.sp, lineHeight = 24.sp),
+                textStyle = TextStyle(fontFamily = Sans, color = Page.ink, fontSize = if (compact) 15.sp else 16.sp, lineHeight = 24.sp),
                 cursorBrush = SolidColor(Page.accent),
                 maxLines = 6,
                 modifier = Modifier.fillMaxWidth().heightIn(min = 24.dp).padding(start = 4.dp)
@@ -961,7 +962,7 @@ private fun ChatInput(
                 Pressable(onPick, enabled = !chat.busy, label = "选择模型") { p ->
                     Row(
                         Modifier.widthIn(max = 240.dp)
-                            .background(rgba(255, 255, 255, if (p) .13f else .07f), RoundedCornerShape(50))
+                            .background(veil(if (p) .13f else .07f), RoundedCornerShape(50))
                             .padding(horizontal = 13.dp, vertical = 8.dp)
                             .alpha(if (chat.busy) .45f else 1f),
                         verticalAlignment = Alignment.CenterVertically,
@@ -1035,14 +1036,14 @@ private fun ModelDrawer(open: Boolean, store: AssistantStore, compact: Boolean, 
                         drawContent()
                         if (dim > 0f) drawOutline(sheet.createOutline(size, layoutDirection, this), rgba(0, 0, 0, .4f * dim))
                     }
-                    .background(rgba(20, 24, 31, .97f), sheet)
+                    .background(Skin.sheet, sheet)
                     .pointerInput(Unit) { detectTapGestures { } }
                     .windowInsetsPadding(WindowInsets.safeDrawing.only(androidx.compose.foundation.layout.WindowInsetsSides.Bottom))
                     .heightIn(max = h * .78f)
                     .verticalScroll(rememberScrollState())
                     .padding(start = 20.dp, end = 20.dp, top = 10.dp, bottom = 22.dp),
             ) {
-                Box(Modifier.align(Alignment.CenterHorizontally).width(40.dp).height(4.dp).background(rgba(255, 255, 255, .25f), RoundedCornerShape(2.dp)))
+                Box(Modifier.align(Alignment.CenterHorizontally).width(40.dp).height(4.dp).background(veil(.25f), RoundedCornerShape(2.dp)))
                 Spacer(Modifier.height(14.dp))
                 Box(Modifier.fillMaxWidth()) {
                     Pressable(onClose, Modifier.align(Alignment.CenterStart), label = "关闭") { _ ->
@@ -1074,7 +1075,7 @@ private fun ModelDrawer(open: Boolean, store: AssistantStore, compact: Boolean, 
                 Box(Modifier.align(Alignment.CenterHorizontally).onGloballyPositioned { moreAt = it }) {
                     PressSurface(
                         { openCard() }, shape = RoundedCornerShape(50),
-                        fill = if (card.open) rgba(255, 255, 255, .09f) else Color.Transparent, label = "更多模型",
+                        fill = if (card.open) veil(.09f) else Color.Transparent, label = "更多模型",
                     ) {
                         Row(Modifier.padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                             Txt("更多模型", if (card.open) Page.ink else Page.muted, 13.sp)
@@ -1095,7 +1096,7 @@ private fun DrawerRow(text: String, selected: Boolean, dim: Boolean = false, onC
         Row(
             Modifier.fillMaxWidth()
                 .background(
-                    when { selected -> rgba(233, 180, 142, .16f); pressed -> rgba(255, 255, 255, .05f); else -> Color.Transparent },
+                    when { selected -> rgba(233, 180, 142, .16f); pressed -> veil(.05f); else -> Color.Transparent },
                     RoundedCornerShape(14.dp),
                 )
                 .padding(horizontal = 16.dp, vertical = 14.dp),
@@ -1121,7 +1122,7 @@ private fun UsedSkills(steps: List<ToolStep>) {
         Txt("这次用了", Page.muted.copy(alpha = .55f), 11.5.sp, Modifier.padding(end = 2.dp))
         names.forEach { n ->
             val s = Skills.of().firstOrNull { it.title == n || it.id == n }
-            PressSurface({ s?.let { Skills.show?.invoke(it.id) } }, Modifier.height(28.dp), shape = RoundedCornerShape(50), fill = rgba(255, 255, 255, .06f), pressScale = .94f, label = n) {
+            PressSurface({ s?.let { Skills.show?.invoke(it.id) } }, Modifier.height(28.dp), shape = RoundedCornerShape(50), fill = veil(.06f), pressScale = .94f, label = n) {
                 Row(Modifier.padding(start = 4.dp, end = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                     SkillTile(s?.id ?: n, n, 20.dp)
                     Spacer(Modifier.width(6.dp))

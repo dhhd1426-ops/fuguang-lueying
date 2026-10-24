@@ -103,12 +103,12 @@ internal fun TocPage(data: Luoying, r: NoteReading) {
 
 @Composable
 private fun SearchBox() {
-    Row(Modifier.fillMaxWidth().background(rgba(0, 0, 0, .22f), RoundedCornerShape(14.dp)).padding(horizontal = 14.dp, vertical = 11.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.fillMaxWidth().background(Skin.well(.22f), RoundedCornerShape(14.dp)).padding(horizontal = 14.dp, vertical = 11.dp), verticalAlignment = Alignment.CenterVertically) {
         SvgIcon(SideIcons.search, Page.muted, 16.dp, stroke = 1.5f)
         Spacer(Modifier.width(10.dp))
         BasicTextField(
             NoteCard.query, { NoteCard.query = it }, Modifier.weight(1f), singleLine = true,
-            textStyle = TextStyle(color = Page.ink, fontSize = 14.sp), cursorBrush = SolidColor(NoteWarm),
+            textStyle = TextStyle(fontFamily = Sans, color = Page.ink, fontSize = 14.sp), cursorBrush = SolidColor(NoteWarm),
             decorationBox = { inner -> Box { if (NoteCard.query.isEmpty()) Txt("搜索标题或正文", Page.muted.copy(alpha = .55f), 14.sp); inner() } },
         )
     }
@@ -196,7 +196,7 @@ internal fun TalksPage(data: Luoying) {
             items(data.messages) { m ->
                 if (m.role == "user") {
                     Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
-                        Txt(m.text, Page.ink, 14.sp, Modifier.widthIn(max = 260.dp).background(rgba(255, 255, 255, .08f), RoundedCornerShape(16.dp)).padding(horizontal = 13.dp, vertical = 8.dp), lineHeight = 22.sp)
+                        Txt(m.text, Page.ink, 14.sp, Modifier.widthIn(max = 260.dp).background(veil(.08f), RoundedCornerShape(16.dp)).padding(horizontal = 13.dp, vertical = 8.dp), lineHeight = 22.sp)
                     }
                 } else {
                     Txt(m.text, Page.ink.copy(alpha = .82f), 14.sp, Modifier.padding(horizontal = 4.dp), lineHeight = 25.sp)

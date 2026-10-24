@@ -100,21 +100,21 @@ fun DownloadSheet(open: Boolean, title: String, pageUrl: String, onDone: (String
                 .windowInsetsPadding(WindowInsets.navigationBars).padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 16.dp),
         ) {
             Box(Modifier.align(Alignment.CenterHorizontally).padding(bottom = 12.dp).size(40.dp, 4.dp).background(Color.White.copy(alpha = .25f), RoundedCornerShape(2.dp)))
-            Txt(title.ifBlank { "这一页的视频" }, Page.ink, 16.sp, maxLines = 2)
+            Txt(title.ifBlank { "这一页的视频" }, Page.INK, 16.sp, maxLines = 2)
             if (m == null) {
-                if (ytLoading) Row(Modifier.padding(vertical = 18.dp), verticalAlignment = Alignment.CenterVertically) { LoadRing(Warm, 15.dp); Spacer(Modifier.width(8.dp)); Txt("在认这一页的视频…", Page.muted, 13.sp) }
-                else Txt("这一页还没认出能下的视频。先让视频放起来，再点一次。", Page.muted, 13.sp, Modifier.padding(vertical = 18.dp), lineHeight = 21.sp)
+                if (ytLoading) Row(Modifier.padding(vertical = 18.dp), verticalAlignment = Alignment.CenterVertically) { LoadRing(Warm, 15.dp); Spacer(Modifier.width(8.dp)); Txt("在认这一页的视频…", Page.MUTED, 13.sp) }
+                else Txt("这一页还没认出能下的视频。先让视频放起来，再点一次。", Page.MUTED, 13.sp, Modifier.padding(vertical = 18.dp), lineHeight = 21.sp)
                 return@Column
             }
             Txt(
                 when (m.kind) { "ytdlp" -> "认出来了：${yt?.title?.take(30).orEmpty()} · 画面和声音会合成一个 mp4"; "dash" -> "画面和声音分开传的，下完自动合成一个文件"; "hls" -> "分段视频，下完自动拼成一个文件"; else -> if (m.size > 0) "整段文件 · " + mb(m.size) else "整段文件" },
-                Page.muted, 12.sp, Modifier.padding(top = 2.dp, bottom = 12.dp),
+                Page.MUTED, 12.sp, Modifier.padding(top = 2.dp, bottom = 12.dp),
             )
             if (items.size > 1) Row(Modifier.padding(bottom = 10.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 items.take(5).forEachIndexed { i, it2 -> ChoiceChip(if (it2.kind == "ytdlp") "智能识别" else "视频 ${i + 1}" + if (it2.kind == "hls") " · 分段" else "", pick == i) { pick = i } }
             }
             val list = qs
-            if (list == null) Row(Modifier.padding(vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) { LoadRing(Warm, 15.dp); Spacer(Modifier.width(8.dp)); Txt("在看有哪几档清晰度…", Page.muted, 13.sp) }
+            if (list == null) Row(Modifier.padding(vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) { LoadRing(Warm, 15.dp); Spacer(Modifier.width(8.dp)); Txt("在看有哪几档清晰度…", Page.MUTED, 13.sp) }
             else Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 val rows = list.map { it.first } + if (m.kind != "hls") listOf("只要声音") else emptyList()
                 rows.forEachIndexed { i, name ->
@@ -129,9 +129,9 @@ fun DownloadSheet(open: Boolean, title: String, pageUrl: String, onDone: (String
                                 if (r > 0f) drawCircle(Warm, size.minDimension / 2 * .5f * r)
                             }
                             Spacer(Modifier.width(10.dp))
-                            Txt(name, Page.ink, 14.sp, Modifier.weight(1f), maxLines = 1)
+                            Txt(name, Page.INK, 14.sp, Modifier.weight(1f), maxLines = 1)
                             val sz = if (m.kind == "ytdlp") sizes[name] ?: 0L else 0L
-                            Txt(listOf(if (sz > 0) "约 " + mb(sz) else "", when { name == "只要声音" -> "m4a"; i == 0 && list.size > 1 -> "最清楚"; else -> "" }).filter { it.isNotEmpty() }.joinToString(" · "), Page.muted, 12.sp)
+                            Txt(listOf(if (sz > 0) "约 " + mb(sz) else "", when { name == "只要声音" -> "m4a"; i == 0 && list.size > 1 -> "最清楚"; else -> "" }).filter { it.isNotEmpty() }.joinToString(" · "), Page.MUTED, 12.sp)
                         }
                     }
                 }
@@ -166,8 +166,8 @@ fun DownloadsLayer() {
     Box(Modifier.fillMaxSize().graphicsLayer { translationX = (1f - k) * size.width }.background(Color(0xFF121418)).pointerInput(Unit) { detectTapGestures { } }) {
         Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.statusBars)) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                PressSurface({ Downloads.open = false }, Modifier.size(44.dp), shape = CircleShape, fill = Color.Transparent, pressScale = .88f, label = "返回") { SvgIcon(back, Page.ink, 20.dp, stroke = 1.8f) }
-                Txt("下载", Page.ink, 17.sp, Modifier.weight(1f), family = Serif, align = androidx.compose.ui.text.style.TextAlign.Center)
+                PressSurface({ Downloads.open = false }, Modifier.size(44.dp), shape = CircleShape, fill = Color.Transparent, pressScale = .88f, label = "返回") { SvgIcon(back, Page.INK, 20.dp, stroke = 1.8f) }
+                Txt("下载", Page.INK, 17.sp, Modifier.weight(1f), family = Serif, align = androidx.compose.ui.text.style.TextAlign.Center)
                 Spacer(Modifier.width(44.dp))
             }
             // 两栏：左「正在下载」，右「已完成」（DownloadTabs.kt）
@@ -187,7 +187,7 @@ fun DownloadsLayer() {
         val na by animateFloatAsState(if (Downloads.note != null) 1f else 0f, tween(240, easing = Curves.decel), label = "note")
         var lastNote by remember { mutableStateOf("") }
         Downloads.note?.let { lastNote = it }
-        if (na > 0f) Txt(lastNote, Page.ink, 13.sp, Modifier.align(Alignment.BottomCenter).windowInsetsPadding(WindowInsets.navigationBars).padding(bottom = 28.dp)
+        if (na > 0f) Txt(lastNote, Page.INK, 13.sp, Modifier.align(Alignment.BottomCenter).windowInsetsPadding(WindowInsets.navigationBars).padding(bottom = 28.dp)
             .graphicsLayer { alpha = na; translationY = (1f - na) * 10.dp.toPx() }.background(Color(0xFF3A404C), RoundedCornerShape(12.dp)).padding(horizontal = 14.dp, vertical = 9.dp), maxLines = 1)
         DlFull(Downloads.list.firstOrNull { it.id == DlPlay.id })
     }
@@ -212,7 +212,7 @@ private fun DlRow(d: Dl, i: Int, onAct: (android.net.Uri, String) -> Unit) {
         }
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
-            Txt(d.title, Page.ink, 13.5.sp, maxLines = 1)
+            Txt(d.title, Page.INK, 13.5.sp, maxLines = 1)
             val line = when (d.state) {
                 3 -> listOf(d.quality, mb(d.total), if (d.out.startsWith("content://")) "在相册里" else "在 App 里").filter { it.isNotBlank() }.joinToString(" · ")
                 4 -> "没下成：" + d.error
@@ -225,14 +225,14 @@ private fun DlRow(d: Dl, i: Int, onAct: (android.net.Uri, String) -> Unit) {
             // 磁力：点状态字展开排查信息（连上几个人、Tracker 哪些能用），每秒刷新
             var diag by remember { mutableStateOf(false) }
             val magnet = d.media.kind == "magnet"
-            Txt(line, if (d.state == 4) Color(0xFFD79A94) else Page.muted.copy(alpha = .7f), 11.5.sp,
+            Txt(line, if (d.state == 4) Color(0xFFD79A94) else Page.MUTED.copy(alpha = .7f), 11.5.sp,
                 Modifier.padding(top = 3.dp).then(if (magnet) Modifier.pointerInput(Unit) { detectTapGestures { diag = !diag } } else Modifier), maxLines = 2)
             if (magnet && diag) {
                 var text by remember { mutableStateOf("") }
                 LaunchedEffect(Unit) { while (true) { text = withContext(kotlinx.coroutines.Dispatchers.IO) { Thunder.diag(d.id) ?: Torrent.diag(d.id) }; delay(1000) } }
                 val ctx2 = LocalContext.current
                 // 长按复制（连磁力链接一起），发过来好照着排查
-                Txt(text + "\n长按复制", Page.muted.copy(alpha = .8f), 10.5.sp, Modifier.padding(top = 6.dp).background(Color.White.copy(alpha = .04f), RoundedCornerShape(8.dp))
+                Txt(text + "\n长按复制", Page.MUTED.copy(alpha = .8f), 10.5.sp, Modifier.padding(top = 6.dp).background(Color.White.copy(alpha = .04f), RoundedCornerShape(8.dp))
                     .pointerInput(Unit) { detectTapGestures(onLongPress = {
                         (ctx2.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager)
                             .setPrimaryClip(android.content.ClipData.newPlainText("磁力排查", d.title + "\n" + d.media.url + "\n" + text))
@@ -267,7 +267,7 @@ private fun DlRow(d: Dl, i: Int, onAct: (android.net.Uri, String) -> Unit) {
                 }
                 SvgIcon(when (d.state) { 4 -> retry; 5 -> playIc; else -> pauseIc }, Warm, 14.dp, stroke = 2f)
             }
-            if (d.state in setOf(4, 5)) PressSurface({ Downloads.delete(d) }, Modifier.size(36.dp), shape = CircleShape, fill = Color.Transparent, pressScale = .88f, label = "删除") { SvgIcon(trash, Page.muted, 16.dp, stroke = 1.6f) }
+            if (d.state in setOf(4, 5)) PressSurface({ Downloads.delete(d) }, Modifier.size(36.dp), shape = CircleShape, fill = Color.Transparent, pressScale = .88f, label = "删除") { SvgIcon(trash, Page.MUTED, 16.dp, stroke = 1.6f) }
         }
     }
     DlInline(d)
@@ -277,7 +277,7 @@ private fun DlRow(d: Dl, i: Int, onAct: (android.net.Uri, String) -> Unit) {
 @Composable
 private fun SmallAct(text: String, main: Boolean, onClick: () -> Unit) {
     PressSurface(onClick, Modifier.height(30.dp), shape = RoundedCornerShape(10.dp), fill = if (main) Warm else Color.White.copy(alpha = .07f), pressScale = .94f, label = text) {
-        Txt(text, if (main) Ink2 else Page.ink, 12.sp, Modifier.padding(horizontal = 12.dp), maxLines = 1)
+        Txt(text, if (main) Ink2 else Page.INK, 12.sp, Modifier.padding(horizontal = 12.dp), maxLines = 1)
     }
 }
 

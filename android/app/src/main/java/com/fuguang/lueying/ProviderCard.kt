@@ -145,7 +145,7 @@ fun ProviderCardLayer(state: ProviderCardState, store: AssistantStore, anchor: R
                     shape = RoundedCornerShape(24.dp)
                     clip = true
                 }
-                .background(rgba(28, 32, 40, .97f))
+                .background(Skin.sheet)
                 .pointerInput(Unit) { detectTapGestures { } },
         ) { CardPanes(state, store, w, onPicked) }
     }

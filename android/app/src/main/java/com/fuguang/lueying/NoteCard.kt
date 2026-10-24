@@ -173,10 +173,10 @@ private fun NoteField(prefs: Prefs, modifier: Modifier) {
         BasicTextField(
             value = text,
             onValueChange = { text = it },
-            textStyle = TextStyle(color = Page.ink, fontSize = 14.5.sp, lineHeight = 25.sp),
+            textStyle = TextStyle(fontFamily = Sans, color = Page.ink, fontSize = 14.5.sp, lineHeight = 25.sp),
             cursorBrush = SolidColor(NoteWarm),
             modifier = Modifier.fillMaxWidth().heightIn(min = 118.dp)
-                .background(rgba(0, 0, 0, .22f), RoundedCornerShape(14.dp))
+                .background(Skin.well(.22f), RoundedCornerShape(14.dp))
                 .padding(horizontal = 14.dp, vertical = 12.dp),
             decorationBox = { inner ->
                 Box {
@@ -214,6 +214,6 @@ private fun ScenePage() {
 /** 卡片底部一条操作栏：贴底，上面一道细线。 */
 @Composable
 internal fun ColumnScope.CardBottomBar(content: @Composable () -> Unit) {
-    Box(Modifier.fillMaxWidth().height(1.dp).background(rgba(255, 255, 255, .06f)))
+    Box(Modifier.fillMaxWidth().height(1.dp).background(veil(.06f)))
     Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) { content() }
 }

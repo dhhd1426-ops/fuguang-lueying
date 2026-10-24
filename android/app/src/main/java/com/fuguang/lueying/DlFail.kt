@@ -109,11 +109,11 @@ internal fun FailNote(d: Dl, f: Fail) {
         Modifier.fillMaxSize().padding(horizontal = 18.dp).graphicsLayer { alpha = k; translationY = (1f - k) * 18f },
         verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Txt(f.msg, Page.ink, 14.sp, align = TextAlign.Center, maxLines = 2)
-        Txt(f.why, Page.muted, 11.sp, Modifier.padding(top = 5.dp), align = TextAlign.Center, maxLines = 2)
+        Txt(f.msg, Page.INK, 14.sp, align = TextAlign.Center, maxLines = 2)
+        Txt(f.why, Page.MUTED, 11.sp, Modifier.padding(top = 5.dp), align = TextAlign.Center, maxLines = 2)
         if (DlPlay.fixing) {
             Row(Modifier.padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                LoadRing(FpWarm, 16.dp); Txt("正在重新合成，不用重新下", Page.ink, 12.5.sp, Modifier.padding(start = 8.dp))
+                LoadRing(FpWarm, 16.dp); Txt("正在重新合成，不用重新下", Page.INK, 12.5.sp, Modifier.padding(start = 8.dp))
             }
             return@Column
         }
@@ -136,6 +136,6 @@ internal fun FailNote(d: Dl, f: Fail) {
 @Composable
 private fun FailBtn(text: String, main: Boolean, onClick: () -> Unit) {
     PressSurface(onClick, Modifier.height(34.dp), shape = RoundedCornerShape(17.dp), fill = if (main) FpWarm else FpGlass, pressedFill = if (main) FpWarm.copy(alpha = .8f) else FpWarm.copy(alpha = .22f), pressScale = .94f, label = text) {
-        Box(Modifier.align(Alignment.Center).padding(horizontal = 14.dp)) { Txt(text, if (main) Color(0xFF2A1D14) else Page.ink, 13.sp, maxLines = 1) }
+        Box(Modifier.align(Alignment.Center).padding(horizontal = 14.dp)) { Txt(text, if (main) Color(0xFF2A1D14) else Page.INK, 13.sp, maxLines = 1) }
     }
 }

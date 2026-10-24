@@ -58,7 +58,7 @@ fun Modifier.longPressMsg(index: Int, selected: Boolean, onLong: (MsgPress) -> U
     return this
         .onGloballyPositioned { bounds = it.boundsInRoot() }
         .graphicsLayer { val s = 1f + .02f * lift; scaleX = s; scaleY = s }
-        .background(rgba(255, 255, 255, .06f * lift), RoundedCornerShape(14.dp))
+        .background(veil(.06f * lift), RoundedCornerShape(14.dp))
         .pointerInput(index) {
             detectTapGestures(onLongPress = {
                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -129,7 +129,7 @@ fun MsgMenu(
             items.forEach { (label, icon, act) ->
                 Pressable({ onClose(); act() }, Modifier.fillMaxWidth(), label = label) { pressed ->
                     Row(
-                        Modifier.fillMaxWidth().background(if (pressed) rgba(255, 255, 255, .05f) else androidx.compose.ui.graphics.Color.Transparent)
+                        Modifier.fillMaxWidth().background(if (pressed) veil(.05f) else androidx.compose.ui.graphics.Color.Transparent)
                             .padding(horizontal = 18.dp, vertical = 13.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
@@ -156,7 +156,7 @@ fun SelectTextPage(text: String?, onClose: () -> Unit) {
         Column(
             Modifier.fillMaxSize()
                 .graphicsLayer { translationY = (1f - shown) * h.toPx() }
-                .background(rgba(20, 23, 29, .99f))
+                .background(Skin.sheet)
                 .pointerInput(Unit) { detectTapGestures { } }
                 .windowInsetsPadding(WindowInsets.safeDrawing)
                 .padding(horizontal = 24.dp, vertical = 20.dp),
