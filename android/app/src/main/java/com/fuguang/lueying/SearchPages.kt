@@ -209,6 +209,12 @@ internal fun SearchSourcePage(id: String, onBack: () -> Unit) {
         if (!s.free) {
             Label("API KEY")
             CardField(c.key, { put(c.copy(key = it.trim())) }, if (s.needUrl) "不需要可以空着" else if (id == "deepseek") "空着就用聊天里 DeepSeek 的 Key" else "贴进来，自动保存")
+            val borrowed = if (id == "deepseek" && c.key.isBlank()) WebSearch.keyOf(id) else ""
+            if (borrowed.isNotEmpty()) Row(Modifier.padding(start = 8.dp, top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(6.dp).background(warm, CircleShape))
+                Spacer(Modifier.width(7.dp))
+                Txt("正在用聊天里的 Key · sk-…${borrowed.takeLast(4)}", warm, 11.5.sp)
+            }
             Label(if (s.needUrl) "地址" else "自定义地址（可选）")
             CardField(c.url, { put(c.copy(url = it.trim())) }, if (s.needUrl) "https://你的 searxng 地址" else "用官方地址就空着")
         }
