@@ -80,6 +80,12 @@ fun LiquidPlusButton(state: LiquidPlusState, onPick: (Int) -> Unit) {
     val haptic = LocalHapticFeedback.current
     val rot = remember { Animatable(0f) }
     LaunchedEffect(state.open) { rot.animateTo(if (state.open) 45f else 0f, spring(dampingRatio = .5f, stiffness = Spring.StiffnessMediumLow)) }
+    // 色块不用线框（方案二）：平时一层淡色，按下、滴球时提亮，松手慢一点回落
+    var down by remember { mutableStateOf(false) }
+    val lit by androidx.compose.animation.core.animateFloatAsState(
+        if (down || state.open) .15f else .08f, tween(if (down || state.open) 80 else 200), label = "plusLit",
+    )
+    val press by androidx.compose.animation.core.animateFloatAsState(if (down && !state.open) .92f else 1f, tween(if (down) 70 else 200), label = "plusPress")
     Box(
         Modifier
             .size(36.dp)
@@ -88,9 +94,10 @@ fun LiquidPlusButton(state: LiquidPlusState, onPick: (Int) -> Unit) {
             .pointerInput(Unit) {
                 awaitEachGesture {
                     awaitFirstDown(requireUnconsumed = false)
+                    down = true
                     // 没按够时间就松开：什么都不做
                     val early = withTimeoutOrNull(viewConfiguration.longPressTimeoutMillis) { waitForUpOrCancellation() }
-                    if (early != null) return@awaitEachGesture
+                    if (early != null) { down = false; return@awaitEachGesture }
                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                     state.open = true
                     val hitR = 34.dp.toPx()
@@ -110,6 +117,7 @@ fun LiquidPlusButton(state: LiquidPlusState, onPick: (Int) -> Unit) {
                         if (!ch.pressed) break
                         ch.consume()
                     }
+                    down = false
                     val picked = state.hover
                     state.hover = -1
                     state.open = false

@@ -89,7 +89,6 @@ import kotlin.math.max
 import kotlin.math.min
 
 /** 问候用的细意大利斜体（Cormorant Garamond Light Italic，打包时下载生成）。 */
-private val Greeting = FontFamily(Font(R.font.cormorant_light_italic, FontWeight.Light, FontStyle.Italic))
 
 private object ChatIcons {
     val newChat = Ic("M12 3.5a8.5 8.5 0 1 1-4.3 15.8L3.5 20.5l1.2-4.1A8.5 8.5 0 0 1 12 3.5zM12 8.5v7M8.5 12h7")
@@ -480,7 +479,7 @@ fun ChatPage(
         ) {
             ChatHeader(compact, onMenu = { menu = true })
             Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                if (chat.messages.isEmpty() && !chat.busy) Hello(compact, hour)
+                if (chat.messages.isEmpty() && !chat.busy) ChatHello(compact, store, chat)
                 else Conversation(chat, store, compact, flight, onSetup = onSetup, onRetry = { chat.retry(scope, store) }, onThink = { thinkOf = it; thinkOpen = true }, onImage = { viewing = it }, onWork = { workOpen = it },
                     pressed = press?.index ?: -1, onLong = { if (!chat.busy || it.index < chat.messages.size) press = it })
             }
@@ -611,23 +610,6 @@ private fun ChatHeader(compact: Boolean, onMenu: () -> Unit) {
             SvgIcon(Ic("M4 6.5h15M4 12h10M4 17.5h13"), if (pressed) Page.ink else Page.ink.copy(alpha = .85f), 22.dp, modifier = Modifier.padding(6.dp))
         }
         Box(Modifier.align(Alignment.CenterEnd)) { CornerMenuButton(compact) }
-    }
-}
-
-@Composable
-private fun Hello(compact: Boolean, hour: Int) {
-    val text = when (hour) {
-        in 5..11 -> "Good morning"
-        in 12..17 -> "Good afternoon"
-        else -> "Good evening"
-    }
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        SvgIcon(Icons.spark, Page.accent.copy(alpha = .85f), if (compact) 24.dp else 28.dp, stroke = .9f)
-        Spacer(Modifier.height(if (compact) 16.dp else 20.dp))
-        val fs = if (compact) 34f else 42f
-        Txt(text, Page.ink.copy(alpha = .86f), fs.sp, spacing = ls(1.5f, fs), family = Greeting, weight = FontWeight.Light, maxLines = 1)
-        Spacer(Modifier.height(if (compact) 14.dp else 18.dp))
-        Box(Modifier.width(34.dp).height(1.dp).background(Page.accent.copy(alpha = .55f)))
     }
 }
 
@@ -899,7 +881,7 @@ private fun ChatInput(
             Modifier
                 .fillMaxWidth()
                 .padding(end = sep * t.coerceAtLeast(0f))
-                .glass(shape, blur, fill = Skin.tint(.42f))
+                .glass(shape, blur, fill = Skin.tint(.42f), border = Color.Transparent)
                 .padding(start = 16.dp, end = inset, top = 12.dp, bottom = inset),
         ) {
             // 上下文消息限制到顶：输入框上方展开一行杏色提示，发送键变灰，提示里直接开新对话
