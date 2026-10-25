@@ -126,6 +126,10 @@ class ChatState(val history: ConvStore) {
     val pendingImgs = mutableStateListOf<String>()
     /** 这次回复里做好的作品 id。 */
     val pendingWorks = mutableStateListOf<String>()
+    /** 每张卡插在正文（partial）第几个字后面：她动手做的时候写到哪儿，卡就在哪儿。 */
+    val pendingWorkAt = mutableStateListOf<Int>()
+    /** 正在写 / 正在改的那件：卡先占好位置，写好了原地换成作品卡。 */
+    var draft by mutableStateOf<WorkDraft?>(null)
     /** 这轮她解析 / 存过、这条对话里还没有卡的抖音：挂到她这条回复上。 */
     val pendingClips = mutableStateListOf<String>()
     var error by mutableStateOf<String?>(null)
@@ -218,7 +222,7 @@ class ChatState(val history: ConvStore) {
             return
         }
         busy = true; thinking = false; thinkText = ""; partial = ""; shown = 0f; streamDone = false
-        pendingImgs.clear(); pendingWorks.clear(); pendingClips.clear(); liveSteps.clear()
+        pendingImgs.clear(); pendingWorks.clear(); pendingWorkAt.clear(); draft = null; pendingClips.clear(); liveSteps.clear()
         val who = Memory.active
         val history = messages.toList()
         // “自动”：发出前按这条消息定一个具体的档
@@ -276,6 +280,7 @@ class ChatState(val history: ConvStore) {
                             val idx = liveSteps.size
                             liveSteps.add(ToolStep(thinkText.length, n, Trail.liveTitle(n), Trail.detail(n, a), done = false))
                             var made = n != Works.MAKE && n != Works.EDIT
+                            if (!made && draft == null) draft = WorkDraft(partial.length, n, 0, WorkDraft.title(n, a.toString()))
                             try {
                             if (n == Memory.REMEMBER || n == Memory.FORGET) Memory.runTool(who, n, a, cur.orEmpty(), convTitle0)
                             else if (n == Recall.TOOL) Recall.run(store0, cur, a.optString("query"))
@@ -285,7 +290,7 @@ class ChatState(val history: ConvStore) {
                             else if (n == PanTools.OPEN || n == PanTools.GET) PanTools.run(n, a) { l -> if (messages.none { l in it.clips } && l !in pendingClips) pendingClips.add(l) }
                             else if (n == Materials.OPEN || n == Materials.LOOK) Materials.run(n, a, Yu.vision(p.id))
                             else if (n == Skills.OPEN || n == Skills.FIND || n == Skills.LEARN) Skills.run(n, a)
-                            else if (n == Works.MAKE || n == Works.READ || n == Works.EDIT) Works.run(n, a, who.id) { id -> made = true; if (id !in pendingWorks) pendingWorks.add(id) }
+                            else if (n == Works.MAKE || n == Works.READ || n == Works.EDIT) Works.run(n, a, who.id) { id -> made = true; if (id !in pendingWorks) { pendingWorks.add(id); pendingWorkAt.add(draft?.at ?: partial.length) } }
                             else if (Mcp.owns(n)) Mcp.run(n, a)
                             else Yu.run(n, a, Yu.vision(p.id)) { refs -> refs.forEach { r -> if (r !in pendingImgs) pendingImgs.add(r) } }
                             } catch (e: kotlinx.coroutines.CancellationException) {
@@ -297,10 +302,12 @@ class ChatState(val history: ConvStore) {
                                 // 没做成的作品如实标出来，不显示「做好了」
                                 val t = if (made) Trail.doneTitle(n, a) else Trail.failTitle(n, a)
                                 if (idx < liveSteps.size) liveSteps[idx] = liveSteps[idx].copy(title = t, done = true)
+                                if (n == Works.MAKE || n == Works.EDIT) draft = null
                             }
                         },
                         { },
                         inbox = { takeQueue() },
+                        onDraft = { n, len, head -> val d = draft; draft = WorkDraft(d?.at ?: partial.length, n, len, WorkDraft.title(n, head) ?: d?.title) },
                     ) else null,
                     fallback = if (specs.isNotEmpty()) ({
                         listOfNotNull(
@@ -314,7 +321,7 @@ class ChatState(val history: ConvStore) {
                 // 等书写追上再收尾
                 snapshotFlow { shown >= partial.length }.first { it }
                 if (partial.isNotBlank() || pendingWorks.isNotEmpty() || pendingClips.isNotEmpty()) {
-                    messages.add(ChatMsg("assistant", partial.trim(), thinkText, pendingImgs.toList(), works = pendingWorks.toList(), steps = doneSteps(), clips = pendingClips.toList()))
+                    messages.add(replyMsg(partial.trim()))
                     // 记忆：不是每句都记，等这段聊停了再整段回想（换对话时马上回想上一段）
                     val cid = convId.orEmpty()
                     val title = this@ChatState.history.get(convId)?.title ?: firstSentence(question, 18)
@@ -322,14 +329,14 @@ class ChatState(val history: ConvStore) {
                     Reflect.later(cid, messages.toList()) { w -> Reflect.run(who, p, c, model, w, cid, title); Reflect.tidy(who, p, c, model) }
                 } else error = "没有收到回复，换个模型再试"
             } catch (e: kotlinx.coroutines.CancellationException) {
-                if (partial.isNotBlank() || pendingWorks.isNotEmpty() || pendingClips.isNotEmpty()) messages.add(ChatMsg("assistant", partial.take(ceil(shown).toInt()).trim(), thinkText, pendingImgs.toList(), works = pendingWorks.toList(), steps = doneSteps(), clips = pendingClips.toList()))
+                if (partial.isNotBlank() || pendingWorks.isNotEmpty() || pendingClips.isNotEmpty()) messages.add(replyMsg(partial.take(ceil(shown).toInt()).trim()))
                 throw e
             } catch (e: Exception) {
-                if (partial.isNotBlank() || pendingWorks.isNotEmpty() || pendingClips.isNotEmpty()) messages.add(ChatMsg("assistant", partial.trim(), thinkText, pendingImgs.toList(), works = pendingWorks.toList(), steps = doneSteps(), clips = pendingClips.toList()))
+                if (partial.isNotBlank() || pendingWorks.isNotEmpty() || pendingClips.isNotEmpty()) messages.add(replyMsg(partial.trim()))
                 error = e.message ?: "出错了"
             } finally {
                 val stopped = job?.isCancelled == true
-                partial = ""; shown = 0f; busy = false; thinking = false; thinkText = ""; pendingImgs.clear(); pendingWorks.clear(); pendingClips.clear(); liveSteps.clear()
+                partial = ""; shown = 0f; busy = false; thinking = false; thinkText = ""; pendingImgs.clear(); pendingWorks.clear(); pendingWorkAt.clear(); draft = null; pendingClips.clear(); liveSteps.clear()
                 persist()
                 // 这轮结束还有排着的话：接着发（你自己点停止的不发，出错的也不发，留着等你）
                 val go = sendNowAfterStop || (!stopped && error == null)
@@ -361,14 +368,21 @@ class ChatState(val history: ConvStore) {
         if (queue.isEmpty()) return null
         val q = queue.joinToString("\n"); queue.clear()
         if (partial.isNotBlank() || pendingWorks.isNotEmpty() || pendingClips.isNotEmpty() || thinkText.isNotBlank() || liveSteps.isNotEmpty())
-            messages.add(ChatMsg("assistant", partial.trim(), thinkText, pendingImgs.toList(), works = pendingWorks.toList(), steps = doneSteps(), clips = pendingClips.toList()))
+            messages.add(replyMsg(partial.trim()))
         messages.add(ChatMsg("user", q))
-        partial = ""; shown = 0f; thinkText = ""; liveSteps.clear(); pendingImgs.clear(); pendingWorks.clear(); pendingClips.clear()
+        partial = ""; shown = 0f; thinkText = ""; liveSteps.clear(); pendingImgs.clear(); pendingWorks.clear(); pendingWorkAt.clear(); draft = null; pendingClips.clear()
         persist(); sent++
         return q
     }
 
     /** 存进消息的工具步骤：中途停下的也算用过。 */
+    /** 收成一条她的回复：卡的位置换算到去掉开头空白后的正文里。 */
+    private fun replyMsg(text: String): ChatMsg {
+        val lead = partial.length - partial.trimStart().length
+        return ChatMsg("assistant", text, thinkText, pendingImgs.toList(), works = pendingWorks.toList(), steps = doneSteps(), clips = pendingClips.toList(),
+            workAt = pendingWorkAt.map { (it - lead).coerceIn(0, text.length) })
+    }
+
     private fun doneSteps() = liveSteps.map { if (it.done) it else it.copy(title = it.title.removePrefix("正在"), done = true) }
 
     /** 每帧推进一点书写进度。dt 单位秒。 */
@@ -670,10 +684,11 @@ private fun Conversation(
                         }
                     } else {
                         ThinkRow(m.think, m.steps, live = false) { onThink(i) }
-                        Box(Modifier.fillMaxWidth().longPressMsg(i, pressed == i, onLong)) { Reply(remember(m.text) { ToolText.clean(m.text) }, compact, fadeTail = false) }
+                        Box(Modifier.fillMaxWidth().longPressMsg(i, pressed == i, onLong)) {
+                            ReplyFlow(remember(m.text) { ToolText.clean(m.text) }, m.works, m.workAt, null, false, onWork) { t, f -> Reply(t, compact, f) }
+                        }
                         UsedSkills(m.steps)
                         NoteImageRow(m.imgs, onImage)
-                        WorkCards(m.works, onWork)
                         ClipCards(m.clips)
                     }
                     }
@@ -686,9 +701,8 @@ private fun Conversation(
                         if (chat.partial.isEmpty()) ThinkingMotion("", Modifier.padding(start = 2.dp, top = 6.dp))   // 没开深度思考也没用工具：只有三点
                     } else ThinkRow(chat.thinkText, steps, trailLive) { onThink(-1) }
                     SkillAskHost(compact)
-                    if (chat.partial.isNotEmpty()) Reply(chat.partial.take(ceil(chat.shown).toInt()), compact, fadeTail = chat.shown < chat.partial.length + 1)
+                    ReplyFlow(chat.partial.take(ceil(chat.shown).toInt()), chat.pendingWorks.toList(), chat.pendingWorkAt.toList(), chat.draft, chat.shown < chat.partial.length + 1, onWork) { t, f -> Reply(t, compact, f) }
                     NoteImageRow(chat.pendingImgs.toList(), onImage)
-                    WorkCards(chat.pendingWorks.toList(), onWork)
                     ClipCards(chat.pendingClips.toList())
                 }
                 if (chat.queue.isNotEmpty()) QueuedBubbles(chat, compact) { chat.sendNow(scope, store) }

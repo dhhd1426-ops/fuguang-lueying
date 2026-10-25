@@ -5,7 +5,7 @@ import org.json.JSONTokener
 
 /**
  * DeepSeek 有时不走正规的 tool_calls，而是把工具调用当正文写出来：
- *   <｜DSML｜function_calls><｜DSML｜invoke name="learn_skill"><｜DSML｜parameter name="repo" string="true">…</｜DSML｜parameter>…
+ *   <｜DSML｜function_calls>（也见过 <｜｜DSML｜｜calls>、tool_calls）<｜DSML｜invoke name="learn_skill"><｜DSML｜parameter name="repo" string="true">…</｜DSML｜parameter>…
  * 或旧写法 <｜tool▁calls▁begin｜><｜tool▁call▁begin｜>function<｜tool▁sep｜>make_work ```json {…} ```<｜tool▁call▁end｜>…
  * 这些不该给人看到，也该真的去做（不然她嘴上说「做好了」，作品卡却没有）。
  *
@@ -36,14 +36,17 @@ class ToolText {
 
     companion object {
         private const val BAR = "[｜|]{1,2}"
-        private val START = Regex("<\\s*$BAR\\s*(DSML\\s*$BAR\\s*function_calls|tool▁calls▁begin|tool_calls_begin)\\s*(?:$BAR)?\\s*>")
-        private val END = Regex("<\\s*/\\s*$BAR\\s*DSML\\s*$BAR\\s*function_calls\\s*>|<\\s*$BAR\\s*(tool▁calls▁end|tool_calls_end)\\s*(?:$BAR)?\\s*>")
+        /** 外层标记名：function_calls（V3.2）、tool_calls，2026-10 真机还见过只写 calls 的。 */
+        private const val CALLS = "(?:function_|tool_)?calls"
+        private val START = Regex("<\\s*$BAR\\s*(DSML\\s*$BAR\\s*$CALLS|tool▁calls▁begin|tool_calls_begin)\\s*(?:$BAR)?\\s*>")
+        private val END = Regex("<\\s*/\\s*$BAR\\s*DSML\\s*$BAR\\s*$CALLS\\s*>|<\\s*$BAR\\s*(tool▁calls▁end|tool_calls_end)\\s*(?:$BAR)?\\s*>")
         private val INVOKE_END = Regex("<\\s*/\\s*$BAR\\s*DSML\\s*$BAR\\s*invoke\\s*>")
         /** 没有外层 function_calls、直接从 invoke 开始的也算。 */
         private val LOOSE = Regex("<\\s*$BAR\\s*DSML\\s*$BAR\\s*invoke")
         private val INVOKE = Regex("<\\s*$BAR\\s*DSML\\s*$BAR\\s*invoke\\s+name\\s*=\\s*\"([^\"]+)\"\\s*>(.*?)(<\\s*/\\s*$BAR\\s*DSML\\s*$BAR\\s*invoke\\s*>|$)", RegexOption.DOT_MATCHES_ALL)
         private val PARAM = Regex("<\\s*$BAR\\s*DSML\\s*$BAR\\s*parameter\\s+name\\s*=\\s*\"([^\"]+)\"(?:\\s+string\\s*=\\s*\"(true|false)\")?\\s*>(.*?)<\\s*/\\s*$BAR\\s*DSML\\s*$BAR\\s*parameter\\s*>", RegexOption.DOT_MATCHES_ALL)
         private val OLD = Regex("tool▁call▁begin(?:$BAR)?\\s*>?\\s*(?:function)?\\s*<?\\s*(?:$BAR)?\\s*tool▁sep\\s*$BAR\\s*>\\s*([\\w.\\-]+)\\s*(?:```(?:json)?)?\\s*(\\{.*?\\})\\s*(?:```)?\\s*<\\s*$BAR\\s*tool▁call▁end", RegexOption.DOT_MATCHES_ALL)
+        private val STRAY = Regex("<\\s*/?\\s*$BAR\\s*DSML\\s*$BAR[^<>]{0,60}>")
         /** 标记可能的开头：结尾停在这些前缀上时先扣着。 */
         private val HOLD = listOf("<｜DSML｜", "<|DSML|", "<｜tool▁calls▁begin｜>", "<｜｜DSML｜｜")
 
@@ -61,7 +64,8 @@ class ToolText {
                 i = e.range.last + 1
             }
             if (i < s.length) out.append(s, i, s.length)
-            var v = out.toString()
+            // 只剩半截的标记（没有配对的开头或结尾）：一律不给人看
+            var v = STRAY.replace(out.toString(), "")
             if (!final) {
                 // 结尾是「<」「<｜」「<｜DS」这种半截：扣着
                 val cut = v.lastIndexOf('<')

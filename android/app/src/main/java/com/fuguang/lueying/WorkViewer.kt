@@ -63,7 +63,7 @@ import java.io.File
 private val Apricot = css("#e9b48e")
 private val Ease = CubicBezierEasing(.2f, .8f, .2f, 1f)
 
-private object WorkIcons {
+internal object WorkIcons {
     // 网页：一圆一方，像视频里那枚
     val page = Ic("M12.5 12.5h7.5v7.5h-7.5Z", circles = listOf(floatArrayOf(9f, 9f, 5f)))
     val slides = Ic("M3.5 5h17v11h-17ZM12 16v3.5M8.5 19.5h7")

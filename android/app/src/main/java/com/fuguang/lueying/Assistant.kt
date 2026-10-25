@@ -247,8 +247,8 @@ object AssistantApi {
 }
 
 /** 一条聊天消息。role = "user" / "assistant"。 */
-/** files：你发来的照片和文件（Attach.kt 的引用）。imgs：这条回复里引用到的羽的笔记图片，每项是 "笔记id/图片id"。works：这条回复里做的作品 id。steps：这轮用过的工具（思考过程时间线）。 */
-data class ChatMsg(val role: String, val text: String, val think: String = "", val imgs: List<String> = emptyList(), val at: Long = System.currentTimeMillis(), val works: List<String> = emptyList(), val steps: List<ToolStep> = emptyList(), val clips: List<String> = emptyList(), val files: List<String> = emptyList())
+/** files：你发来的照片和文件（Attach.kt 的引用）。imgs：这条回复里引用到的羽的笔记图片，每项是 "笔记id/图片id"。works：这条回复里做的作品 id，workAt：每张卡插在正文第几个字后面（照她做的先后，旧记录没有就都在最后）。steps：这轮用过的工具（思考过程时间线）。 */
+data class ChatMsg(val role: String, val text: String, val think: String = "", val imgs: List<String> = emptyList(), val at: Long = System.currentTimeMillis(), val works: List<String> = emptyList(), val steps: List<ToolStep> = emptyList(), val clips: List<String> = emptyList(), val files: List<String> = emptyList(), val workAt: List<Int> = emptyList())
 
 /** 把思考原文切成段：按空行分；只有一段时按句号分成几小段。 */
 fun thinkSegments(raw: String): List<String> {
@@ -283,7 +283,20 @@ class Tools(
     val onUse: suspend (String) -> Unit,
     /** 每做完一步工具问一声：你在她做事时又发来的话（没有就是 null），她接着做时一起看到。 */
     val inbox: suspend () -> String? = { null },
+    /** 做作品的参数还在流式来：名字、已写多少字、开头一段（取标题）。 */
+    val onDraft: (String, Int, String) -> Unit = { _, _, _ -> },
 )
+
+/**
+ * 她说「做好了」却没调用工具时用（2026-10 DeepSeek 真机：先说「写好了，卡在下面」，作品没做）。
+ * 只看这一轮最后那段正文；整轮里调用过 make_work / edit_work 就不管。
+ */
+object Claims {
+    private val DONE = Regex("(写|做|改|弄|搭|画|排)(好|完)了|已经(写|做|改|弄|搭|生成)(好|完|出来)|生成好了|做出来了|卡(片)?(就)?(在|放在)下面|(在|放在)下面(的卡|那张)")
+    fun saysDone(text: String) = DONE.containsMatchIn(text)
+    const val NUDGE = "（这是 App 的提醒，不是对方说的话：你刚才说作品做好了 / 改好了，可这一轮你没有调用 make_work 或 edit_work，作品卡并没有出现。" +
+        "要做就现在真的调用工具去做，等它回来再说；如果你其实没打算做作品，就自然地接着聊。不要提这条提醒，也不用道歉。）"
+}
 
 /** 做事中途收到的话，放进工具结果后面给她看。 */
 private fun midTurn(q: String) = "（你在忙的时候，${Memory.userCall}又说：）\n$q\n\n（把这句也放在心上，接着做。）"
@@ -305,7 +318,16 @@ object ChatApi {
     /** 报错点名了某个参数，已经记进 ModelFit：去掉它重新发。 */
     private class Adapted : Exception()
 
-    private class Call(var id: String = "", val name: StringBuilder = StringBuilder(), val args: StringBuilder = StringBuilder())
+    private class Call(var id: String = "", val name: StringBuilder = StringBuilder(), val args: StringBuilder = StringBuilder()) { var told = -1 }
+
+    /** 做作品的参数还在一段段来：告诉聊天页卡片该占位了、写到多少字（每 400 字一次）。 */
+    private suspend fun draft(tools: Tools?, call: Call) {
+        if (tools == null || call.name.isEmpty() || (call.told >= 0 && call.args.length - call.told < 400)) return
+        val n = call.name.toString(); if (n != Works.MAKE && n != Works.EDIT) return
+        call.told = call.args.length
+        val len = call.args.length; val head = call.args.substring(0, minOf(len, 800))
+        withContext(Dispatchers.Main) { tools.onDraft(n, len, head) }
+    }
 
     /** 一次请求的结果。 */
     private class Round(val text: String, val reasoning: String, val calls: List<Call>, val blocks: JSONArray)
@@ -390,8 +412,18 @@ object ChatApi {
             msgs.put(m)
         }
         var round = 0
+        var worked = false
+        var nudged = false
         while (true) {
             val r = once(p, c, model, system, msgs, level, if (round < 5) tools else null, round == 0, onThink, onText)
+            if (r.calls.any { it.name.toString() == Works.MAKE || it.name.toString() == Works.EDIT }) worked = true
+            // 嘴上说「做好了 / 卡在下面」，这一轮却没真的调用做作品的工具：提醒她一次，接着真的去做
+            if (r.calls.isEmpty() && tools != null && round < 5 && !nudged && !worked && Claims.saysDone(r.text)) {
+                nudged = true; round++
+                if (r.text.isNotBlank()) msgs.put(if (anthropic) JSONObject().put("role", "assistant").put("content", r.blocks) else JSONObject().put("role", "assistant").put("content", r.text).apply { if (p.id == "deepseek" && (echo || r.reasoning.isNotEmpty())) put("reasoning_content", r.reasoning) })
+                msgs.put(JSONObject().put("role", "user").put("content", Claims.NUDGE))
+                continue
+            }
             if (r.calls.isEmpty() || tools == null || round >= 5) return
             round++
             if (anthropic) {
@@ -608,7 +640,7 @@ object ChatApi {
                                     "input_json_delta" -> {
                                         val pj = d.optString("partial_json")
                                         partial.getOrPut(i) { StringBuilder() }.append(pj)
-                                        calls[i]?.args?.append(pj)
+                                        calls[i]?.let { cl -> cl.args.append(pj); draft(tools, cl) }
                                     }
                                 }
                             }
@@ -630,6 +662,7 @@ object ChatApi {
                                     if (!f.isNull("name")) call.name.append(f.optString("name"))
                                     if (!f.isNull("arguments")) call.args.append(f.optString("arguments"))
                                 }
+                                draft(tools, call)
                             }
                         }
                     }
