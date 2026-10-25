@@ -228,7 +228,7 @@ class ChatState(val history: ConvStore) {
         job = scope.launch {
             try {
                 // 她看不了图：先请能看图的帮她看一眼（AttachLook.kt），时间线上记一步
-                if (!Attach.vision(p.id)) {
+                if (!Attach.vision(p.id, store.activeModel)) {
                     val pics = history.filter { it.role == "user" && it.files.isNotEmpty() }.takeLast(2).flatMap { it.files }.filter { Attach.isImage(it) && AttachLook.seen(it) == null }
                     if (pics.isNotEmpty()) {
                         val idx = liveSteps.size
@@ -919,7 +919,7 @@ private fun ChatInput(
                     }
                 }
             }
-            AttachTray(chat, AttachLook.sees(provider, AttachLook.store), model)
+            AttachTray(chat, AttachLook.sees(provider, AttachLook.store, model), model)
             val inputFocus = remember { androidx.compose.ui.focus.FocusRequester() }
             LaunchedEffect(chat.focusTick) { if (chat.focusTick > 0) runCatching { inputFocus.requestFocus() } }
             BasicTextField(

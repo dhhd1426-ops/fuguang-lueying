@@ -11,11 +11,11 @@ import java.net.URL
 /**
  * 她用的型号看不了图时（DeepSeek 的聊天型号、Kimi）：先请一个能看图的帮她看一眼，写成一段话存起来，
  * 再把这段话当成「她看到的」交给她。照片旁边存一份 look.txt，以后每轮都用这份，不重复看。
- * 谁来看：DeepSeek 有 Key 就用它的看图型号 deepseek-v4-flash-vision-exp（2026-08 起，官方 OpenAI 格式 image_url）；
+ * 谁来看：DeepSeek 有 Key 就用 deepseek-flash（它本身收图；原来的 deepseek-v4-flash-vision-exp 2026-09 已退役）；
  * 否则用配好 Key 的 Claude / Gemini / GPT / Grok 里排在前面的那家。
  */
 object AttachLook {
-    private const val DS_VISION = "deepseek-v4-flash-vision-exp"
+    private const val DS_VISION = "deepseek-flash"
     /** 聊天页的 store，输入框里判断「有没有人能帮她看」用。 */
     var store: AssistantStore? = null
 
@@ -31,7 +31,7 @@ object AttachLook {
     }
 
     /** 她这会儿能不能看到照片：自己能看，或者有人帮她看。 */
-    fun sees(providerId: String, store: AssistantStore?) = Attach.vision(providerId) || helper(store) != null
+    fun sees(providerId: String, store: AssistantStore?, model: String = "") = Attach.vision(providerId, model) || helper(store) != null
 
     private fun cache(ref: String) = File(Attach.file(ref).parentFile, "look.txt")
 
@@ -63,9 +63,12 @@ object AttachLook {
         val content = JSONArray().put(img).put(JSONObject().put("type", "text").put("text", ASK))
         val body = JSONObject().put("model", model).put("stream", false)
             .put("messages", JSONArray().put(JSONObject().put("role", "user").put("content", content)))
-        if (anthropic) body.put("max_tokens", 1500) else body.put("max_tokens", 1500)
+        // DeepSeek 现在默认先想再答：字多的图（食谱、表格）光想就把 1500 用完，正文是空的 → 「照片没看清」。帮手看图不用想，额度也放宽
+        body.put("max_tokens", 4000)
+        if (p.id == "deepseek") body.put("thinking", JSONObject().put("type", "disabled"))
         val base = c.base.trim().trimEnd('/')
-        val url = if (anthropic) "$base/messages" else base + c.path.trim().let { if (it.startsWith("/")) it else "/$it" }
+        // 路径没填时补上 /chat/completions（以前空着会拼成 base + "/"，直接 404）
+        val url = if (anthropic) "$base/messages" else base + c.path.trim().ifEmpty { "/chat/completions" }.let { if (it.startsWith("/")) it else "/$it" }
         val conn = URL(url).openConnection() as HttpURLConnection
         try {
             conn.requestMethod = "POST"; conn.connectTimeout = 15_000; conn.readTimeout = 90_000; conn.doOutput = true
@@ -75,13 +78,18 @@ object AttachLook {
             conn.outputStream.use { it.write(body.toString().toByteArray()) }
             if (conn.responseCode !in 200..299) {
                 val e = runCatching { conn.errorStream?.bufferedReader()?.use { it.readText() } }.getOrNull().orEmpty()
-                throw IllegalStateException("${conn.responseCode} ${e.take(60)}")
+                throw IllegalStateException("${conn.responseCode} $model ${e.take(120)}")
             }
             val o = JSONObject(conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() })
             if (anthropic) {
                 val arr = o.optJSONArray("content") ?: JSONArray()
                 (0 until arr.length()).mapNotNull { arr.optJSONObject(it) }.filter { it.optString("type") == "text" }.joinToString("") { it.optString("text") }
-            } else o.optJSONArray("choices")?.optJSONObject(0)?.optJSONObject("message")?.optString("content").orEmpty()
+            } else {
+                val ch = o.optJSONArray("choices")?.optJSONObject(0)
+                val text = ch?.optJSONObject("message")?.optString("content").orEmpty()
+                if (text.isBlank()) throw IllegalStateException("$model 没写出来（${ch?.optString("finish_reason").orEmpty()}）")
+                text
+            }
         } finally { runCatching { conn.disconnect() } }
     }
 }

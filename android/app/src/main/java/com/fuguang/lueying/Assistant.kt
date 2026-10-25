@@ -377,7 +377,7 @@ object ChatApi {
         // 做事中途收到新消息时，那一段回复可能没有正文：空的不带，免得供应商报错
         // 你发来的照片、文件：最近两条带东西的原样带上，更早的只说一句
         val withFiles = history.indices.filter { history[it].role == "user" && history[it].files.isNotEmpty() }.takeLast(2).toSet()
-        val sees = Attach.vision(p.id)
+        val sees = Attach.vision(p.id, model)
         history.forEachIndexed { i, it ->
             if (it.role == "assistant" && it.text.isBlank()) return@forEachIndexed
             val body: Any = when {

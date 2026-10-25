@@ -33,8 +33,12 @@ object Attach {
     fun isImage(ref: String): Boolean = name(ref).substringAfterLast('.', "").lowercase() in setOf("jpg", "jpeg", "png", "webp", "heic", "heif", "gif")
     fun size(ref: String): Long = file(ref).length()
 
-    /** 能看图的供应商。看不了图的（DeepSeek 等）只告诉她发来了几张。 */
-    fun vision(providerId: String) = providerId in setOf("claude", "openai", "gemini", "grok")
+    /**
+     * 她这个型号自己能不能看图。DeepSeek：2026-09 起 deepseek-flash 本身就收图（官方 Vision 文档，image_url，只能放在 user 消息里），
+     * 原来的 deepseek-v4-flash-vision-exp 已退役；deepseek-v4-pro 还看不了。看不了的请 AttachLook 帮她看。
+     */
+    fun vision(providerId: String, model: String = "") = providerId in setOf("claude", "openai", "gemini", "grok") ||
+        (providerId == "deepseek" && model.contains("flash", true))
 
     /** 拍照前给相机一个落脚的地方：cache/camera/<时间>.jpg。 */
     fun cameraTarget(ctx: Context): Pair<File, Uri> {
