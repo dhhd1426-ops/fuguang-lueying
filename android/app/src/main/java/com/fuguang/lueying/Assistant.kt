@@ -738,8 +738,12 @@ object ThinkParams {
                 body.put("max_tokens", budget[level] + 16000)
             }
             // DeepSeek 默认就开着思考：关闭一定要明说
-            p.id == "deepseek" -> if (level == 0) body.put("thinking", JSONObject().put("type", "disabled"))
-                else body.put("thinking", JSONObject().put("type", "enabled")).put("reasoning_effort", deepseek[level])
+            // 「自动」不带 reasoning_effort（以前带了空字符串）：交给 DeepSeek 默认的 high；它只认 low / high / max
+            p.id == "deepseek" -> when (level) {
+                0 -> body.put("thinking", JSONObject().put("type", "disabled"))
+                1 -> body.put("thinking", JSONObject().put("type", "enabled"))
+                else -> body.put("thinking", JSONObject().put("type", "enabled")).put("reasoning_effort", deepseek[level])
+            }
             p.id == "siliconflow" -> if (level == 0) body.put("enable_thinking", false)
                 else body.put("enable_thinking", true).put("thinking_budget", budget[level])
             else -> { if (level < 2) return false; body.put("reasoning_effort", effort[level]) }
