@@ -416,7 +416,7 @@ object ChatApi {
         var nudged = false
         while (true) {
             val r = once(p, c, model, system, msgs, level, if (round < 5) tools else null, round == 0, onThink, onText)
-            if (r.calls.any { it.name.toString() == Works.MAKE || it.name.toString() == Works.EDIT }) worked = true
+            if (r.calls.any { it.name.toString() in setOf(Works.MAKE, Works.EDIT, WorkJobs.START) }) worked = true
             // 嘴上说「做好了 / 卡在下面」，这一轮却没真的调用做作品的工具：提醒她一次，接着真的去做
             if (r.calls.isEmpty() && tools != null && round < 5 && !nudged && !worked && Claims.saysDone(r.text)) {
                 nudged = true; round++

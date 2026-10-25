@@ -89,9 +89,22 @@ private fun WorkSlot(id: String?, draft: WorkDraft?, onWork: (String) -> Unit) {
     val rise = remember { Animatable(if (id != null && draft == null) 1f else 0f) }
     LaunchedEffect(Unit) { rise.animateTo(1f, tween(300, easing = Curves.decel)) }
     Box(Modifier.graphicsLayer { alpha = rise.value; translationY = (1f - rise.value) * 8.dp.toPx() }) {
-        AnimatedContent(id, transitionSpec = { fadeIn(tween(240, 40)) togetherWith fadeOut(tween(160)) }, label = "workSlot") { real ->
-            if (real != null) WorkCards(listOf(real), onWork)
-            else if (draft != null) DraftCard(draft)
+        // 后台在写的（WorkJobs）：写着是占位卡，好了是作品卡，没写成是一张能点了重来的卡
+        val job = id?.takeIf { it.startsWith(WorkJobs.PREFIX) }
+        val st = job?.let { WorkJobs.state[WorkJobs.keyOf(it)] }
+        val face: String? = when {
+            job == null -> id
+            st?.done != null -> st.done
+            st == null || st.fail != null -> "fail"
+            else -> null
+        }
+        AnimatedContent(face, transitionSpec = { fadeIn(tween(240, 40)) togetherWith fadeOut(tween(160)) }, label = "workSlot") { real ->
+            when {
+                real == "fail" && job != null -> FailCard(WorkJobs.titleOf(job), st?.fail, WorkJobs.canRetry(job)) { WorkJobs.retry(job) }
+                real != null -> WorkCards(listOf(real), onWork)
+                st != null -> DraftCard(WorkDraft(0, if (st.editing) Works.EDIT else Works.MAKE, st.chars, st.title))
+                draft != null -> DraftCard(draft)
+            }
         }
     }
 }
@@ -124,6 +137,27 @@ private fun DraftCard(d: WorkDraft) {
                 Spacer(Modifier.height(4.dp))
                 val verb = if (d.editing) "正在改" else "正在写"
                 Txt(if (d.chars < 200) "$verb…" else "$verb · 已写 %.1fk 字".format(d.chars / 1000f), Page.MUTED, 12.5.sp, maxLines = 1)
+            }
+        }
+    }
+}
+
+/** 后台没写成：同样的块，说一句原因；这次打开 App 里交代的能点一下重来。 */
+@Composable
+private fun FailCard(title: String, why: String?, canRetry: Boolean, onRetry: () -> Unit) {
+    Pressable(onRetry, Modifier.padding(top = 10.dp, bottom = 12.dp).widthIn(max = 440.dp).fillMaxWidth(), enabled = canRetry, label = "再写一次") { pressed ->
+        Row(
+            Modifier.fillMaxWidth().background(rgba(255, 255, 255, if (pressed) .085f else .055f), RoundedCornerShape(16.dp)).padding(10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(Modifier.size(56.dp).background(Color(0x1FD79A94), RoundedCornerShape(11.dp)), contentAlignment = Alignment.Center) {
+                SvgIcon(WorkIcons.page, Color(0xFFD79A94), 24.dp, stroke = 1.5f)
+            }
+            Spacer(Modifier.width(14.dp))
+            Column(Modifier.weight(1f)) {
+                Txt(title.ifBlank { "作品" }, Page.INK, 16.sp, family = Serif, maxLines = 1)
+                Spacer(Modifier.height(4.dp))
+                Txt(if (canRetry) "没写成" + (why?.let { "（$it）" } ?: "") + " · 点一下再写一次" else "没写完（App 中途关掉了），让她再做一次", Page.MUTED, 12.5.sp, maxLines = 2)
             }
         }
     }

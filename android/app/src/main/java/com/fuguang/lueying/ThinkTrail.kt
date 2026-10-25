@@ -75,7 +75,7 @@ object Trail {
         Skills.OPEN -> "正在翻开本事"; Skills.FIND -> "正在 GitHub 上找本事"; Skills.LEARN -> "等你点头"
         Materials.OPEN -> "正在打开网页"; Materials.LOOK -> "正在看素材"; Gallery.TOOL -> "正在图库里找"; VideoParse.TOOL -> "正在解析抖音"; VideoParse.SAVE -> "正在存视频"
         PanTools.OPEN -> "正在打开网盘分享"; PanTools.GET -> "正在下网盘里的文件"
-        Works.MAKE -> "正在动手做"; Works.EDIT -> "正在改作品"; Works.READ -> "正在看原稿"; "list_todos" -> "正在查看羽的待办"; "read_note" -> "正在读羽的笔记"
+        Works.MAKE -> "正在动手做"; WorkJobs.START -> "正在交代"; Works.EDIT -> "正在改作品"; Works.READ -> "正在看原稿"; "list_todos" -> "正在查看羽的待办"; "read_note" -> "正在读羽的笔记"
         else -> if (Mcp.owns(n)) Mcp.note(n).trimEnd('…') else "正在查阅羽的笔记"
     }
 
@@ -85,6 +85,7 @@ object Trail {
         Skills.LEARN -> if (Skills.has(SkillHub.cand(a.optString("repo"), a.optString("path")))) "学会了「${a.optString("title").trim().take(12)}」" else "没学「${a.optString("title").trim().take(12)}」"
         Works.MAKE -> (if (a.optString("kind") == "board") "搭好了画板" else "做好了作品") + "「${a.optString("title").trim().ifEmpty { "未命名" }.take(20)}」"
         Works.EDIT -> "改好了「${workTitle(a)}」"
+        WorkJobs.START -> (if (a.optString("id").isNotBlank()) "交代了大改" else "交代了作品") + "「${a.optString("title").trim().ifEmpty { "未命名" }.take(20)}」，后台在写"
         Materials.OPEN -> Materials.doneTitle(a.optString("url"))
         Gallery.TOOL -> Gallery.doneTitle(a.optString("query"))
         VideoParse.TOOL, VideoParse.SAVE -> VideoParse.doneTitle(n, a)

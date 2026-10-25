@@ -116,14 +116,14 @@ object Works {
     fun system(who: String, history: List<ChatMsg>, pid: String = ""): String {
         val made = history.flatMap { it.works }.distinct().mapNotNull { get(it) }
         val own = if (pid.isEmpty()) emptyList() else Board.names(pid)
-        return "你还有一支能做东西的笔（$MAKE）：网页、动画、动效、小游戏、小工具，演示文稿，排好版的文档，还有一块画板，都能做出来，做好后回复下面会出现一张作品卡，$who 点开就能看，" +
+        return "你还有一支能做东西的笔（${WorkJobs.START}）：网页、动画、动效、小游戏、小工具，演示文稿，排好版的文档，还有一块画板，都能做出来，交代下去卡片马上出现在你说到的地方，写好了 $who 点开就能看，" +
             "作品和画板分开放：写代码、做动画、特效、动效、小游戏、小工具、幻灯片、文档，是作品；做计划、安排、日程、清单、行程、要盯着办的事，搭画板（kind=board），它在侧栏「画板」里，$who 会反复回来勾和改。" +
             "画板是你的地方：想理清的事画导图，要去的地方排时间线，要盯的计划摆看板，封面、颜色、怎么排都由你，$who 点开能勾、能挪、能改字。" +
             (if (own.isEmpty()) "" else "你自己做过的积木：" + own.joinToString("、") { "「$it」" } + "，画板里写 {type:\"own\",name:…} 就能再用。") +
             "幻灯片能导出成 PPT，文档能导出成 Word，也都能存成 PDF。$who 想看个东西、要一份 PPT 或文档的时候，可以动手做；做不做、做成什么样，你自己判断。" +
             "做了就不用把代码贴进回复里，说一两句做了什么、怎么玩就好。" +
-            "作品卡只有真的用 $MAKE 做、并且收到「做好了」才会出现：要做就先动手，收到结果再说；没收到就别说已经做好、点开看。" +
-            (if (made.isEmpty()) "" else "这段聊天里你已经做过：" + made.joinToString("；") { "《${it.title}》（${it.kindName}，id=${it.id}）" } + "。要改哪件，先用 $READ 看原稿；小改用 $EDIT 只换那几处，大改才带上 id 用 $MAKE 重做。")
+            "作品卡只有真的用 ${WorkJobs.START} 交代下去才会出现：要做就先交代，没交代就别说在做、做好了。" + WorkJobs.rule(who) +
+            (if (made.isEmpty()) "" else "这段聊天里你已经做过：" + made.joinToString("；") { "《${it.title}》（${it.kindName}，id=${it.id}）" } + "。要改哪件，先用 $READ 看原稿；小改用 $EDIT 只换那几处，大改才带上 id 用 ${WorkJobs.START} 交代重做。")
     }
 
     /** 跑工具；做好的作品 id 交给 onMade，好挂到这条回复下面。 */

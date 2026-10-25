@@ -252,7 +252,7 @@ class ChatState(val history: ConvStore) {
                 val web = WebSearch.usable
                 val gallery = Gallery.usable
                 val skills = Skills.specs()
-                val specs = Memory.toolSpecs + Works.specs + Materials.specs + VideoParse.specs + PanTools.specs + (if (gallery) listOf(Gallery.spec) else emptyList()) + skills + (if (web) listOf(WebSearch.spec) else emptyList()) + (if (yu) Yu.tools else emptyList()) + (if (recall) listOf(Recall.spec) else emptyList()) + mcp
+                val specs = Memory.toolSpecs + Works.specs.filter { it.name != Works.MAKE } + WorkJobs.spec + Materials.specs + VideoParse.specs + PanTools.specs + (if (gallery) listOf(Gallery.spec) else emptyList()) + skills + (if (web) listOf(WebSearch.spec) else emptyList()) + (if (yu) Yu.tools else emptyList()) + (if (recall) listOf(Recall.spec) else emptyList()) + mcp
                 val convTitle0 = store0.get(cur)?.title ?: firstSentence(question, 18)
                 val extra = buildString {
                     append("\n\n你手边还有这些东西，需要时再用，不需要就不用：")
@@ -290,6 +290,7 @@ class ChatState(val history: ConvStore) {
                             else if (n == PanTools.OPEN || n == PanTools.GET) PanTools.run(n, a) { l -> if (messages.none { l in it.clips } && l !in pendingClips) pendingClips.add(l) }
                             else if (n == Materials.OPEN || n == Materials.LOOK) Materials.run(n, a, Yu.vision(p.id))
                             else if (n == Skills.OPEN || n == Skills.FIND || n == Skills.LEARN) Skills.run(n, a)
+                            else if (n == WorkJobs.START) WorkJobs.start(a, this@ChatState, store, who.id, history) { ref -> pendingWorks.add(ref); pendingWorkAt.add(partial.length) }
                             else if (n == Works.MAKE || n == Works.READ || n == Works.EDIT) Works.run(n, a, who.id) { id -> made = true; if (id !in pendingWorks) { pendingWorks.add(id); pendingWorkAt.add(workDraft?.at ?: partial.length) } }
                             else if (Mcp.owns(n)) Mcp.run(n, a)
                             else Yu.run(n, a, Yu.vision(p.id)) { refs -> refs.forEach { r -> if (r !in pendingImgs) pendingImgs.add(r) } }
@@ -376,6 +377,16 @@ class ChatState(val history: ConvStore) {
     }
 
     /** 存进消息的工具步骤：中途停下的也算用过。 */
+    /** 后台写好了一件（WorkJobs）：把占位的引用换成真的作品 id，存回那段对话。 */
+    fun swapWork(conv: String?, from: String, to: String) {
+        val i = pendingWorks.indexOf(from); if (i >= 0) pendingWorks[i] = to
+        fun fix(m: ChatMsg) = if (from in m.works) m.copy(works = m.works.map { if (it == from) to else it }) else m
+        if (messages.any { from in it.works }) {
+            messages.indices.forEach { k -> messages[k] = fix(messages[k]) }
+            persist()
+        } else if (conv != null && conv != convId) history.get(conv)?.let { c -> if (c.msgs.any { from in it.works }) history.save(conv, c.msgs.map(::fix)) }
+    }
+
     /** 收成一条她的回复：卡的位置换算到去掉开头空白后的正文里。 */
     private fun replyMsg(text: String): ChatMsg {
         val lead = partial.length - partial.trimStart().length
