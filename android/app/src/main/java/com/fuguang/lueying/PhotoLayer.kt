@@ -85,7 +85,7 @@ fun PhotoLayer() {
     key(o) { PhotoPage(o) }
 }
 
-private object Phase { const val OPEN = 0; const val IDLE = 1; const val CLOSE = 2; const val FLY = 3 }
+private object Look { const val OPEN = 0; const val IDLE = 1; const val CLOSE = 2; const val FLY = 3 }
 
 /**
  * 从小图长出来（360ms），轻点显隐按钮，往下拖跟手缩小、松手过 110dp 或甩下去就缩回小图（260ms 加速）。
@@ -97,12 +97,16 @@ private fun PhotoPage(o: PhotoView.Open) {
     val d = LocalDensity.current
     val scope = rememberCoroutineScope()
     val haptic = LocalHapticFeedback.current
-    val img by produceState<ImageBitmap?>(null, o.ref) { value = withContext(Dispatchers.IO) { load(o.ref) } }
+    // 读不出来（文件被清掉了）就不开，免得留一层看不见的东西挡着
+    val img by produceState<ImageBitmap?>(null, o.ref) {
+        value = withContext(Dispatchers.IO) { load(o.ref) }
+        if (value == null) { PhotoView.hidden = null; PhotoView.open = null }
+    }
     var host by remember { mutableStateOf(Offset.Zero) }
     var box by remember { mutableStateOf(IntSize.Zero) }
     val ink = remember { PhotoInkState(o.lines) }
     var bars by remember { mutableStateOf(false) }
-    var phase by remember { mutableStateOf(Phase.OPEN) }
+    var phase by remember { mutableStateOf(Look.OPEN) }
     val u = remember { Animatable(0f) }
     val bg = remember { Animatable(0f) }
     var from by remember { mutableStateOf<Xf?>(null) }
@@ -128,13 +132,13 @@ private fun PhotoPage(o: PhotoView.Open) {
         return Xf(drag.x * .6f + fw * (1 - sc) / 2, dy + fh * (1 - sc) / 2, sc, 0f, 0f, fw, fh, 0f)
     }
     fun now(): Xf = when (phase) {
-        Phase.OPEN -> (thumb(o.thumb) ?: still).to(still, u.value)
-        Phase.IDLE -> if (drag == Offset.Zero) still else dragged()
+        Look.OPEN -> (thumb(o.thumb) ?: still).to(still, u.value)
+        Look.IDLE -> if (drag == Offset.Zero) still else dragged()
         else -> { val a = from ?: still; a.to(thumb(target) ?: a, u.value) }
     }
     fun close() {
-        if (phase != Phase.IDLE) return
-        from = now(); drag = Offset.Zero; target = o.thumb; phase = Phase.CLOSE; bars = false; ink.editing = false
+        if (phase != Look.IDLE) return
+        from = now(); drag = Offset.Zero; target = o.thumb; phase = Look.CLOSE; bars = false; ink.editing = false
         scope.launch {
             launch { bg.animateTo(0f, tween(260, easing = Curves.accel)) }
             u.snapTo(0f); u.animateTo(1f, tween(260, easing = Curves.accel))
@@ -155,7 +159,7 @@ private fun PhotoPage(o: PhotoView.Open) {
             } else atts.add(made)
             ink.editing = false; ink.ask = false; bars = false
             withTimeoutOrNull(600) { snapshotFlow { PhotoView.spots[made] }.first { it != null } }
-            from = now(); target = made; phase = Phase.FLY; PhotoView.hidden = null
+            from = now(); target = made; phase = Look.FLY; PhotoView.hidden = null
             launch { bg.animateTo(0f, tween(360, easing = Curves.standard)) }
             u.snapTo(0f)
             u.animateTo(1f, tween(440, easing = FlyEase)) { PhotoView.landK = ((value - .7f) / .3f).coerceIn(0f, 1f) }
@@ -176,7 +180,7 @@ private fun PhotoPage(o: PhotoView.Open) {
         launch { bg.animateTo(1f, tween(320, easing = Curves.standard)) }
         launch { delay(120); bars = true }
         u.animateTo(1f, tween(360, easing = OpenEase))
-        phase = Phase.IDLE
+        phase = Look.IDLE
     }
     BackHandler { when { ink.ask -> ink.ask = false; ink.editing -> ink.leave(); else -> close() } }
 
@@ -186,7 +190,7 @@ private fun PhotoPage(o: PhotoView.Open) {
             .onGloballyPositioned { host = it.positionInWindow() }.onSizeChanged { box = it }
             .background(Color(0xFF050406).copy(alpha = bg.value * (1f - pull)))
             .pointerInput(ink.editing, phase) {
-                if (ink.editing || phase != Phase.IDLE) return@pointerInput
+                if (ink.editing || phase != Look.IDLE) return@pointerInput
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false)
                     val vt = VelocityTracker(); vt.addPosition(down.uptimeMillis, down.position)
@@ -215,9 +219,9 @@ private fun PhotoPage(o: PhotoView.Open) {
                     translationX = x.tx; translationY = x.ty; scaleX = x.s; scaleY = x.s
                     clip = true; shape = Crop(x)
                     alpha = when {
-                        phase == Phase.FLY -> 1f - PhotoView.landK
-                        phase == Phase.OPEN && PhotoView.spots[o.thumb] == null -> u.value
-                        phase == Phase.CLOSE && PhotoView.spots[target] == null -> 1f - u.value
+                        phase == Look.FLY -> 1f - PhotoView.landK
+                        phase == Look.OPEN && PhotoView.spots[o.thumb] == null -> u.value
+                        phase == Look.CLOSE && PhotoView.spots[target] == null -> 1f - u.value
                         else -> 1f
                     }
                 },
@@ -225,7 +229,7 @@ private fun PhotoPage(o: PhotoView.Open) {
             Image(im, null, Modifier.fillMaxSize(), contentScale = ContentScale.FillBounds)
             InkCanvas(ink)
         }
-        PhotoBars(ink, viewOn = bars && !ink.editing && phase == Phase.IDLE, editOn = ink.editing && phase == Phase.IDLE,
+        PhotoBars(ink, viewOn = bars && !ink.editing && phase == Look.IDLE, editOn = ink.editing && phase == Look.IDLE,
             onClose = ::close, onShare = { share() }, onDone = ::done)
     }
 }
