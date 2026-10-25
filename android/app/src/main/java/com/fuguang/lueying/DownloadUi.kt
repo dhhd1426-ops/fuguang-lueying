@@ -157,7 +157,7 @@ fun DownloadsLayer() {
     // 打开时才挂上返回：挂得最晚，排在内置浏览器等别的返回前面（以前浏览器先接走了返回手势）
     if (open) BackHandler { Downloads.open = false }
     // 关掉下载页时，正在放的也停掉
-    LaunchedEffect(open) { if (!open) DlPlay.close() }
+    LaunchedEffect(open) { if (!open) { DlPlay.close(); risen.clear() } }
     // 开着下载页、刚关上：下好的都算看过（侧栏那颗杏色小点灭掉）
     LaunchedEffect(open, Downloads.list.count { it.state == 3 }) { if (open) DlSeen.mark() }
     val k by animateFloatAsState(if (open) 1f else 0f, tween(if (open) 340 else 220, easing = if (open) Curves.decel else Curves.accel), label = "dls")
@@ -193,10 +193,14 @@ fun DownloadsLayer() {
     }
 }
 
+/** 这次打开下载页已经浮出过的行：滑出屏幕再滑回来不再淡入一遍（以前上下滑会像刷新了一下）。关掉下载页清空。 */
+private val risen = HashSet<String>()
+
 @Composable
 private fun DlRow(d: Dl, i: Int, onAct: (android.net.Uri, String) -> Unit) {
-    val rise = remember { Animatable(0f) }
-    LaunchedEffect(Unit) { delay(40L * i.coerceAtMost(8)); rise.animateTo(1f, tween(360, easing = Curves.decel)) }
+    val first = remember { risen.add(d.id) }
+    val rise = remember { Animatable(if (first) 0f else 1f) }
+    LaunchedEffect(Unit) { if (first) { delay(40L * i.coerceAtMost(8)); rise.animateTo(1f, tween(360, easing = Curves.decel)) } }
     val ctx = LocalContext.current
     Column(
         Modifier.graphicsLayer { alpha = rise.value; translationY = (1f - rise.value) * 8.dp.toPx() }.fillMaxWidth()
