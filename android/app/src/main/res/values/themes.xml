@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Vignette</string>
-    <color name="icon_ground">#000000</color>
+    <color name="icon_ground">#F5F3ED</color>
     <color name="ground">#343C44</color>
     <color name="ink">#FAF5EE</color>
 
