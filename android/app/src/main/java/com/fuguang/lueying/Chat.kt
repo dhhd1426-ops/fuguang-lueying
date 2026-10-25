@@ -228,8 +228,9 @@ class ChatState(val history: ConvStore) {
         val who = Memory.active
         val history = messages.toList()
         // “自动”：发出前按这条消息定一个具体的档
-        // DeepSeek 只有 low / high / max 三档，low 想得又短又碎；自动档要想就按它的默认 high 想（RikkaHub 也是不带档位、用默认）
-        val level = store.thinkLevel.let { if (it == 1) autoThinkLevel(history.lastOrNull { m -> m.role == "user" }?.text.orEmpty()).let { a -> if (a == 2 && store.activeProvider == "deepseek") 3 else a } else it }
+        // DeepSeek 不猜：短句、讲故事这类以前被猜成不想（0）或 low，想得又短又碎甚至没想。
+        // 照 RikkaHub，自动档只开思考、不带档位，用它默认的 high（ThinkParams 第 1 档）
+        val level = store.thinkLevel.let { if (it == 1 && store.activeProvider != "deepseek") autoThinkLevel(history.lastOrNull { m -> m.role == "user" }?.text.orEmpty()) else it }
         ChatApi.temperature = who.temp
         ChatApi.topP = if (who.topOn) who.top else null
         job = scope.launch {

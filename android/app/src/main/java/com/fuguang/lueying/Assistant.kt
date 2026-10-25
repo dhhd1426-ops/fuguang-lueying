@@ -756,7 +756,7 @@ object ThinkParams {
 fun thinkNote(providerId: String, level: Int): String {
     val head = listOf("不思考，直接回答", "闲聊不想，难题才想", "略想一下", "想得比较充分", "长链推理", "想到最深")[level]
     if (level == 0) return head
-    if (level == 1) return "$head · 每条消息由 App 判断"
+    if (level == 1) return if (providerId == "deepseek") "每次都想，想多少由 DeepSeek 定 · 默认 high" else "$head · 每条消息由 App 判断"
     val k = when (provider(providerId).let { if (it.kind == "anthropic") "anthropic" else it.id }) {
         "deepseek" -> "DeepSeek " + listOf("", "", "low", "high", "high（同中度）", "max")[level]
         "anthropic", "siliconflow" -> "思考预算 " + listOf("", "", "2k", "8k", "16k", "32k")[level]
