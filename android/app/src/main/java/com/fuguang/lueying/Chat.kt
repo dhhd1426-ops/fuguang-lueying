@@ -129,7 +129,7 @@ class ChatState(val history: ConvStore) {
     /** 每张卡插在正文（partial）第几个字后面：她动手做的时候写到哪儿，卡就在哪儿。 */
     val pendingWorkAt = mutableStateListOf<Int>()
     /** 正在写 / 正在改的那件：卡先占好位置，写好了原地换成作品卡。 */
-    var draft by mutableStateOf<WorkDraft?>(null)
+    var workDraft by mutableStateOf<WorkDraft?>(null)
     /** 这轮她解析 / 存过、这条对话里还没有卡的抖音：挂到她这条回复上。 */
     val pendingClips = mutableStateListOf<String>()
     var error by mutableStateOf<String?>(null)
@@ -222,7 +222,7 @@ class ChatState(val history: ConvStore) {
             return
         }
         busy = true; thinking = false; thinkText = ""; partial = ""; shown = 0f; streamDone = false
-        pendingImgs.clear(); pendingWorks.clear(); pendingWorkAt.clear(); draft = null; pendingClips.clear(); liveSteps.clear()
+        pendingImgs.clear(); pendingWorks.clear(); pendingWorkAt.clear(); workDraft = null; pendingClips.clear(); liveSteps.clear()
         val who = Memory.active
         val history = messages.toList()
         // “自动”：发出前按这条消息定一个具体的档
@@ -280,7 +280,7 @@ class ChatState(val history: ConvStore) {
                             val idx = liveSteps.size
                             liveSteps.add(ToolStep(thinkText.length, n, Trail.liveTitle(n), Trail.detail(n, a), done = false))
                             var made = n != Works.MAKE && n != Works.EDIT
-                            if (!made && draft == null) draft = WorkDraft(partial.length, n, 0, WorkDraft.title(n, a.toString()))
+                            if (!made && workDraft == null) workDraft = WorkDraft(partial.length, n, 0, WorkDraft.title(n, a.toString()))
                             try {
                             if (n == Memory.REMEMBER || n == Memory.FORGET) Memory.runTool(who, n, a, cur.orEmpty(), convTitle0)
                             else if (n == Recall.TOOL) Recall.run(store0, cur, a.optString("query"))
@@ -290,7 +290,7 @@ class ChatState(val history: ConvStore) {
                             else if (n == PanTools.OPEN || n == PanTools.GET) PanTools.run(n, a) { l -> if (messages.none { l in it.clips } && l !in pendingClips) pendingClips.add(l) }
                             else if (n == Materials.OPEN || n == Materials.LOOK) Materials.run(n, a, Yu.vision(p.id))
                             else if (n == Skills.OPEN || n == Skills.FIND || n == Skills.LEARN) Skills.run(n, a)
-                            else if (n == Works.MAKE || n == Works.READ || n == Works.EDIT) Works.run(n, a, who.id) { id -> made = true; if (id !in pendingWorks) { pendingWorks.add(id); pendingWorkAt.add(draft?.at ?: partial.length) } }
+                            else if (n == Works.MAKE || n == Works.READ || n == Works.EDIT) Works.run(n, a, who.id) { id -> made = true; if (id !in pendingWorks) { pendingWorks.add(id); pendingWorkAt.add(workDraft?.at ?: partial.length) } }
                             else if (Mcp.owns(n)) Mcp.run(n, a)
                             else Yu.run(n, a, Yu.vision(p.id)) { refs -> refs.forEach { r -> if (r !in pendingImgs) pendingImgs.add(r) } }
                             } catch (e: kotlinx.coroutines.CancellationException) {
@@ -302,12 +302,12 @@ class ChatState(val history: ConvStore) {
                                 // 没做成的作品如实标出来，不显示「做好了」
                                 val t = if (made) Trail.doneTitle(n, a) else Trail.failTitle(n, a)
                                 if (idx < liveSteps.size) liveSteps[idx] = liveSteps[idx].copy(title = t, done = true)
-                                if (n == Works.MAKE || n == Works.EDIT) draft = null
+                                if (n == Works.MAKE || n == Works.EDIT) workDraft = null
                             }
                         },
                         { },
                         inbox = { takeQueue() },
-                        onDraft = { n, len, head -> val d = draft; draft = WorkDraft(d?.at ?: partial.length, n, len, WorkDraft.title(n, head) ?: d?.title) },
+                        onDraft = { n, len, head -> val d = workDraft; workDraft = WorkDraft(d?.at ?: partial.length, n, len, WorkDraft.title(n, head) ?: d?.title) },
                     ) else null,
                     fallback = if (specs.isNotEmpty()) ({
                         listOfNotNull(
@@ -336,7 +336,7 @@ class ChatState(val history: ConvStore) {
                 error = e.message ?: "出错了"
             } finally {
                 val stopped = job?.isCancelled == true
-                partial = ""; shown = 0f; busy = false; thinking = false; thinkText = ""; pendingImgs.clear(); pendingWorks.clear(); pendingWorkAt.clear(); draft = null; pendingClips.clear(); liveSteps.clear()
+                partial = ""; shown = 0f; busy = false; thinking = false; thinkText = ""; pendingImgs.clear(); pendingWorks.clear(); pendingWorkAt.clear(); workDraft = null; pendingClips.clear(); liveSteps.clear()
                 persist()
                 // 这轮结束还有排着的话：接着发（你自己点停止的不发，出错的也不发，留着等你）
                 val go = sendNowAfterStop || (!stopped && error == null)
@@ -370,7 +370,7 @@ class ChatState(val history: ConvStore) {
         if (partial.isNotBlank() || pendingWorks.isNotEmpty() || pendingClips.isNotEmpty() || thinkText.isNotBlank() || liveSteps.isNotEmpty())
             messages.add(replyMsg(partial.trim()))
         messages.add(ChatMsg("user", q))
-        partial = ""; shown = 0f; thinkText = ""; liveSteps.clear(); pendingImgs.clear(); pendingWorks.clear(); pendingWorkAt.clear(); draft = null; pendingClips.clear()
+        partial = ""; shown = 0f; thinkText = ""; liveSteps.clear(); pendingImgs.clear(); pendingWorks.clear(); pendingWorkAt.clear(); workDraft = null; pendingClips.clear()
         persist(); sent++
         return q
     }
@@ -701,7 +701,7 @@ private fun Conversation(
                         if (chat.partial.isEmpty()) ThinkingMotion("", Modifier.padding(start = 2.dp, top = 6.dp))   // 没开深度思考也没用工具：只有三点
                     } else ThinkRow(chat.thinkText, steps, trailLive) { onThink(-1) }
                     SkillAskHost(compact)
-                    ReplyFlow(chat.partial.take(ceil(chat.shown).toInt()), chat.pendingWorks.toList(), chat.pendingWorkAt.toList(), chat.draft, chat.shown < chat.partial.length + 1, onWork) { t, f -> Reply(t, compact, f) }
+                    ReplyFlow(chat.partial.take(ceil(chat.shown).toInt()), chat.pendingWorks.toList(), chat.pendingWorkAt.toList(), chat.workDraft, chat.shown < chat.partial.length + 1, onWork) { t, f -> Reply(t, compact, f) }
                     NoteImageRow(chat.pendingImgs.toList(), onImage)
                     ClipCards(chat.pendingClips.toList())
                 }
