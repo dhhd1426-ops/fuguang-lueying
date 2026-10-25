@@ -116,6 +116,8 @@ class ChatState(val history: ConvStore) {
     var thinking by mutableStateOf(false)
     /** 正在进行的这轮思考原文。 */
     var thinkText by mutableStateOf("")
+    /** 这一轮的思考最后收进了哪条消息（-1 = 还没有）；开着思考抽屉时这轮结束，抽屉接着看那条。 */
+    var landed by mutableIntStateOf(-1)
     /** 她在做事时你发的话：先排在聊天末尾，她做完手上一步就收到；这轮结束还没收到就接着发。 */
     val queue = mutableStateListOf<String>()
     /** 点了「立即发送」：停下这轮后马上把排着的发出去。 */
@@ -221,7 +223,7 @@ class ChatState(val history: ConvStore) {
             error = "还没设置好 ${c.name} 的密钥或模型"
             return
         }
-        busy = true; thinking = false; thinkText = ""; partial = ""; shown = 0f; streamDone = false
+        busy = true; thinking = false; thinkText = ""; partial = ""; shown = 0f; streamDone = false; landed = -1
         pendingImgs.clear(); pendingWorks.clear(); pendingWorkAt.clear(); workDraft = null; pendingClips.clear(); liveSteps.clear()
         val who = Memory.active
         val history = messages.toList()
@@ -390,6 +392,7 @@ class ChatState(val history: ConvStore) {
     /** 收成一条她的回复：卡的位置换算到去掉开头空白后的正文里。 */
     private fun replyMsg(text: String): ChatMsg {
         val lead = partial.length - partial.trimStart().length
+        landed = messages.size
         return ChatMsg("assistant", text, thinkText, pendingImgs.toList(), works = pendingWorks.toList(), steps = doneSteps(), clips = pendingClips.toList(),
             workAt = pendingWorkAt.map { (it - lead).coerceIn(0, text.length) })
     }
@@ -552,6 +555,13 @@ fun ChatPage(
         }
         LiquidPlusLayer(plus) { plus.pick(it) }
         ModelDrawer(picker, store, compact, onClose = { picker = false })
+        // 正在看这一轮的思考时她想完了：接着看收进去的那条；什么都没留下就收起抽屉
+        LaunchedEffect(chat.busy) {
+            if (!chat.busy && thinkOpen && thinkOf < 0) {
+                val i = chat.landed
+                if (i in chat.messages.indices && (chat.messages[i].think.isNotBlank() || chat.messages[i].steps.isNotEmpty())) thinkOf = i else thinkOpen = false
+            }
+        }
         val liveThink = thinkOf < 0 || thinkOf >= chat.messages.size
         ThinkDrawer(
             open = thinkOpen,
