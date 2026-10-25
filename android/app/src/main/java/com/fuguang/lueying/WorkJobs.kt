@@ -90,8 +90,9 @@ object WorkJobs {
                     onUse = { },
                     onDraft = { _, len, _ -> state[key]?.let { s -> state[key] = s.copy(chars = len) } },
                 )
-                val level = if (o.store.thinkLevel == 0) 0 else 2
-                ChatApi.stream(p, c, o.store.activeModel, system(editId), listOf(ChatMsg("user", order(o, title, editId))), level, onThink = { }, tools = tools) {
+                // 后台写作品：关着思考就不想，否则用这一家最低的一档，快一点
+                val effort = o.store.effort()?.let { e -> if (e == Effort.OFF) e else Effort.spec(o.store.activeProvider, o.store.activeModel).levels.first { it.value != Effort.OFF }.value }
+                ChatApi.stream(p, c, o.store.activeModel, system(editId), listOf(ChatMsg("user", order(o, title, editId))), effort, onThink = { }, tools = tools) {
                     if (made != null) throw CancellationException("写好了")
                 }
             } catch (e: CancellationException) {

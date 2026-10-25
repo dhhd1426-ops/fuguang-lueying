@@ -96,22 +96,28 @@ private val OnApricot = Color(0xFF2A211B)
 private val Deep = Color(13, 16, 22)
 
 /**
- * 深度思考六档。
+ * 深度思考档位（跟着模型走：档位来自 Effort.spec，几档就分几格；换模型时色块流到新位置）。
  * 关闭到复杂：液体色块。点哪档去哪档，朝前那条边先到、后面那条边跟上，拉长时变细、圆角变大；
  *   按住能拖，松手按手速吸到最近一档；字是两层，色块流过时一点点被染成深色。关闭时色块是灰的。
  * max（照 dongxiaosheji/max-rainbow）：色块向两头流开铺满整条，彩虹从左往右铺开，其他档位名依次淡出，
  *   只剩右端的 max 字样；彩虹和速度线画在色块里的同一张画布上，被圆角裁住，不出框。离开 max 淡回杏色。
  */
 @Composable
-fun ThinkSegment(level: Int, providerId: String, onChange: (Int) -> Unit) {
+fun ThinkSegment(spec: EffortSpec, value: String?, onChange: (String) -> Unit) {
+    if (spec.levels.isEmpty()) { NoLevels(spec); return }
+    val n = spec.levels.size
+    val top = n - 1
+    val maxAt = spec.levels.indexOfFirst { it.value == "max" }
+    val names = spec.levels.map { it.label }
+    val level = spec.index(value)
     val density = LocalDensity.current
     val haptic = LocalHapticFeedback.current
     val scope = rememberCoroutineScope()
     val pad = with(density) { 3.dp.toPx() }
     var width by remember { mutableFloatStateOf(0f) }
-    val cw = if (width > 0f) (width - pad * 2) / 6f else 0f
+    val cw = if (width > 0f) (width - pad * 2) / n else 0f
     val saved by rememberUpdatedState(level)
-    val change by rememberUpdatedState(onChange)
+    val change by rememberUpdatedState { i: Int -> onChange(spec.levels[i].value) }
 
     // 色块左右两条边，单位像素
     val left = remember { Animatable(0f) }
@@ -121,9 +127,10 @@ fun ThinkSegment(level: Int, providerId: String, onChange: (Int) -> Unit) {
     var pressed by remember { mutableStateOf(false) }
     // 正在显示的档：拖动时随手指变，松手才真正保存
     var shown by remember { mutableIntStateOf(level) }
+    if (shown > top) shown = level
 
     // 每一档色块停稳的位置：max 铺满整条
-    fun spanOf(i: Int): Pair<Float, Float> = if (i == 5) pad to pad + 6 * cw else (pad + i * cw) to (pad + (i + 1) * cw)
+    fun spanOf(i: Int): Pair<Float, Float> = if (i == maxAt) pad to pad + n * cw else (pad + i * cw) to (pad + (i + 1) * cw)
 
     suspend fun flowTo(i: Int) {
         if (cw <= 0f) return
@@ -138,7 +145,7 @@ fun ThinkSegment(level: Int, providerId: String, onChange: (Int) -> Unit) {
     }
 
     // 外面换了档（或第一次量到宽度）
-    LaunchedEffect(level, cw) {
+    LaunchedEffect(level, cw, n) {
         if (cw <= 0f) return@LaunchedEffect
         if (!placed) {
             val (a, b) = spanOf(level); left.snapTo(a); right.snapTo(b); placed = true
@@ -149,8 +156,8 @@ fun ThinkSegment(level: Int, providerId: String, onChange: (Int) -> Unit) {
         snapshotFlow { shown }.drop(1).collect { haptic.performHapticFeedback(HapticFeedbackType.SegmentTick) }
     }
 
-    val isMax = shown == 5 && !dragging
-    val off = shown == 0
+    val isMax = shown == maxAt && !dragging
+    val off = spec.levels.getOrNull(shown)?.value == Effort.OFF
     val blockColor by animateColorAsState(if (off) veil(.2f) else Apricot, tween(260), label = "blk")
     val inkOn by animateColorAsState(if (off) Page.ink else OnApricot, tween(260), label = "ink")
     val squeeze by animateFloatAsState(if (pressed && !dragging) .955f else 1f, spring(dampingRatio = .6f, stiffness = 900f), label = "press")
@@ -158,7 +165,7 @@ fun ThinkSegment(level: Int, providerId: String, onChange: (Int) -> Unit) {
     // 彩虹画布：进 max 0.1 秒显出，离开 0.45 秒淡回杏色
     val fxAlpha by animateFloatAsState(if (isMax) 1f else 0f, tween(if (isMax) 100 else 450), label = "fx")
     // 档位名：进 max 从左到右依次淡出（190ms 起，每个隔 70ms，各 250ms）；离开 200ms 恢复
-    val labelAlpha = List(6) { j ->
+    val labelAlpha = List(n) { j ->
         animateFloatAsState(
             if (isMax) 0f else 1f,
             if (isMax) tween(250, delayMillis = 190 + 70 * j) else tween(200),
@@ -194,7 +201,7 @@ fun ThinkSegment(level: Int, providerId: String, onChange: (Int) -> Unit) {
         val r = right.value
         val w = (r - l).coerceAtLeast(1f)
         // 拉长是相对停稳时的宽度算的：铺满 max 时本来就宽，不算拉长；从 max 收回时才变细
-        val rest = if (shown == 5 && !dragging) cw * 6 else cw
+        val rest = if (shown == maxAt && !dragging) cw * n else cw
         val stretch = if (rest > 0f) (w / rest - 1f).coerceAtLeast(0f) else 0f
         val thin = min(stretch * 2.2.dp.toPx(), 2.6.dp.toPx())
         val h0 = size.height - pad * 2 - thin * 2
@@ -224,18 +231,18 @@ fun ThinkSegment(level: Int, providerId: String, onChange: (Int) -> Unit) {
                 },
                 contentAlignment = Alignment.CenterEnd,
                 label = "level",
-            ) { if (it == 5) RainbowWord("max") else Txt(THINK_LEVELS[it], if (it == 0) Page.muted else Page.accent, 13.sp) }
+            ) { i -> val l = spec.levels.getOrNull(i); if (i == maxAt) RainbowWord("max") else Txt(l?.let { if (it.value == Effort.OFF) "不思考" else it.label }.orEmpty(), if (l?.value == Effort.OFF) Page.muted else Page.accent, 13.sp) }
         }
         Spacer(Modifier.height(12.dp))
         Box(
             Modifier.fillMaxWidth().height(44.dp)
                 .background(veil(.05f), RoundedCornerShape(12.dp))
                 .onSizeChanged { width = it.width.toFloat() }
-                .semantics { contentDescription = "深度思考：" + THINK_LEVELS[shown] }
-                .pointerInput(cw) {
+                .semantics { contentDescription = "深度思考：" + names.getOrElse(shown) { "" } }
+                .pointerInput(cw, n) {
                     if (cw <= 0f) return@pointerInput
                     val lo = pad + cw / 2
-                    val hi = pad + cw * 5.5f
+                    val hi = pad + cw * (n - .5f)
                     awaitEachGesture {
                         val down = awaitFirstDown(requireUnconsumed = false)
                         pressed = true
@@ -265,7 +272,7 @@ fun ThinkSegment(level: Int, providerId: String, onChange: (Int) -> Unit) {
                                 val slow = spring<Float>(dampingRatio = 1f, stiffness = 420f)
                                 scope.launch { right.animateTo(cx + cw / 2, if (toRight) fast else slow) }
                                 scope.launch { left.animateTo(cx - cw / 2, if (toRight) slow else fast) }
-                                shown = ((cx - pad) / cw).toInt().coerceIn(0, 5)
+                                shown = ((cx - pad) / cw).toInt().coerceIn(0, top)
                             }
                         }
                         pressed = false
@@ -273,8 +280,8 @@ fun ThinkSegment(level: Int, providerId: String, onChange: (Int) -> Unit) {
                             // 松手时顺着手速往前送一点，再吸到最近一档
                             val v = runCatching { vt.calculateVelocity().x }.getOrDefault(0f)
                             val c = (left.value + right.value) / 2 + v * .06f
-                            ((c - pad) / cw).toInt().coerceIn(0, 5)
-                        } else ((x0 - pad) / cw).toInt().coerceIn(0, 5)
+                            ((c - pad) / cw).toInt().coerceIn(0, top)
+                        } else ((x0 - pad) / cw).toInt().coerceIn(0, top)
                         dragging = false
                         shown = i
                         scope.launch { flowTo(i) }
@@ -297,9 +304,9 @@ fun ThinkSegment(level: Int, providerId: String, onChange: (Int) -> Unit) {
                 clipPath(Path().apply { addRoundRect(block()) }) { fx.draw(this) }
             }
             // 档位名：底层灰字；上层深色字只露出色块盖住的部分
-            SegmentLabels(Page.muted, labelAlpha, Modifier.fillMaxSize())
+            SegmentLabels(names, Page.muted, labelAlpha, Modifier.fillMaxSize())
             SegmentLabels(
-                inkOn, labelAlpha,
+                names, inkOn, labelAlpha,
                 Modifier.fillMaxSize().drawWithContent {
                     if (!placed) return@drawWithContent
                     clipPath(Path().apply { addRoundRect(block()) }) { this@drawWithContent.drawContent() }
@@ -325,15 +332,29 @@ fun ThinkSegment(level: Int, providerId: String, onChange: (Int) -> Unit) {
                     .using(SizeTransform(clip = false))
             },
             label = "note",
-        ) { Txt(thinkNote(providerId, it), Page.muted, 12.sp, Modifier.padding(start = 2.dp), maxLines = 1) }
+        ) { i -> Txt(Effort.note(spec, spec.levels.getOrNull(i)?.value ?: ""), Page.muted, 12.sp, Modifier.padding(start = 2.dp), maxLines = 1) }
+    }
+}
+
+/** 不收档位的型号：只有一句话，不放档位条。 */
+@Composable
+private fun NoLevels(spec: EffortSpec) {
+    Column(
+        Modifier.fillMaxWidth()
+            .background(veil(.06f), RoundedCornerShape(14.dp))
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+    ) {
+        Txt("深度思考", Page.ink, 15.sp)
+        Spacer(Modifier.height(6.dp))
+        Txt(spec.note, Page.muted, 12.sp)
     }
 }
 
 @Composable
-private fun SegmentLabels(color: Color, alphas: List<Float>, modifier: Modifier) {
+private fun SegmentLabels(names: List<String>, color: Color, alphas: List<Float>, modifier: Modifier) {
     Row(modifier.padding(horizontal = 3.dp), verticalAlignment = Alignment.CenterVertically) {
-        THINK_LEVELS.forEachIndexed { j, l ->
-            Box(Modifier.weight(1f).graphicsLayer { alpha = alphas[j] }, contentAlignment = Alignment.Center) {
+        names.forEachIndexed { j, l ->
+            Box(Modifier.weight(1f).graphicsLayer { alpha = alphas.getOrElse(j) { 1f } }, contentAlignment = Alignment.Center) {
                 Txt(l, color, 13.sp, weight = FontWeight.Medium, maxLines = 1)
             }
         }

@@ -137,12 +137,23 @@ object Trail {
 }
 
 /** 时间线上的一个节点。key 让「思考中」长成那段总结时是同一个节点。 */
-class TrailItem(val key: String, val tool: ToolStep?, val title: String, val detail: String, val live: Boolean, val placeholder: Boolean = false)
+class TrailItem(val key: String, val tool: ToolStep?, val title: String, val detail: String, val live: Boolean, val placeholder: Boolean = false, val tidy: Boolean = false)
 
 private val sentenceEnd = Regex("[。！？!?\\n]")
 
-/** 把思考原文和工具排成一条时间线。live：这轮还在想（还没开始写回答）。 */
-fun trailItems(raw: String, steps: List<ToolStep>, live: Boolean): List<TrailItem> {
+/** 想完、整理好了：每段整理出的几步，工具排回原来的位置。 */
+private fun tidyItems(tidy: List<List<TidyStep>>, steps: List<ToolStep>): List<TrailItem> {
+    val out = mutableListOf<TrailItem>()
+    tidy.forEachIndexed { i, chunk ->
+        chunk.forEachIndexed { j, st -> out += TrailItem("d$i-$j", null, st.title, st.detail, false, tidy = true) }
+        steps.getOrNull(i)?.let { out += TrailItem("s$i", it, it.title, it.detail, !it.done) }
+    }
+    return out
+}
+
+/** 把思考原文和工具排成一条时间线。live：这轮还在想（还没开始写回答）。tidy：整理好的步骤（想完才有）。 */
+fun trailItems(raw: String, steps: List<ToolStep>, live: Boolean, tidy: List<List<TidyStep>>? = null): List<TrailItem> {
+    if (!live && tidy != null) return tidyItems(tidy, steps)
     val segs = thinkSegments(raw)
     var from = 0
     val starts = segs.map { s -> val i = raw.indexOf(s, from).let { if (it < 0) from else it }; from = i + s.length; i }
@@ -181,7 +192,8 @@ private val TrailLive = Color(0xFFD97757)
 /** 聊天里的一行：进行中三点 + 流光字，结束换时钟图标；点开看过程。 */
 @Composable
 fun ThinkRow(raw: String, steps: List<ToolStep>, live: Boolean, onClick: () -> Unit) {
-    val items = remember(raw, steps, live) { trailItems(raw, steps, live) }
+    val tidy = if (live) null else ThinkTidy.get(raw, steps.map { it.at })
+    val items = remember(raw, steps, live, tidy) { trailItems(raw, steps, live, tidy) }
     if (items.isEmpty()) return
     val text = headline(items)
     Pressable(onClick, Modifier.padding(bottom = 10.dp), label = "查看思考过程") { pressed ->
@@ -249,8 +261,11 @@ fun ThinkDrawer(open: Boolean, raw: String, steps: List<ToolStep>, live: Boolean
                 }
             }
         }
-        val items = trailItems(raw, steps, live)
-        val tools = steps.size
+        val cuts = steps.map { it.at }
+        // 想完了还没整理：打开抽屉时请帮手整理；整理好之前先显示原文
+        LaunchedEffect(open, live, raw) { if (open && !live) ThinkTidy.request(raw, cuts, AttachLook.store) }
+        val tidy = if (live) null else ThinkTidy.get(raw, cuts)
+        val items = trailItems(raw, steps, live, tidy)
         Column(
             Modifier.align(Alignment.BottomCenter).widthIn(max = 640.dp).fillMaxWidth().height(maxHeight * .92f)
                 .graphicsLayer { translationY = off }
@@ -267,11 +282,10 @@ fun ThinkDrawer(open: Boolean, raw: String, steps: List<ToolStep>, live: Boolean
                     Pressable(onClose, Modifier.align(Alignment.CenterStart), label = "关闭") { _ ->
                         SvgIcon(Icons.close, Page.ink, 20.dp, modifier = Modifier.padding(6.dp))
                     }
-                    Crossfade(if (tools > 0) "用了 $tools 个工具" else "摘要", Modifier.align(Alignment.Center), label = "title") { t ->
-                        Txt(t, Page.ink, 16.5.sp, Modifier.padding(horizontal = 44.dp), family = Serif, weight = FontWeight.SemiBold, maxLines = 1)
-                    }
+                    // 照 Claude App：标题就是「摘要」，常规字重
+                    Txt("摘要", Page.ink, 17.sp, Modifier.align(Alignment.Center).padding(horizontal = 44.dp), maxLines = 1)
                 }
-                Spacer(Modifier.height(14.dp))
+                Spacer(Modifier.height(20.dp))
             }
             val scroll = rememberScrollState()
             val opened = remember { mutableStateOf(setOf<String>()) }
@@ -280,10 +294,10 @@ fun ThinkDrawer(open: Boolean, raw: String, steps: List<ToolStep>, live: Boolean
                 withFrameNanos { }
                 if (near) scroll.animateScrollTo(scroll.maxValue)
             }
-            Column(Modifier.weight(1f).nestedScroll(nested).verticalScroll(scroll).padding(start = 22.dp, end = 22.dp, top = 6.dp, bottom = 40.dp)) {
+            Column(Modifier.weight(1f).nestedScroll(nested).verticalScroll(scroll).padding(start = 24.dp, end = 24.dp, top = 4.dp, bottom = 40.dp)) {
                 items.forEachIndexed { i, it ->
                     androidx.compose.runtime.key(it.key) {
-                        TrailNode(it, i == items.lastIndex, it.key in opened.value) {
+                        TrailNode(it, i == items.lastIndex, it.key in opened.value, delay = if (it.tidy) i * 60 else 0) {
                             opened.value = if (it.key in opened.value) opened.value - it.key else opened.value + it.key
                         }
                     }
@@ -295,31 +309,33 @@ fun ThinkDrawer(open: Boolean, raw: String, steps: List<ToolStep>, live: Boolean
 
 /** 一个节点：思考是小圆点（正在想的是橙点），工具是方块图标（正在用时杏色呼吸）；点一下原地展开全文。 */
 @Composable
-private fun TrailNode(it: TrailItem, last: Boolean, open: Boolean, onToggle: () -> Unit) {
+private fun TrailNode(it: TrailItem, last: Boolean, open: Boolean, delay: Int = 0, onToggle: () -> Unit) {
     val enter = remember { Animatable(0f) }
-    LaunchedEffect(Unit) { enter.animateTo(1f, tween(360, easing = Curves.standard)) }
+    LaunchedEffect(Unit) { enter.animateTo(1f, tween(360, delayMillis = delay, easing = Curves.standard)) }
     val dot by animateColorAsState(if (it.live) TrailLive else veil(.32f), tween(400), label = "dot")
     val tint by animateColorAsState(if (it.live) TrailApricot else Page.muted, tween(400), label = "tint")
     val breath = rememberInfiniteTransition(label = "breath").animateFloat(.12f, .2f, infiniteRepeatable(tween(800), RepeatMode.Reverse), label = "b")
     Pressable({ if (!it.live) onToggle() }, Modifier.fillMaxWidth().graphicsLayer { alpha = enter.value; translationY = (1f - enter.value) * 6.dp.toPx() }, label = it.title) { pressed ->
         Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min).background(if (pressed) veil(.04f) else Color.Transparent, RoundedCornerShape(12.dp))) {
+            // 照 Claude App 图二：圆点对齐标题第一行，竖线从圆点下面连到下一步；标题是结论，下面是理由，整理好的不截断
             Box(Modifier.width(26.dp).fillMaxHeight()) {
-                val top = if (it.tool != null) 32.dp else 21.dp
-                if (!last) Box(Modifier.padding(top = top, bottom = 4.dp).align(Alignment.TopCenter).width(1.dp).fillMaxHeight().background(veil(.12f)))
+                val top = if (it.tool != null) 32.dp else 22.dp
+                if (!last) Box(Modifier.padding(top = top, bottom = 4.dp).align(Alignment.TopCenter).width(1.dp).fillMaxHeight().background(veil(.13f)))
                 if (it.tool != null) {
                     Box(
                         Modifier.align(Alignment.TopCenter).size(26.dp)
                             .background(if (it.live) TrailApricot.copy(alpha = breath.value) else veil(.06f), RoundedCornerShape(8.dp)),
                         contentAlignment = Alignment.Center,
                     ) { SvgIcon(Trail.icon(it.tool.name), tint, 15.dp, stroke = 1.5f) }
-                } else Box(Modifier.padding(top = 8.dp).align(Alignment.TopCenter).size(7.dp).background(dot, CircleShape))
+                } else Box(Modifier.padding(top = 8.dp).align(Alignment.TopCenter).size(8.dp).background(dot, CircleShape))
             }
-            Column(Modifier.weight(1f).padding(start = 12.dp, bottom = 22.dp, end = 6.dp, top = if (it.tool != null) 1.5.dp else 0.dp)) {
-                if (it.live) ThinkingMotion(it.title, size = 14.5.sp, showDots = false, ink = Page.ink)
-                else Txt(it.title, Page.ink.copy(alpha = .92f), 14.5.sp, lineHeight = 23.sp, maxLines = if (open) Int.MAX_VALUE else 1)
+            Column(Modifier.weight(1f).padding(start = 12.dp, bottom = 26.dp, end = 4.dp, top = if (it.tool != null) 1.dp else 0.dp)) {
+                val full = open || it.tidy
+                if (it.live) ThinkingMotion(it.title, size = 15.5.sp, showDots = false, ink = Page.ink)
+                else Txt(it.title, Page.ink.copy(alpha = .94f), 15.5.sp, lineHeight = 24.sp, weight = FontWeight.Medium, maxLines = if (full) Int.MAX_VALUE else 1)
                 if (it.detail.isNotEmpty()) {
-                    Spacer(Modifier.height(3.dp))
-                    Txt(it.detail, Page.muted, 12.5.sp, lineHeight = 19.sp, maxLines = if (open) Int.MAX_VALUE else if (it.tool != null) 1 else 2)
+                    Spacer(Modifier.height(6.dp))
+                    Txt(it.detail, Page.muted, 14.sp, lineHeight = 25.sp, maxLines = if (full) Int.MAX_VALUE else if (it.tool != null) 1 else 2)
                 }
             }
         }
