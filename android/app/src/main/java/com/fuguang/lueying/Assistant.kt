@@ -291,6 +291,10 @@ class Tools(
  * 她说「做好了」却没调用工具时用（2026-10 DeepSeek 真机：先说「写好了，卡在下面」，作品没做）。
  * 只看这一轮最后那段正文；整轮里调用过 make_work / edit_work 就不管。
  */
+/** 一轮里最多连着用几次工具（看素材、看原稿、交代作品、上网查都算一次）。2026-10 以前是 5，看 6 件素材再看原稿就用完了。 */
+private const val MAX_ROUNDS = 10
+private const val CAP_NOTE = "（这是 App 的提醒，不是对方说的话：这一轮能用工具的次数用完了，现在不能再动手。如实告诉对方做到了哪一步，还没做的就说还没做，等他说一声你再接着做。别说已经做好。）"
+
 object Claims {
     private val DONE = Regex("(写|做|改|弄|搭|画|排)(好|完)了|已经(写|做|改|弄|搭|生成)(好|完|出来)|生成好了|做出来了|卡(片)?(就)?(在|放在)下面|(在|放在)下面(的卡|那张)")
     fun saysDone(text: String) = DONE.containsMatchIn(text)
@@ -415,16 +419,23 @@ object ChatApi {
         var worked = false
         var nudged = false
         while (true) {
-            val r = once(p, c, model, system, msgs, level, if (round < 5) tools else null, round == 0, onThink, onText)
+            // 工具次数到顶：以前是悄悄收走工具，她还以为能动手，写了调用也被丢掉，只能嘴上说「做好了」。现在明说
+            if (round == MAX_ROUNDS && tools != null) {
+                val last = msgs.optJSONObject(msgs.length() - 1)
+                val arr = last?.optJSONArray("content")
+                if (anthropic && last?.optString("role") == "user" && arr != null) arr.put(JSONObject().put("type", "text").put("text", CAP_NOTE))
+                else msgs.put(JSONObject().put("role", "user").put("content", CAP_NOTE))
+            }
+            val r = once(p, c, model, system, msgs, level, if (round < MAX_ROUNDS) tools else null, round == 0, onThink, onText)
             if (r.calls.any { it.name.toString() in setOf(Works.MAKE, Works.EDIT, WorkJobs.START) }) worked = true
             // 嘴上说「做好了 / 卡在下面」，这一轮却没真的调用做作品的工具：提醒她一次，接着真的去做
-            if (r.calls.isEmpty() && tools != null && round < 5 && !nudged && !worked && Claims.saysDone(r.text)) {
+            if (r.calls.isEmpty() && tools != null && round < MAX_ROUNDS && !nudged && !worked && Claims.saysDone(r.text)) {
                 nudged = true; round++
                 if (r.text.isNotBlank()) msgs.put(if (anthropic) JSONObject().put("role", "assistant").put("content", r.blocks) else JSONObject().put("role", "assistant").put("content", r.text).apply { if (p.id == "deepseek" && (echo || r.reasoning.isNotEmpty())) put("reasoning_content", r.reasoning) })
                 msgs.put(JSONObject().put("role", "user").put("content", Claims.NUDGE))
                 continue
             }
-            if (r.calls.isEmpty() || tools == null || round >= 5) return
+            if (r.calls.isEmpty() || tools == null || round >= MAX_ROUNDS) return
             round++
             if (anthropic) {
                 msgs.put(JSONObject().put("role", "assistant").put("content", r.blocks))
