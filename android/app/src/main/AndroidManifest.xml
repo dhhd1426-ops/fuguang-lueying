@@ -29,12 +29,57 @@
             android:exported="true"
             android:resizeableActivity="true"
             android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|density|keyboardHidden|uiMode"
-            android:windowSoftInputMode="adjustResize">
+            android:windowSoftInputMode="adjustResize" />
+
+        <!-- 桌面图标：「我的 → 主题 → 图标」换哪个就只开哪个入口（见 AppIcon.kt），都指向 MainActivity -->
+        <activity-alias
+            android:name=".IconBlue"
+            android:targetActivity=".MainActivity"
+            android:icon="@mipmap/ic_launcher"
+            android:roundIcon="@mipmap/ic_launcher"
+            android:enabled="true"
+            android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-        </activity>
+        </activity-alias>
+        <activity-alias
+            android:name=".IconWhale"
+            android:targetActivity=".MainActivity"
+            android:icon="@mipmap/ic_launcher_whale"
+            android:roundIcon="@mipmap/ic_launcher_whale"
+            android:enabled="false"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".IconLime"
+            android:targetActivity=".MainActivity"
+            android:icon="@mipmap/ic_launcher_lime"
+            android:roundIcon="@mipmap/ic_launcher_lime"
+            android:enabled="false"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".IconGold"
+            android:targetActivity=".MainActivity"
+            android:icon="@mipmap/ic_launcher_gold"
+            android:roundIcon="@mipmap/ic_launcher_gold"
+            android:enabled="false"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
 
         <!-- 作品分享：导出的网页、PPT、Word 临时放在 cache/share，交给别的 App -->
         <provider

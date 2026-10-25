@@ -28,6 +28,10 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -91,7 +95,7 @@ fun AttachTray(chat: ChatState, vision: Boolean, model: String) {
     ) {
         Column(Modifier.fillMaxWidth().padding(bottom = 10.dp)) {
             Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(top = 6.dp, end = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                chat.atts.toList().forEach { r -> key(r) { TrayItem(r) { chat.atts.remove(r); Attach.drop(r) } } }
+                chat.atts.toList().forEach { r -> key(r) { TrayItem(r, chat) { chat.atts.remove(r); PhotoView.marks.remove(r); Attach.drop(r) } } }
             }
             if (!vision && chat.atts.any(Attach::isImage)) Txt(
                 "${model.ifBlank { "这个型号" }} 看不了图，换成 Claude、Gemini、GPT 或 Grok 她才看得见", Page.muted, 11.5.sp,
@@ -102,11 +106,18 @@ fun AttachTray(chat: ChatState, vision: Boolean, model: String) {
 }
 
 @Composable
-private fun TrayItem(ref: String, onRemove: () -> Unit) {
-    val k = remember { Animatable(0f) }
+private fun TrayItem(ref: String, chat: ChatState, onRemove: () -> Unit) {
+    // 刚圈好飞进来的那张不再自己浮进来：看图页飞到这里时由它接手
+    val k = remember { Animatable(if (PhotoView.landing == ref) 1f else 0f) }
     LaunchedEffect(Unit) { k.animateTo(1f, tween(320, easing = Curves.decel)) }
+    val marked = PhotoView.marks.containsKey(ref)
     Box(Modifier.graphicsLayer { alpha = k.value; val s = .6f + .4f * k.value; scaleX = s; scaleY = s; translationY = (1f - k.value) * 8.dp.toPx() }) {
-        if (Attach.isImage(ref)) Thumb(ref, Modifier.size(58.dp).clip(RoundedCornerShape(14.dp)))
+        if (Attach.isImage(ref)) Pressable({ PhotoView.show(ref, chat, tray = true) }, label = "看照片") { _ ->
+            Box {
+                Thumb(ref, Modifier.size(58.dp).clip(RoundedCornerShape(14.dp)), spot = true)
+                if (marked) Txt("圈过", Page.INK, 9.5.sp, Modifier.align(Alignment.BottomStart).padding(4.dp).background(Color.Black.copy(alpha = .5f), RoundedCornerShape(5.dp)).padding(horizontal = 4.dp, vertical = 1.dp))
+            }
+        }
         else FileChip(ref, Modifier.widthIn(max = 180.dp).height(58.dp))
         Pressable(onRemove, Modifier.align(Alignment.TopEnd).offset(x = 6.dp, y = (-6).dp).size(24.dp), label = "去掉") { p ->
             Box(Modifier.size(22.dp).background(rgba(69, 71, 77, if (p) .75f else 1f), CircleShape), contentAlignment = Alignment.Center) {
@@ -130,7 +141,7 @@ private fun FileChip(ref: String, modifier: Modifier) {
 
 /** 小图：按要的大小缩着读，免得大照片撑爆内存。 */
 @Composable
-private fun Thumb(ref: String, modifier: Modifier, px: Int = 360) {
+private fun Thumb(ref: String, modifier: Modifier, px: Int = 360, spot: Boolean = false) {
     val img by produceState<ImageBitmap?>(null, ref) {
         value = withContext(Dispatchers.IO) {
             runCatching {
@@ -143,14 +154,19 @@ private fun Thumb(ref: String, modifier: Modifier, px: Int = 360) {
             }.getOrNull()
         }
     }
-    Box(modifier.background(veil(.06f))) {
+    if (spot) DisposableEffect(ref) { onDispose { PhotoView.spots.remove(ref) } }
+    Box(
+        (if (spot) Modifier.onGloballyPositioned { PhotoView.spots[ref] = it.boundsInWindow() }
+            .graphicsLayer { alpha = if (PhotoView.hidden == ref) 0f else if (PhotoView.landing == ref) PhotoView.landK else 1f } else Modifier)
+            .then(modifier).background(veil(.06f)),
+    ) {
         img?.let { Image(it, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
     }
 }
 
-/** 你发出去的那条消息上面：照片（一张大一点，几张两列）+ 文件。点照片、文件交给系统打开。 */
+/** 你发出去的那条消息上面：照片（一张大一点，几张两列）+ 文件。点照片在 App 里看（能圈画再发，见 PhotoLayer.kt），文件交给系统打开。 */
 @Composable
-fun SentFiles(files: List<String>, compact: Boolean) {
+fun SentFiles(files: List<String>, compact: Boolean, chat: ChatState) {
     if (files.isEmpty()) return
     val ctx = LocalContext.current
     fun open(ref: String) = runCatching {
@@ -162,10 +178,10 @@ fun SentFiles(files: List<String>, compact: Boolean) {
     val docs = files.filterNot(Attach::isImage)
     val w: Dp = if (compact) 240.dp else 300.dp
     Column(Modifier.padding(bottom = 6.dp), horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        if (imgs.size == 1) Pressable({ open(imgs[0]) }, label = "看照片") { _ -> Thumb(imgs[0], Modifier.width(w * .8f).aspectRatio(1f).clip(RoundedCornerShape(16.dp)), 900) }
+        if (imgs.size == 1) Pressable({ PhotoView.show(imgs[0], chat) }, label = "看照片") { _ -> Thumb(imgs[0], Modifier.width(w * .8f).aspectRatio(1f).clip(RoundedCornerShape(16.dp)), 900, spot = true) }
         else imgs.chunked(2).forEach { row ->
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                row.forEach { r -> Pressable({ open(r) }, label = "看照片") { _ -> Thumb(r, Modifier.size(w / 2 - 2.dp).clip(RoundedCornerShape(14.dp)), 600) } }
+                row.forEach { r -> Pressable({ PhotoView.show(r, chat) }, label = "看照片") { _ -> Thumb(r, Modifier.size(w / 2 - 2.dp).clip(RoundedCornerShape(14.dp)), 600, spot = true) } }
             }
         }
         docs.forEach { r -> Pressable({ open(r) }, label = "打开文件") { _ -> FileChip(r, Modifier.widthIn(max = w).height(54.dp)) } }

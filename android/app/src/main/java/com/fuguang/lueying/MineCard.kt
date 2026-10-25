@@ -96,7 +96,7 @@ fun MineCardLayer(store: AssistantStore, nav: MineNav) {
         MineCard, nav.screen, ::depth,
         onBack = { if (nav.screen == "about" || nav.screen == "theme") { nav.screen = "mine"; true } else nav.screen != "mine" && nav.back() },
         onClosed = { nav.screen = "mine"; nav.persona = "" },
-        above = { MemoryCardHost(); AvatarCropHost() },
+        above = { MemoryCardHost(); AvatarCropHost(); IconCropHost() },
     ) { screen, rise ->
         when (screen) {
             "mine" -> Column(Modifier.widthIn(max = 560.dp).fillMaxSize().verticalScroll(rememberScrollState())) {

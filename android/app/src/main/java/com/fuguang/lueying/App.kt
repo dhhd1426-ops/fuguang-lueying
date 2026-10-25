@@ -229,6 +229,8 @@ fun FuguangApp(prefs: Prefs, fullscreen: Boolean, setFullscreen: (Boolean) -> Un
             onBlur = { blur = it; prefs.blur = it },
             onNote = { NoteCard.from = CornerMenu.anchor.center; NoteCard.open = true },
         )
+        // 看照片、圈画：盖在最上面
+        PhotoLayer()
     }
 }
 

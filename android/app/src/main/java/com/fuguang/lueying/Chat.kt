@@ -661,7 +661,7 @@ private fun Conversation(
                             contentAlignment = Alignment.CenterEnd,
                         ) {
                             Column(horizontalAlignment = Alignment.End) {
-                                SentFiles(m.files, compact)
+                                SentFiles(m.files, compact, chat)
                                 if (m.text.isNotBlank() || m.files.isEmpty()) UserBubble(m.text, compact, Modifier.longPressMsg(i, pressed == i, onLong).flightBubble(flight, i == flight.idx, 18.dp))
                             }
                         }

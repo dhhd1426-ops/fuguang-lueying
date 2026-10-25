@@ -2,6 +2,9 @@
 <resources>
     <string name="app_name">Vignette</string>
     <color name="icon_ground">#F5F3ED</color>
+    <color name="icon_ground_whale">#FFFFFF</color>
+    <color name="icon_ground_lime">#EAE6E0</color>
+    <color name="icon_ground_gold">#121212</color>
     <color name="ground">#343C44</color>
     <color name="ink">#FAF5EE</color>
 

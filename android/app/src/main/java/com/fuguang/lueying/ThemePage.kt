@@ -62,6 +62,8 @@ internal fun ThemePage(onBack: () -> Unit) {
             }
         }
         Txt("侧栏、悬浮卡片和聊天页跟着换。暗黑优雅、白色不放背景画面；看视频、浏览网页的地方一直是深色。", Page.muted.copy(alpha = .8f), 11.5.sp, Modifier.padding(horizontal = 8.dp, vertical = 8.dp), lineHeight = 19.sp)
+        IconSection()
+        Spacer(Modifier.height(8.dp))
     }
 }
 

@@ -82,6 +82,14 @@ object Attach {
         }.getOrNull().also { runCatching { f.delete() } }
     }
 
+    /** 圈好的图存进来：files/attach/<新id>/<名字>.jpg，JPEG 90。 */
+    fun saveBitmap(bmp: Bitmap, name: String): String? = runCatching {
+        val id = System.currentTimeMillis().toString(36) + (0..999).random().toString(36)
+        val f = File(File(root, id).apply { mkdirs() }, "$name.jpg")
+        f.outputStream().use { bmp.compress(Bitmap.CompressFormat.JPEG, 90, it) }
+        "$id/${f.name}"
+    }.getOrNull()
+
     /** 不发了：从输入框里去掉时连文件一起删。 */
     fun drop(ref: String) { runCatching { file(ref).parentFile?.deleteRecursively() } }
 
