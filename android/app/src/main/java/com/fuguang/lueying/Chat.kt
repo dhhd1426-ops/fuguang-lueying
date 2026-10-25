@@ -227,10 +227,8 @@ class ChatState(val history: ConvStore) {
         pendingImgs.clear(); pendingWorks.clear(); pendingWorkAt.clear(); workDraft = null; pendingClips.clear(); liveSteps.clear()
         val who = Memory.active
         val history = messages.toList()
-        // “自动”：发出前按这条消息定一个具体的档
-        // DeepSeek 不猜：短句、讲故事这类以前被猜成不想（0）或 low，想得又短又碎甚至没想。
-        // 照 RikkaHub，自动档只开思考、不带档位，用它默认的 high（ThinkParams 第 1 档）
-        val level = store.thinkLevel.let { if (it == 1 && store.activeProvider != "deepseek") autoThinkLevel(history.lastOrNull { m -> m.role == "user" }?.text.orEmpty()) else it }
+        // 思考档位照 Claude App：选哪档就原样发哪档（每个型号各记各的），App 不替模型猜
+        val effort = store.effort()
         ChatApi.temperature = who.temp
         ChatApi.topP = if (who.topOn) who.top else null
         job = scope.launch {
@@ -274,7 +272,7 @@ class ChatState(val history: ConvStore) {
                     if (mcp.isNotEmpty()) append("\n").append(Mcp.system())
                 }
                 ChatApi.stream(
-                    p, c, store.activeModel, Prompt.system(who, store.activeModel), Entries.weave(who, history, Prompt.aside(who, history, who.prevAt)), level,
+                    p, c, store.activeModel, Prompt.system(who, store.activeModel), Entries.weave(who, history, Prompt.aside(who, history, who.prevAt)), effort,
                     onThink = { thinkText += it; thinking = true },
                     tools = if (specs.isNotEmpty()) Tools(
                         specs,
@@ -515,7 +513,7 @@ fun ChatPage(
             }
             Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                 ChatInput(
-                    compact, blur, title, store.activeModel, store.activeProvider, store.thinkLevel, chat, plus, flight,
+                    compact, blur, title, store.activeModel, store.activeProvider, store.effort(), chat, plus, flight,
                     onPick = { picker = true },
                     onSend = {
                         val n = chat.send(scope, store)
@@ -559,6 +557,8 @@ fun ChatPage(
         ModelDrawer(picker, store, compact, onClose = { picker = false })
         // 正在看这一轮的思考时她想完了：接着看收进去的那条；什么都没留下就收起抽屉
         LaunchedEffect(chat.busy) {
+            // 想完了：这条的思考请帮手整理成摘要（聊天里那一行也换成整理好的结论）
+            if (!chat.busy) chat.messages.getOrNull(chat.landed)?.let { m -> if (m.think.isNotBlank()) ThinkTidy.request(m.think, m.steps.map { it.at }, store) }
             if (!chat.busy && thinkOpen && thinkOf < 0) {
                 val i = chat.landed
                 if (i in chat.messages.indices && (chat.messages[i].think.isNotBlank() || chat.messages[i].steps.isNotEmpty())) thinkOf = i else thinkOpen = false
@@ -882,7 +882,7 @@ private fun ChatInput(
     title: String,
     model: String,
     provider: String,
-    think: Int,
+    think: String?,
     chat: ChatState,
     plus: LiquidPlusState,
     flight: SendFlight,
@@ -987,7 +987,7 @@ private fun ChatInput(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Txt(model.ifBlank { "选择模型" }, Page.ink, 12.sp, maxLines = 1)
-                        Txt(" · " + (if (think == 0) "不思考" else THINK_LEVELS[think]), if (think >= 2) Page.accent else Page.muted, 12.sp, maxLines = 1)
+                        if (think != null) Txt(" · " + (if (think == Effort.OFF) "不思考" else Effort.label(think)), if (think == Effort.OFF) Page.muted else Page.accent, 12.sp, maxLines = 1)
                     }
                 }
                 Spacer(Modifier.weight(1f))
@@ -1086,7 +1086,7 @@ private fun ModelDrawer(open: Boolean, store: AssistantStore, compact: Boolean, 
                 }
                 Spacer(Modifier.height(16.dp))
                 // 深度思考六档：液体色块，可点可拖
-                ThinkSegment(store.thinkLevel, store.activeProvider) { store.setThink(it) }
+                ThinkSegment(Effort.spec(store.activeProvider, store.activeModel), store.effort()) { store.setEffort(it) }
                 val note = card.note
                 val noteA by androidx.compose.animation.core.animateFloatAsState(if (note != null) 1f else 0f, tween(200), label = "note")
                 if (noteA > 0f) Txt(note ?: "", Page.accent, 12.sp, Modifier.fillMaxWidth().padding(top = 10.dp).alpha(noteA), align = androidx.compose.ui.text.style.TextAlign.Center)

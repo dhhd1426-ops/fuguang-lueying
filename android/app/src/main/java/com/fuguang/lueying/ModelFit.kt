@@ -52,16 +52,16 @@ object ModelFit {
 
     /**
      * 思考档位往下退（照 Claude Code：不支持的强度按「不超过它的最高一档」跑）：
-     * 记的是这个模型最高能到第几档；再往下到不了「略想」（2）就整个不带思考参数。
+     * 记的是这个模型最高能到哪一档（发出去的原值）；没记过是 null。
      */
-    fun cap(provider: String, model: String): Int =
-        map[id(provider, model)]?.firstOrNull { it.startsWith("cap:") }?.removePrefix("cap:")?.toIntOrNull() ?: 5
+    fun cap(provider: String, model: String): String? =
+        map[id(provider, model)]?.firstOrNull { it.startsWith("cap:") }?.removePrefix("cap:")?.takeIf { it.isNotEmpty() }
 
-    /** 档位被拒：退一档记下；已经是最低一档了就记成不带思考参数。 */
-    fun stepDown(provider: String, model: String, level: Int) {
+    /** 档位被拒：记下能到的那一档；没有更低的了（to = null）就记成不带思考参数。 */
+    fun stepDown(provider: String, model: String, to: String?) {
         val set = map.getOrPut(id(provider, model)) { mutableSetOf() }
         set.removeAll { it.startsWith("cap:") }
-        if (level > 2) set += "cap:${level - 1}" else set += "think"
+        if (to != null) set += "cap:$to" else set += "think"
         save()
     }
 
@@ -87,7 +87,7 @@ object ModelFit {
     fun note(provider: String, model: String): String = map[id(provider, model)].orEmpty().joinToString("、") {
         when {
             it == "think" -> "不带思考参数"; it == "temp" -> "不带温度"; it == "top_p" -> "不带 Top P"
-            it.startsWith("cap:") -> "思考最多到第 ${it.removePrefix("cap:")} 档"; else -> "不用工具"
+            it.startsWith("cap:") -> "思考最多到 ${it.removePrefix("cap:")}"; else -> "不用工具"
         }
     }
 

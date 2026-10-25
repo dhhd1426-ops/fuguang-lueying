@@ -76,8 +76,8 @@ class AssistantStore(private val prefs: Prefs) {
     var name by mutableStateOf("Amor")
     var activeProvider by mutableStateOf("deepseek")
     var activeModel by mutableStateOf("deepseek-flash")
-    /** 深度思考档位：0 关闭、1 自动、2 轻度、3 中度、4 复杂、5 max（见 THINK_LEVELS）。这家不认思考参数就自动去掉再发。 */
-    var thinkLevel by mutableStateOf(0)
+    /** 每个型号选的思考档（「供应商|型号」→ 发出去的原值，见 Effort）；没选过用这家的默认档。 */
+    val efforts = mutableStateMapOf<String, String>()
     val configs = mutableStateMapOf<String, ProviderConfig>()
     /** 最近一次查到的余额，只在本次打开 App 期间显示。 */
     val balances = mutableStateMapOf<String, String>()
@@ -92,7 +92,7 @@ class AssistantStore(private val prefs: Prefs) {
             name = o.optString("name", "Amor").ifBlank { "Amor" }
             activeProvider = o.optString("provider", "deepseek")
             activeModel = o.optString("model", "deepseek-flash")
-            thinkLevel = if (o.has("level")) o.optInt("level", 0).coerceIn(0, 5) else if (o.optBoolean("think", false)) 3 else 0
+            o.optJSONObject("efforts")?.let { e -> e.keys().forEach { k -> efforts[k] = e.optString(k) } }
             o.optJSONArray("order")?.let { a ->
                 val saved = List(a.length()) { a.getString(it) }.filter { id -> PROVIDERS.any { it.id == id } }.distinct()
                 order.clear(); order.addAll(saved + PROVIDERS.map { it.id }.filter { it !in saved })
@@ -128,7 +128,16 @@ class AssistantStore(private val prefs: Prefs) {
 
     fun rename(v: String) { name = v; save() }
 
-    fun setThink(level: Int) { thinkLevel = level.coerceIn(0, 5); save() }
+    private fun effortKey(pid: String, model: String) = pid + "|" + model.trim().lowercase()
+
+    /** 这个型号现在用哪一档（原值）；没档位可选的型号是 null。 */
+    fun effort(pid: String = activeProvider, model: String = activeModel): String? {
+        val spec = Effort.spec(pid, model)
+        if (spec.levels.isEmpty()) return null
+        return spec.levels[spec.index(efforts[effortKey(pid, model)])].value
+    }
+
+    fun setEffort(value: String, pid: String = activeProvider, model: String = activeModel) { efforts[effortKey(pid, model)] = value; save() }
 
     /** 按用户排好的顺序。 */
     fun ordered(): List<Provider> = order.mapNotNull { id -> PROVIDERS.firstOrNull { it.id == id } }
@@ -150,7 +159,7 @@ class AssistantStore(private val prefs: Prefs) {
             })
         }
         prefs.putString(KEY, JSONObject().apply {
-            put("name", name); put("provider", activeProvider); put("model", activeModel); put("level", thinkLevel); put("configs", cs); put("order", JSONArray(order.toList()))
+            put("name", name); put("provider", activeProvider); put("model", activeModel); put("efforts", JSONObject(efforts.toMap())); put("configs", cs); put("order", JSONArray(order.toList()))
         }.toString())
     }
 
@@ -346,8 +355,8 @@ object ChatApi {
         model: String,
         system: String,
         history: List<ChatMsg>,
-        /** 已经定好的档：0 关闭、2–5（“自动”在发出前就换成具体的档）。 */
-        level: Int,
+        /** 这一档发出去的原值（Effort）：Effort.OFF 是关掉思考；null 是什么思考参数都不带。 */
+        effort: String?,
         onThink: suspend (String) -> Unit,
         tools: Tools? = null,
         /** 模型不支持工具时，放进 system 提示的补充内容。 */
@@ -358,20 +367,20 @@ object ChatApi {
     ) {
         // 先按 ModelFit 认这个模型（认过 / 学过的参数一开始就不带）；报错点名了哪个参数就记下、去掉重发（最多 5 次）；思考档位先一档档往下退，退到底才不带。
         repeat(5) {
-            try { return tiers(p, c, model, system, history, level, onThink, tools, fallback, toolNote, onText) } catch (_: Adapted) { }
+            try { return tiers(p, c, model, system, history, effort, onThink, tools, fallback, toolNote, onText) } catch (_: Adapted) { }
         }
-        tiers(p, c, model, system, history, level, onThink, tools, fallback, toolNote, onText)
+        tiers(p, c, model, system, history, effort, onThink, tools, fallback, toolNote, onText)
     }
 
     private suspend fun tiers(
-        p: Provider, c: ProviderConfig, model: String, system: String, history: List<ChatMsg>, level: Int,
+        p: Provider, c: ProviderConfig, model: String, system: String, history: List<ChatMsg>, effort: String?,
         onThink: suspend (String) -> Unit, tools: Tools?, fallback: (suspend () -> String)?, toolNote: String, onText: suspend (String) -> Unit,
     ) {
-        // 报错没点名时：先怀疑工具，再怀疑思考参数，逐个去掉再发；-1 = 什么思考参数都不带
+        // 报错没点名时：先怀疑工具，再怀疑思考参数，逐个去掉再发；null = 什么思考参数都不带
         val hasTools = tools != null && !ModelFit.drops(p.id, model, "tools")
-        val tries = listOf(level to hasTools, level to false, -1 to hasTools, -1 to false).distinct()
+        val tries = listOf(effort to hasTools, effort to false, null to hasTools, null to false).distinct()
         // 关闭时就算模型自己想了也不显示
-        val show: suspend (String) -> Unit = if (level == 0) ({ }) else onThink
+        val show: suspend (String) -> Unit = if (effort == Effort.OFF) ({ }) else onThink
         tries.forEachIndexed { i, (lv, useTools) ->
             try {
                 val sys = when {
@@ -382,7 +391,7 @@ object ChatApi {
                 }
                 conversation(p, c, model, sys, history, lv, if (useTools) tools else null, show, onText)
                 // 去掉思考参数、工具留着就通了：这个模型不收思考参数，记下来，下次直接不带
-                if (lv == -1 && level >= 0 && useTools == hasTools) ModelFit.learn(p.id, model, "think")
+                if (lv == null && effort != null && useTools == hasTools) ModelFit.learn(p.id, model, "think")
                 return
             } catch (e: Rejected) {
                 if (i == tries.lastIndex) throw IllegalStateException("出错了（400）")
@@ -392,14 +401,14 @@ object ChatApi {
 
     private suspend fun conversation(
         p: Provider, c: ProviderConfig, model: String, system: String, history: List<ChatMsg>,
-        level: Int, tools: Tools?, onThink: suspend (String) -> Unit, onText: suspend (String) -> Unit,
+        effort: String?, tools: Tools?, onThink: suspend (String) -> Unit, onText: suspend (String) -> Unit,
     ) {
         val anthropic = p.kind == "anthropic"
         val msgs = JSONArray()
         if (!anthropic) msgs.put(JSONObject().put("role", "system").put("content", system))
         // DeepSeek 思考模式下带工具：以前每一条回复的 reasoning_content 都要带回去，没想过的也要带一个空的，
         // 少一条就 400，然后会退成不带工具再发，她就只能嘴上说「做好了」（作品卡丢失的根子）
-        val echo = p.id == "deepseek" && tools != null && level != 0
+        val echo = p.id == "deepseek" && tools != null && effort != Effort.OFF
         // 做事中途收到新消息时，那一段回复可能没有正文：空的不带，免得供应商报错
         // 你发来的照片、文件：最近两条带东西的原样带上，更早的只说一句
         val withFiles = history.indices.filter { history[it].role == "user" && history[it].files.isNotEmpty() }.takeLast(2).toSet()
@@ -426,7 +435,7 @@ object ChatApi {
                 if (anthropic && last?.optString("role") == "user" && arr != null) arr.put(JSONObject().put("type", "text").put("text", CAP_NOTE))
                 else msgs.put(JSONObject().put("role", "user").put("content", CAP_NOTE))
             }
-            val r = once(p, c, model, system, msgs, level, if (round < MAX_ROUNDS) tools else null, round == 0, onThink, onText)
+            val r = once(p, c, model, system, msgs, effort, if (round < MAX_ROUNDS) tools else null, round == 0, onThink, onText)
             if (r.calls.any { it.name.toString() in setOf(Works.MAKE, Works.EDIT, WorkJobs.START) }) worked = true
             // 嘴上说「做好了 / 卡在下面」，这一轮却没真的调用做作品的工具：提醒她一次，接着真的去做
             if (r.calls.isEmpty() && tools != null && round < MAX_ROUNDS && !nudged && !worked && Claims.saysDone(r.text)) {
@@ -536,7 +545,7 @@ object ChatApi {
         model: String,
         system: String,
         msgs: JSONArray,
-        level: Int,
+        effort: String?,
         tools: Tools?,
         canReject: Boolean,
         onThink: suspend (String) -> Unit,
@@ -573,10 +582,11 @@ object ChatApi {
             // 做作品时一整张网页写在工具参数里，留足长度
             if (anthropic) body.put("system", system).put("max_tokens", 16000)
             // 这个模型学到的最高档：超过的按能到的最高一档发
-            val lv = if (level >= 2) minOf(level, ModelFit.cap(p.id, model)) else level
-            val sentThink = ThinkParams.apply(p, lv, body)
-            // 回答的手感：温度、Top P（Anthropic 开着思考时不能带）
-            if (!(anthropic && level >= 2)) {
+            val spec = Effort.spec(p.id, model)
+            val lv = effort?.let { e -> ModelFit.cap(p.id, model)?.takeIf { e != Effort.OFF && spec.index(it) < spec.index(e) } ?: e }
+            val sentThink = Effort.apply(p, model, lv, body)
+            // 回答的手感：温度、Top P（Anthropic 想着的时候不能带）
+            if (!(anthropic && lv != null && lv != Effort.OFF)) {
                 temperature?.let { body.put("temperature", it.toDouble()) }
                 topP?.let { body.put("top_p", it.toDouble()) }
             }
@@ -600,7 +610,7 @@ object ChatApi {
             if (code == 400 || code == 422) {
                 // 报错点名了哪个参数：记在这个模型名下，去掉重发
                 ModelFit.blame(err, body)?.let { w ->
-                    if (w == "think" && lv >= 2) ModelFit.stepDown(p.id, model, lv) else ModelFit.learn(p.id, model, w)
+                    if (w == "think" && lv != null && lv != Effort.OFF) ModelFit.stepDown(p.id, model, Effort.lower(spec, lv)) else ModelFit.learn(p.id, model, w)
                     throw Adapted()
                 }
                 if (canReject && (sentThink || tools != null)) throw Rejected()
@@ -719,61 +729,3 @@ object ChatApi {
 }
 
 
-/* ---------------- 深度思考档位 ---------------- */
-
-val THINK_LEVELS = listOf("关闭", "自动", "轻度", "中度", "复杂", "max")
-
-/** 每一档真正发给模型的参数。返回有没有带思考参数（带了才有理由怀疑被拒）。 */
-object ThinkParams {
-    private val effort = listOf("", "", "low", "medium", "high", "high")
-    private val deepseek = listOf("", "", "low", "high", "high", "max")
-    private val budget = listOf(0, 0, 2048, 8000, 16000, 32000)
-
-    fun apply(p: Provider, level: Int, body: JSONObject): Boolean {
-        if (level < 0) return false
-        when {
-            p.kind == "anthropic" -> {
-                if (level < 2) return false
-                body.put("thinking", JSONObject().put("type", "enabled").put("budget_tokens", budget[level]))
-                body.put("max_tokens", budget[level] + 16000)
-            }
-            // DeepSeek 默认就开着思考：关闭一定要明说
-            // 「自动」不带 reasoning_effort（以前带了空字符串）：交给 DeepSeek 默认的 high；它只认 low / high / max
-            p.id == "deepseek" -> when (level) {
-                0 -> body.put("thinking", JSONObject().put("type", "disabled"))
-                1 -> body.put("thinking", JSONObject().put("type", "enabled"))
-                else -> body.put("thinking", JSONObject().put("type", "enabled")).put("reasoning_effort", deepseek[level])
-            }
-            p.id == "siliconflow" -> if (level == 0) body.put("enable_thinking", false)
-                else body.put("enable_thinking", true).put("thinking_budget", budget[level])
-            else -> { if (level < 2) return false; body.put("reasoning_effort", effort[level]) }
-        }
-        return true
-    }
-}
-
-/** 档位下面那行说明：这一档会想多少、实际发的是什么。 */
-fun thinkNote(providerId: String, level: Int): String {
-    val head = listOf("不思考，直接回答", "闲聊不想，难题才想", "略想一下", "想得比较充分", "长链推理", "想到最深")[level]
-    if (level == 0) return head
-    if (level == 1) return if (providerId == "deepseek") "每次都想，想多少由 DeepSeek 定 · 默认 high" else "$head · 每条消息由 App 判断"
-    val k = when (provider(providerId).let { if (it.kind == "anthropic") "anthropic" else it.id }) {
-        "deepseek" -> "DeepSeek " + listOf("", "", "low", "high", "high（同中度）", "max")[level]
-        "anthropic", "siliconflow" -> "思考预算 " + listOf("", "", "2k", "8k", "16k", "32k")[level]
-        else -> "强度 " + listOf("", "", "low", "medium", "high", "high")[level]
-    }
-    return "$head · $k"
-}
-
-/** “自动”档：看这条消息决定想不想、想多少。闲聊不想；要推理、写代码、长问题多想。 */
-fun autoThinkLevel(text: String): Int {
-    val t = text.trim()
-    val hard = Regex("为什么|怎么|如何|分析|比较|推理|证明|计算|算一下|规划|计划|设计|方案|优缺点|区别|原理|代码|bug|报错|写一|翻译|总结|步骤|```|[=+×÷^]\\s*\\d", RegexOption.IGNORE_CASE)
-    return when {
-        t.length > 160 || t.contains("```") -> 3
-        hard.containsMatchIn(t) -> if (t.length > 50) 3 else 2
-        t.length <= 24 -> 0
-        t.contains('?') || t.contains('？') -> 2
-        else -> 0
-    }
-}
