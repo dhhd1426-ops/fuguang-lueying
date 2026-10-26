@@ -69,10 +69,10 @@ object Avatars {
 
 /** 一颗头像：有图用图，没图是首字圆（fill 是底色）。 */
 @Composable
-internal fun AvatarFace(id: String, letter: String, fill: Brush, size: Dp, modifier: Modifier = Modifier, ink: androidx.compose.ui.graphics.Color = androidx.compose.ui.graphics.Color(0xFF2A211B)) {
+internal fun AvatarFace(id: String, letter: String, fill: Brush, size: Dp, modifier: Modifier = Modifier, ink: androidx.compose.ui.graphics.Color = androidx.compose.ui.graphics.Color(0xFF2A211B), shape: androidx.compose.ui.graphics.Shape = CircleShape) {
     val v = Avatars.version
     val img = remember(id, v) { Avatars.get(id) }
-    Box(modifier.size(size).clip(CircleShape).background(fill), contentAlignment = Alignment.Center) {
+    Box(modifier.size(size).clip(shape).background(fill), contentAlignment = Alignment.Center) {
         if (img != null) Image(img, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
         else Txt(letter.ifEmpty { "?" }, ink, (size.value * (if (letter.length > 1) .3f else .46f)).sp, family = Serif, maxLines = 1)
     }

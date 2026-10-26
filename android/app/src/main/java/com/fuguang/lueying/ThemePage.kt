@@ -62,8 +62,63 @@ internal fun ThemePage(onBack: () -> Unit) {
             }
         }
         Txt("侧栏、悬浮卡片和聊天页跟着换。暗黑优雅、白色不放背景画面；看视频、浏览网页的地方一直是深色。", Page.muted.copy(alpha = .8f), 11.5.sp, Modifier.padding(horizontal = 8.dp, vertical = 8.dp), lineHeight = 19.sp)
+        SwitchSection()
         IconSection()
         Spacer(Modifier.height(8.dp))
+    }
+}
+
+/** 换助理的方式（第 305 版）：连体卡片（默认）/ 竖排头像，和主题一样一行一张小样，点了当场换。 */
+@Composable
+private fun SwitchSection() {
+    val haptic = LocalHapticFeedback.current
+    Txt("换助理的方式", Page.muted, 12.sp, Modifier.padding(start = 8.dp, top = 14.dp, bottom = 10.dp), spacing = ls(1f, 12f))
+    listOf(false to ("连体卡片" to "点名字，从名字下面展开"), true to ("竖排头像" to "侧栏左边一排，一点就换")).forEach { (rail, t) ->
+        val on = Skin.rail == rail
+        PressSurface(
+            { if (!on) { Skin.setRail(rail); haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove) } },
+            Modifier.fillMaxWidth().padding(bottom = 7.dp), shape = RoundedCornerShape(16.dp), pressScale = .985f, label = t.first,
+        ) {
+            Row(Modifier.fillMaxWidth().padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                SwitchMini(rail, on)
+                Spacer(Modifier.width(14.dp))
+                Column(Modifier.weight(1f)) {
+                    Txt(t.first, Page.ink, 15.sp, maxLines = 1)
+                    Spacer(Modifier.height(3.dp))
+                    Txt(t.second, Page.muted, 12.sp, maxLines = 1)
+                }
+                val k by animateFloatAsState(if (on) 1f else 0f, spring(.5f, 500f), label = "sk")
+                if (k > .01f) Box(Modifier.scale(k)) { DrawnCheck(SideWarm, 18.dp) }
+                Spacer(Modifier.width(6.dp))
+            }
+        }
+    }
+    Txt("只改侧栏顶上换助理的样子，别的都不变。", Page.muted.copy(alpha = .8f), 11.5.sp, Modifier.padding(horizontal = 8.dp, vertical = 8.dp), lineHeight = 19.sp)
+}
+
+/** 两张小样：连体卡片是一块带三行的色块；竖排是左边三颗头像、右边几道字。 */
+@Composable
+private fun SwitchMini(rail: Boolean, on: Boolean) {
+    val ring by animateFloatAsState(if (on) 1f else 0f, label = "sring")
+    val bg = Color(0xFF1C1D22); val dim = Color(0xFF5B5F6B); val line = Color(0xFF4A4D57); val block = Color(0xFF34363E)
+    Canvas(Modifier.size(60.dp).clip(RoundedCornerShape(13.dp))) {
+        drawRect(bg)
+        val u = size.width / 60f
+        if (rail) {
+            drawRoundRect(SideWarm, Offset(7 * u, 9 * u), Size(11 * u, 11 * u), CornerRadius(4 * u))
+            drawCircle(dim, 5.5f * u, Offset(12.5f * u, 30.5f * u)); drawCircle(dim, 5.5f * u, Offset(12.5f * u, 46.5f * u))
+            drawRect(Color(0xFF2C2E35), Offset(21 * u, 6 * u), Size(1 * u, 48 * u))
+            listOf(11f to 26f, 24f to 30f, 33f to 30f, 42f to 22f).forEachIndexed { i, (y, w) ->
+                drawRoundRect(if (i == 0) Color(0xFF8A8D97) else line, Offset(25 * u, y * u), Size(w * u, 4 * u), CornerRadius(2 * u))
+            }
+        } else {
+            drawRoundRect(block, Offset(7 * u, 7 * u), Size(38 * u, 46 * u), CornerRadius(7 * u))
+            listOf(11f, 24f, 35f).forEachIndexed { i, y ->
+                drawCircle(if (i == 0) SideWarm else Color(0xFF6A6E7A), 3 * u, Offset(14 * u, (y + 3) * u))
+                drawRoundRect(if (i == 0) Color(0xFFA7AAB3) else Color(0xFF6A6E7A), Offset(20 * u, (y + 1.5f) * u), Size(18 * u, 3 * u), CornerRadius(1.5f * u))
+            }
+        }
+        if (ring > 0f) drawRoundRect(SideWarm.copy(alpha = ring), size = size, cornerRadius = CornerRadius(13.dp.toPx()), style = Stroke(2.5.dp.toPx()))
     }
 }
 

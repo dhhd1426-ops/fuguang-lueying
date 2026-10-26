@@ -1,20 +1,17 @@
 package com.fuguang.lueying
 
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,10 +20,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -36,21 +31,23 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import kotlinx.coroutines.delay
-import androidx.compose.animation.core.MutableTransitionState
-import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
+import kotlinx.coroutines.delay
 
 /** 每位助理一个颜色（按她在列表里的位置）。 */
 private val Tints = listOf(Color(0xFFE9B48E), Color(0xFFB9C7A8), Color(0xFFA9B6CC), Color(0xFFD3A9B4), Color(0xFFC9BC97))
@@ -58,14 +55,33 @@ private val Tints = listOf(Color(0xFFE9B48E), Color(0xFFB9C7A8), Color(0xFFA9B6C
 internal fun tintOf(p: Persona): Color = Tints[(Memory.all.indexOf(p).coerceAtLeast(0)) % Tints.size]
 
 @Composable
-internal fun PersonaDot(p: Persona, size: Dp) {
-    AvatarFace(p.id, p.name.trim().take(1), androidx.compose.ui.graphics.SolidColor(tintOf(p)), size)
+internal fun PersonaDot(p: Persona, size: Dp, shape: androidx.compose.ui.graphics.Shape = androidx.compose.foundation.shape.CircleShape) {
+    AvatarFace(p.id, p.name.trim().take(1), androidx.compose.ui.graphics.SolidColor(tintOf(p)), size, shape = shape)
+}
+
+/** 「117 段对话 · 21 条记忆」。 */
+internal fun personaMeta(history: ConvStore, p: Persona): String {
+    val n = history.of(p.id).size
+    return "${if (n == 0) "还没有对话" else "$n 段对话"} · ${if (p.items.isEmpty()) "还没有记忆" else "${p.items.size} 条记忆"}"
+}
+
+/** 名字签：头像 + 名字 + 小箭头。侧栏顶上那颗和展开后卡片顶上那颗是同一个样子，展开时一点不跳。 */
+@Composable
+private fun NameChip(now: Persona, turn: Float) {
+    Row(Modifier.padding(start = 8.dp, end = 10.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+        AnimatedContent(now, transitionSpec = { (fadeIn(tween(220, 60)) + scaleIn(tween(260, 60, Curves.standard), .8f)) togetherWith (fadeOut(tween(140)) + scaleOut(tween(140), .8f)) }, label = "dot") { PersonaDot(it, 28.dp) }
+        Spacer(Modifier.width(10.dp))
+        AnimatedContent(now.name, Modifier.widthIn(max = 160.dp), transitionSpec = {
+            (fadeIn(tween(240, 60)) + slideInVertically(tween(280, 60, Curves.standard)) { it / 3 }) togetherWith (fadeOut(tween(140)) + slideOutVertically(tween(160)) { -it / 3 })
+        }, label = "name") { Txt(it, Page.ink, 19.sp, spacing = ls(2.4f, 19f), family = Serif, maxLines = 1) }
+        Spacer(Modifier.width(6.dp))
+        SvgIcon(Ic("M6 9.5l6 6 6-6"), SideFaint, 16.dp, stroke = 1.8f, modifier = Modifier.graphicsLayer { rotationZ = turn })
+    }
 }
 
 /**
- * 侧栏顶上：现在这一位的名字（每位助理一个分区，下面只列她的对话）。
- * 点名字，下面长出一张小卡片列出所有助理；点一位：✓ 先落到她身上，卡片自己收回，列表换成她的。
- * 最下面「管理助理」去「我的 → 助理」。
+ * 侧栏顶上（连体卡片，第 305 版，照 DroidDeck 的设置面板）：点名字，名字那颗变成一个「签」，
+ * 卡片从签里往下、往右长出来，和签是同一整块色块（不描边）；行随后浮出。点一位：✓ 落定 260ms 后整块收回签里。
  */
 @Composable
 internal fun AssistantTitle(history: ConvStore, onSearch: () -> Unit, onManage: () -> Unit) {
@@ -74,44 +90,33 @@ internal fun AssistantTitle(history: ConvStore, onSearch: () -> Unit, onManage: 
     // 点空白收起时，那一下也会落在名字上：刚收起的 250ms 内不再打开
     var shutAt by remember { mutableStateOf(0L) }
     val haptic = LocalHapticFeedback.current
-    // ✓ 落定后再收：先让人看到换成了谁
     LaunchedEffect(picked) { if (picked != null) { delay(260); open = false; picked = null } }
     androidx.activity.compose.BackHandler(enabled = open) { open = false }
     val now = Memory.active
     val turn by animateFloatAsState(if (open) 180f else 0f, spring(dampingRatio = .8f, stiffness = 420f), label = "chev")
-    val shown = remember { MutableTransitionState(false) }
-    shown.targetState = open
-    var titleH by remember { mutableStateOf(0) }
-    val gap = with(LocalDensity.current) { 6.dp.roundToPx() }
+    // 0 = 只有签；1 = 整块展开。开：弹簧；关：加速收回（离开更快）
+    val grow = remember { Animatable(0f) }
+    var shown by remember { mutableStateOf(false) }
+    LaunchedEffect(open) {
+        if (open) { shown = true; grow.animateTo(1f, spring(dampingRatio = .86f, stiffness = 360f)) }
+        else if (shown) { grow.animateTo(0f, tween(200, easing = Curves.accel)); shown = false }
+    }
+    var chip by remember { mutableStateOf(androidx.compose.ui.unit.IntSize.Zero) }
     Row(Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-        // 名字靠左上，只占它自己那么宽；卡片从它下面浮出来，不推开下面的列表
-        Box(Modifier.onSizeChanged { titleH = it.height }) {
+        Box(Modifier.onSizeChanged { chip = it }) {
             Pressable({ if (System.currentTimeMillis() - shutAt > 250) open = !open }, label = "切换助理，现在是 ${now.name}") { p ->
-                Row(
-                    Modifier.background(if (open || p) veil(if (p) .05f else .07f) else Color.Transparent, RoundedCornerShape(14.dp))
-                        .padding(start = 8.dp, end = 10.dp, top = 6.dp, bottom = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    AnimatedContent(now, transitionSpec = { (fadeIn(tween(220, 60)) + scaleIn(tween(260, 60, Curves.standard), .8f)) togetherWith (fadeOut(tween(140)) + scaleOut(tween(140), .8f)) }, label = "dot") { PersonaDot(it, 28.dp) }
-                    Spacer(Modifier.width(10.dp))
-                    AnimatedContent(now.name, Modifier.widthIn(max = 180.dp), transitionSpec = {
-                        (fadeIn(tween(240, 60)) + slideInVertically(tween(280, 60, Curves.standard)) { it / 3 }) togetherWith (fadeOut(tween(140)) + slideOutVertically(tween(160)) { -it / 3 })
-                    }, label = "name") { Txt(it, Page.ink, 19.sp, spacing = ls(2.4f, 19f), family = Serif, maxLines = 1) }
-                    Spacer(Modifier.width(6.dp))
-                    SvgIcon(Ic("M6 9.5l6 6 6-6"), SideFaint, 16.dp, stroke = 1.8f, modifier = Modifier.graphicsLayer { rotationZ = turn })
-                }
+                Box(Modifier.graphicsLayer { alpha = if (shown) 0f else 1f }.background(if (p) veil(.05f) else Color.Transparent, RoundedCornerShape(14.dp))) { NameChip(now, turn) }
             }
-            if (shown.currentState || shown.targetState) Popup(
+            if (shown) Popup(
                 alignment = Alignment.TopStart,
-                offset = IntOffset(0, titleH + gap),
+                offset = IntOffset(0, 0),
                 onDismissRequest = { if (open) { open = false; shutAt = System.currentTimeMillis() } },
                 properties = PopupProperties(focusable = false, dismissOnClickOutside = true),
             ) {
-                androidx.compose.animation.AnimatedVisibility(
-                    visibleState = shown,
-                    enter = scaleIn(spring(dampingRatio = .82f, stiffness = 520f), .92f, TransformOrigin(0.1f, 0f)) + fadeIn(tween(180)),
-                    exit = scaleOut(tween(150, easing = Curves.accel), .94f, TransformOrigin(0.1f, 0f)) + fadeOut(tween(140)),
-                ) { PickCard(history, now, onPick = { p -> if (p.id != Memory.activeId) { Memory.use(p); haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove) }; picked = p.id }, onManage = { open = false; onManage() }) }
+                PickPanel(history, now, turn, grow.value, chip,
+                    onToggle = { open = false },
+                    onPick = { p -> if (p.id != Memory.activeId) { Memory.use(p); haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove) }; picked = p.id },
+                    onManage = { open = false; onManage() })
             }
         }
         Spacer(Modifier.weight(1f))
@@ -121,40 +126,57 @@ internal fun AssistantTitle(history: ConvStore, onSearch: () -> Unit, onManage: 
     }
 }
 
-/** 浮在名字下面的那张小卡片：所有助理 + 管理助理。 */
+/** 签 + 卡片这一整块：按 k 从签的大小长到整块的大小，色块和里面的东西都只画在这块里面。 */
 @Composable
-private fun PickCard(history: ConvStore, now: Persona, onPick: (Persona) -> Unit, onManage: () -> Unit) {
+private fun PickPanel(
+    history: ConvStore, now: Persona, turn: Float, k: Float, chip: androidx.compose.ui.unit.IntSize,
+    onToggle: () -> Unit, onPick: (Persona) -> Unit, onManage: () -> Unit,
+) {
+    var full by remember { mutableStateOf(androidx.compose.ui.unit.IntSize.Zero) }
+    val fill = Skin.sheet
+    val r = with(LocalDensity.current) { 16.dp.toPx() }
     Column(
-        Modifier.widthIn(min = 248.dp, max = 300.dp)
-            .shadow(18.dp, RoundedCornerShape(18.dp), ambientColor = Color.Black, spotColor = Color.Black)
-            .background(Skin.sheet, RoundedCornerShape(18.dp)).padding(6.dp),
+        Modifier.width(256.dp)
+            .onSizeChanged { full = it }
+            .drawWithContent {
+                val w = chip.width + (full.width - chip.width) * k
+                val h = chip.height + (full.height - chip.height) * k
+                val path = androidx.compose.ui.graphics.Path().apply { addRoundRect(androidx.compose.ui.geometry.RoundRect(0f, 0f, w, h, CornerRadius(r))) }
+                drawRoundRect(fill, size = Size(w, h), cornerRadius = CornerRadius(r))
+                clipPath(path) { this@drawWithContent.drawContent() }
+            },
     ) {
-        Memory.all.forEach { p ->
-            val on = p.id == Memory.activeId || (Memory.activeId.isEmpty() && p == now)
-            Pressable({ onPick(p) }, Modifier.fillMaxWidth(), label = "换成 ${p.name}") { pr ->
-                Row(
-                    Modifier.fillMaxWidth()
-                        .background(if (on) SideWarm.copy(alpha = .12f) else if (pr) veil(.06f) else Color.Transparent, RoundedCornerShape(12.dp))
-                        .padding(horizontal = 10.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    PersonaDot(p, 32.dp)
-                    Spacer(Modifier.width(12.dp))
-                    Column(Modifier.weight(1f)) {
-                        Txt(p.name, Page.ink, 15.sp, maxLines = 1)
-                        val n = history.of(p.id).size
-                        Txt("${if (n == 0) "还没有对话" else "$n 段对话"} · ${if (p.items.isEmpty()) "还没有记忆" else "${p.items.size} 条记忆"}", SideFaint, 11.5.sp, Modifier.padding(top = 2.dp), maxLines = 1)
+        Pressable(onToggle, label = "收起") { _ -> Box(Modifier.fillMaxWidth()) { NameChip(now, turn) } }
+        Column(Modifier.padding(start = 6.dp, end = 6.dp, bottom = 6.dp)) {
+            Memory.all.forEachIndexed { i, p ->
+                val on = p.id == Memory.activeId
+                // 行跟在色块后面一行行浮出
+                val a = ((k - .35f - i * .08f) / .4f).coerceIn(0f, 1f)
+                Pressable({ onPick(p) }, Modifier.fillMaxWidth().graphicsLayer { alpha = a; translationY = (1f - a) * -6.dp.toPx() }, label = "换成 ${p.name}") { pr ->
+                    Row(
+                        Modifier.fillMaxWidth()
+                            .background(if (on) SideWarm.copy(alpha = .12f) else if (pr) veil(.06f) else Color.Transparent, RoundedCornerShape(14.dp))
+                            .padding(horizontal = 10.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        PersonaDot(p, 34.dp)
+                        Spacer(Modifier.width(10.dp))
+                        Column(Modifier.weight(1f)) {
+                            Txt(p.name, Page.ink, 15.sp, maxLines = 1)
+                            Txt(personaMeta(history, p), SideFaint, 11.5.sp, Modifier.padding(top = 2.dp), maxLines = 1)
+                        }
+                        if (on) SvgIcon(Ic("M5 12.5l4.5 4.5L19 7.5"), SideWarm, 16.dp, stroke = 1.8f)
                     }
-                    if (on) SvgIcon(Ic("M5 12.5l4.5 4.5L19 7.5"), SideWarm, 18.dp, stroke = 1.8f)
                 }
             }
-        }
-        Box(Modifier.padding(horizontal = 10.dp, vertical = 4.dp).fillMaxWidth().height(1.dp).background(veil(.06f)))
-        Pressable(onManage, Modifier.fillMaxWidth(), label = "管理助理") { pr ->
-            Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                SvgIcon(SideIcons.plus, if (pr) Page.ink else Page.muted, 16.dp, stroke = 1.7f)
-                Spacer(Modifier.width(10.dp))
-                Txt("管理助理", if (pr) Page.ink else Page.muted, 13.5.sp)
+            val a = ((k - .5f) / .4f).coerceIn(0f, 1f)
+            Box(Modifier.graphicsLayer { alpha = a }.padding(horizontal = 10.dp, vertical = 4.dp).fillMaxWidth().height(1.dp).background(veil(.06f)))
+            Pressable(onManage, Modifier.fillMaxWidth().graphicsLayer { alpha = a }, label = "管理助理") { pr ->
+                Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    SvgIcon(SideIcons.plus, if (pr) Page.ink else Page.muted, 16.dp, stroke = 1.7f)
+                    Spacer(Modifier.width(10.dp))
+                    Txt("管理助理", if (pr) Page.ink else Page.muted, 13.5.sp)
+                }
             }
         }
     }
