@@ -118,6 +118,10 @@ class ChatState(val history: ConvStore) {
     var thinkText by mutableStateOf("")
     /** 这一轮的思考最后收进了哪条消息（-1 = 还没有）；开着思考抽屉时这轮结束，抽屉接着看那条。 */
     var landed by mutableIntStateOf(-1)
+    /** 这一轮是哪家答的、什么时候开始想、最后一次想到什么时候（算「思考了 N 秒」）。 */
+    var turnPid by mutableStateOf("")
+    private var thinkAt = 0L
+    private var thinkEnd = 0L
     /** 她在做事时你发的话：先排在聊天末尾，她做完手上一步就收到；这轮结束还没收到就接着发。 */
     val queue = mutableStateListOf<String>()
     /** 点了「立即发送」：停下这轮后马上把排着的发出去。 */
@@ -223,7 +227,7 @@ class ChatState(val history: ConvStore) {
             error = "还没设置好 ${c.name} 的密钥或模型"
             return
         }
-        busy = true; thinking = false; thinkText = ""; partial = ""; shown = 0f; streamDone = false; landed = -1
+        busy = true; thinking = false; thinkText = ""; partial = ""; shown = 0f; streamDone = false; landed = -1; turnPid = store.activeProvider; thinkAt = 0L; thinkEnd = 0L
         pendingImgs.clear(); pendingWorks.clear(); pendingWorkAt.clear(); workDraft = null; pendingClips.clear(); liveSteps.clear()
         val who = Memory.active
         val history = messages.toList()
@@ -273,7 +277,7 @@ class ChatState(val history: ConvStore) {
                 }
                 ChatApi.stream(
                     p, c, store.activeModel, Prompt.system(who, store.activeModel), Entries.weave(who, history, Prompt.aside(who, history, who.prevAt)), effort,
-                    onThink = { thinkText += it; thinking = true },
+                    onThink = { thinkText += it; thinking = true; val t = System.currentTimeMillis(); if (thinkAt == 0L) thinkAt = t; thinkEnd = t },
                     tools = if (specs.isNotEmpty()) Tools(
                         specs,
                         { n, a ->
@@ -394,7 +398,8 @@ class ChatState(val history: ConvStore) {
         val lead = partial.length - partial.trimStart().length
         landed = messages.size
         return ChatMsg("assistant", text, thinkText, pendingImgs.toList(), works = pendingWorks.toList(), steps = doneSteps(), clips = pendingClips.toList(),
-            workAt = pendingWorkAt.map { (it - lead).coerceIn(0, text.length) })
+            workAt = pendingWorkAt.map { (it - lead).coerceIn(0, text.length) }, pid = turnPid,
+            thinkMs = if (thinkAt > 0L) (thinkEnd - thinkAt).coerceAtLeast(0L) else 0L).also { thinkAt = 0L; thinkEnd = 0L }
     }
 
     private fun doneSteps() = liveSteps.map { if (it.done) it else it.copy(title = it.title.removePrefix("正在"), done = true) }
@@ -557,8 +562,6 @@ fun ChatPage(
         ModelDrawer(picker, store, compact, onClose = { picker = false })
         // 正在看这一轮的思考时她想完了：接着看收进去的那条；什么都没留下就收起抽屉
         LaunchedEffect(chat.busy) {
-            // 想完了：这条的思考请帮手整理成摘要（聊天里那一行也换成整理好的结论）
-            if (!chat.busy) chat.messages.getOrNull(chat.landed)?.let { m -> if (m.think.isNotBlank()) ThinkTidy.request(m.think, m.steps.map { it.at }, store) }
             if (!chat.busy && thinkOpen && thinkOf < 0) {
                 val i = chat.landed
                 if (i in chat.messages.indices && (chat.messages[i].think.isNotBlank() || chat.messages[i].steps.isNotEmpty())) thinkOf = i else thinkOpen = false
@@ -570,6 +573,7 @@ fun ChatPage(
             raw = if (liveThink) chat.thinkText else chat.messages[thinkOf].think,
             steps = if (liveThink) chat.liveSteps.toList() else chat.messages[thinkOf].steps,
             live = liveThink && chat.busy && (chat.partial.isEmpty() || chat.liveSteps.any { !it.done }),
+            summary = ThinkTidy.summaryStyle(if (liveThink) chat.turnPid.ifEmpty { store.activeProvider } else chat.messages[thinkOf].pid.ifEmpty { store.activeProvider }),
             onClose = { thinkOpen = false },
         )
         WorksShelf(shelf, onClose = { shelf = false }) { shelf = false; workOpen = it }
@@ -706,7 +710,7 @@ private fun Conversation(
                             Box(Modifier.fillMaxWidth(.86f), contentAlignment = Alignment.CenterEnd) { ClipCards(m.clips) }
                         }
                     } else {
-                        ThinkRow(m.think, m.steps, live = false) { onThink(i) }
+                        ThinkRow(m.think, m.steps, live = false, summary = ThinkTidy.summaryStyle(m.pid.ifEmpty { store.activeProvider }), thinkMs = m.thinkMs, fetch = i == chat.landed) { onThink(i) }
                         Box(Modifier.fillMaxWidth().longPressMsg(i, pressed == i, onLong)) {
                             ReplyFlow(remember(m.text) { ToolText.clean(m.text) }, m.works, m.workAt, null, false, onWork) { t, f -> Reply(t, compact, f) }
                         }
@@ -722,7 +726,7 @@ private fun Conversation(
                     val trailLive = chat.partial.isEmpty() || steps.any { !it.done }
                     if (chat.thinkText.isBlank() && steps.isEmpty()) {
                         if (chat.partial.isEmpty()) ThinkingMotion("", Modifier.padding(start = 2.dp, top = 6.dp))   // 没开深度思考也没用工具：只有三点
-                    } else ThinkRow(chat.thinkText, steps, trailLive) { onThink(-1) }
+                    } else ThinkRow(chat.thinkText, steps, trailLive, summary = ThinkTidy.summaryStyle(chat.turnPid.ifEmpty { store.activeProvider }), fetch = true) { onThink(-1) }
                     SkillAskHost(compact)
                     ReplyFlow(chat.partial.take(ceil(chat.shown).toInt()), chat.pendingWorks.toList(), chat.pendingWorkAt.toList(), chat.workDraft, chat.shown < chat.partial.length + 1, onWork) { t, f -> Reply(t, compact, f) }
                     NoteImageRow(chat.pendingImgs.toList(), onImage)
