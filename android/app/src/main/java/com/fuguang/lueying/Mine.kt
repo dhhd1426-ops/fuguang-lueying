@@ -731,6 +731,7 @@ private val BOOKS = listOf(
     Book("diary", "她的记忆", "Her Diary", { "$it 自己记下的：你们聊过的事、她答应过你的、她对你的了解。" }, "例如：答应周末陪他看完那部片"),
     Book("about", "关于你", "About You", { "你的基本情况，每次聊天都会带上。比如住在哪、做什么、身边的人。" }, "例如：我在济南，是工程师"),
     Book("pref", "你的偏好", "Preferences", { "你喜欢 $it 怎么和你说话、你的喜好和习惯。" }, "例如：回答简短一点，别用太多表情"),
+    Book(Lessons.KIND, "她记的", "Her Lessons", { "做事上出过的岔子，$it 自己记的一句。你纠正她一次，她以后不再犯；真管用了才算数。" }, "例如：报价格时说清是哪天查的"),
 )
 
 /** 记忆页里的分段条：和顶部「基础 / 提示词 / 记忆」同款，底下的色块弹着滑过去。 */
@@ -756,9 +757,9 @@ private fun SegPicker(labels: List<String>, counts: List<Int>, selected: Int, bl
                 val near = (1f - kotlin.math.abs(pos - i)).coerceIn(0f, 1f)
                 Pressable({ onPick(i) }, Modifier.weight(1f), label = t) { _ ->
                     Row(Modifier.fillMaxWidth().height(36.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-                        Txt(t, androidx.compose.ui.graphics.lerp(Page.muted, Page.ink, near), 13.5.sp, maxLines = 1)
-                        Spacer(Modifier.width(4.dp))
-                        Txt("${counts[i]}", Page.muted.copy(alpha = .8f), 11.sp, maxLines = 1)
+                        Txt(t, androidx.compose.ui.graphics.lerp(Page.muted, Page.ink, near), if (labels.size > 3) 12.5.sp else 13.5.sp, maxLines = 1)
+                        Spacer(Modifier.width(if (labels.size > 3) 3.dp else 4.dp))
+                        Txt("${counts[i]}", Page.muted.copy(alpha = .8f), if (labels.size > 3) 10.sp else 11.sp, maxLines = 1)
                     }
                 }
             }
@@ -820,7 +821,17 @@ private fun BookPage(p: Persona, b: Book, blur: Dp, onDeleted: (Mem, Int) -> Uni
     var all by remember(b.key) { mutableStateOf(false) }
     var open by remember { mutableStateOf<String?>(null) }
     Column(Modifier.fillMaxWidth().glass(RoundedCornerShape(20.dp), blur, fill = glassFill).animateContentSize().padding(start = 18.dp, end = 10.dp, top = 6.dp, bottom = 14.dp)) {
-        if (list.isEmpty()) Txt("还没有。聊得多了会慢慢记下，也可以自己在下面写。", Page.muted, 13.sp, Modifier.padding(top = 12.dp, bottom = 4.dp, end = 8.dp), lineHeight = 21.sp)
+        // 她记的：顶上一个开关，关了就不记也不想起（记过的留着）
+        if (b.key == Lessons.KIND) Row(Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 4.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Txt("记做事经验", Page.ink, 14.5.sp)
+                Spacer(Modifier.height(2.dp))
+                Txt(if (p.lessonsOn) "出了岔子她自己记一句，下次想起来" else "关着：不记，也不想起", Page.muted, 12.sp, maxLines = 1)
+            }
+            Spacer(Modifier.width(8.dp))
+            Box(Modifier.graphicsLayer { scaleX = .82f; scaleY = .82f }) { Switch(p.lessonsOn, "记做事经验") { p.lessonsOn = it; Memory.save() } }
+        }
+        if (list.isEmpty()) Txt(if (b.key == Lessons.KIND) "还没有。做事出了岔子她会记一句，也可以自己在下面写。" else "还没有。聊得多了会慢慢记下，也可以自己在下面写。", Page.muted, 13.sp, Modifier.padding(top = 12.dp, bottom = 4.dp, end = 8.dp), lineHeight = 21.sp)
         val shown = if (all) list else list.take(6)
         shown.forEachIndexed { k, m ->
             // 刚添加的那条：从上面轻轻落下来
@@ -839,16 +850,17 @@ private fun BookPage(p: Persona, b: Book, blur: Dp, onDeleted: (Mem, Int) -> Uni
                     Row(Modifier.fillMaxWidth().padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                         Pressable({ open = if (isOpen) null else m.id }, Modifier.weight(1f), label = m.text) { _ ->
                             Column(Modifier.fillMaxWidth()) {
-                                Txt(m.text, Page.ink, 14.5.sp, lineHeight = 22.sp, maxLines = if (isOpen) Int.MAX_VALUE else 2)
+                                Txt(m.text, if (m.kind == Lessons.KIND && m.failed >= 2) Page.muted else Page.ink, 14.5.sp, lineHeight = 22.sp, maxLines = if (isOpen) Int.MAX_VALUE else 2)
                                 if (isOpen && m.detail.isNotBlank()) {
                                     Spacer(Modifier.height(6.dp))
                                     Txt(m.detail, Page.ink.copy(alpha = .78f), 13.5.sp, lineHeight = 22.sp)
                                 }
                                 Spacer(Modifier.height(3.dp))
+                                val dim = m.kind == Lessons.KIND && m.failed >= 2
                                 Txt(
-                                    (if (m.by == "you") "你写的" else "${p.name} 记下的") + " · " + ago(m.at) +
+                                    (if (m.kind == Lessons.KIND) Lessons.state(m) else if (m.by == "you") "你写的" else "${p.name} 记下的") + " · " + ago(m.at) +
                                         (if (isOpen && m.convTitle.isNotBlank()) " · 来自「${m.convTitle}」" else ""),
-                                    Page.muted, 12.sp, maxLines = 1,
+                                    if (m.kind == Lessons.KIND && (m.habit || m.used > 0) && !dim) warm.copy(alpha = .9f) else Page.muted, 12.sp, maxLines = 1,
                                 )
                             }
                         }

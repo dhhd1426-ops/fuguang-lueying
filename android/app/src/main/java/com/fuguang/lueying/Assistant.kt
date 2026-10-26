@@ -259,7 +259,8 @@ object AssistantApi {
 /** files：你发来的照片和文件（Attach.kt 的引用）。imgs：这条回复里引用到的羽的笔记图片，每项是 "笔记id/图片id"。works：这条回复里做的作品 id，workAt：每张卡插在正文第几个字后面（照她做的先后，旧记录没有就都在最后）。steps：这轮用过的工具（思考过程时间线）。 */
 data class ChatMsg(val role: String, val text: String, val think: String = "", val imgs: List<String> = emptyList(), val at: Long = System.currentTimeMillis(), val works: List<String> = emptyList(), val steps: List<ToolStep> = emptyList(), val clips: List<String> = emptyList(), val files: List<String> = emptyList(), val workAt: List<Int> = emptyList(),
     /** 这条是哪家答的（定思考样式）；旧记录是空的。 */ val pid: String = "",
-    /** 想了多久（毫秒）；旧记录是 0。 */ val thinkMs: Long = 0)
+    /** 想了多久（毫秒）；旧记录是 0。 */ val thinkMs: Long = 0,
+    /** 这一轮之后她记下的做事经验（Mem.id，Lessons.kt）；回复下面多一行「记住了一件事」。 */ val lesson: String = "")
 
 /** 把思考原文切成段：按空行分；只有一段时按句号分成几小段。 */
 fun thinkSegments(raw: String): List<String> {
@@ -350,6 +351,8 @@ object ChatApi {
     /** 这一轮聊天用的温度和 Top P；null = 不带，交给供应商默认。 */
     @Volatile var temperature: Float? = null
     @Volatile var topP: Float? = null
+    /** 这一轮里 App 认出的岔子（Lessons.CLAIM 说做好了没动手、Lessons.CAP 工具用到顶）；每次 stream 开始时清空。 */
+    val slips: MutableSet<String> = java.util.Collections.synchronizedSet(mutableSetOf())
 
     suspend fun stream(
         p: Provider,
@@ -367,6 +370,7 @@ object ChatApi {
         toolNote: String = "",
         onText: suspend (String) -> Unit,
     ) {
+        slips.clear()
         // 先按 ModelFit 认这个模型（认过 / 学过的参数一开始就不带）；报错点名了哪个参数就记下、去掉重发（最多 5 次）；思考档位先一档档往下退，退到底才不带。
         repeat(5) {
             try { return tiers(p, c, model, system, history, effort, onThink, tools, fallback, toolNote, onText) } catch (_: Adapted) { }
@@ -432,6 +436,7 @@ object ChatApi {
         while (true) {
             // 工具次数到顶：以前是悄悄收走工具，她还以为能动手，写了调用也被丢掉，只能嘴上说「做好了」。现在明说
             if (round == MAX_ROUNDS && tools != null) {
+                slips += Lessons.CAP
                 val last = msgs.optJSONObject(msgs.length() - 1)
                 val arr = last?.optJSONArray("content")
                 if (anthropic && last?.optString("role") == "user" && arr != null) arr.put(JSONObject().put("type", "text").put("text", CAP_NOTE))
@@ -441,7 +446,7 @@ object ChatApi {
             if (r.calls.any { it.name.toString() in setOf(Works.MAKE, Works.EDIT, WorkJobs.START) }) worked = true
             // 嘴上说「做好了 / 卡在下面」，这一轮却没真的调用做作品的工具：提醒她一次，接着真的去做
             if (r.calls.isEmpty() && tools != null && round < MAX_ROUNDS && !nudged && !worked && Claims.saysDone(r.text)) {
-                nudged = true; round++
+                nudged = true; round++; slips += Lessons.CLAIM
                 if (r.text.isNotBlank()) msgs.put(if (anthropic) JSONObject().put("role", "assistant").put("content", r.blocks) else JSONObject().put("role", "assistant").put("content", r.text).apply { if (p.id == "deepseek" && (echo || r.reasoning.isNotEmpty())) put("reasoning_content", r.reasoning) })
                 msgs.put(JSONObject().put("role", "user").put("content", Claims.NUDGE))
                 continue

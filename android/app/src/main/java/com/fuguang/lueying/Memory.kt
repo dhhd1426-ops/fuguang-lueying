@@ -15,11 +15,16 @@ import org.json.JSONObject
  *  - 她的记忆：talk 你们聊过的事，promise 她答应过你的，know 她对你的了解
  *  - about 关于你：你的基本情况
  *  - pref 你的偏好：你喜欢她怎么说话、你的喜好和习惯
+ *  - lesson 她记的：做事出过的岔子，她自己记的一句（Lessons.kt）
  * by：her 她记下的，you 你写的。
  */
-data class Mem(val id: String, val text: String, val detail: String, val at: Long, val conv: String, val convTitle: String, val kind: String = "know", val by: String = "her") {
-    /** 属于哪一本：diary / about / pref。 */
-    val book: String get() = if (kind == "about" || kind == "pref") kind else "diary"
+data class Mem(val id: String, val text: String, val detail: String, val at: Long, val conv: String, val convTitle: String, val kind: String = "know", val by: String = "her",
+    /** 只有做事经验（kind = lesson）用：哪家哪个型号出的岔子（空 = 不分）；什么时候想起（work / photo / web / talk）；用上几次；没帮上几次；上次想起是什么时候。 */
+    val pv: String = "", val scene: String = "", val used: Int = 0, val failed: Int = 0, val usedAt: Long = 0) {
+    /** 属于哪一本：diary / about / pref / lesson。 */
+    val book: String get() = if (kind == "about" || kind == "pref" || kind == Lessons.KIND) kind else "diary"
+    /** 做事经验用顺手了（用上 3 次），哪个型号都带着。 */
+    val habit: Boolean get() = kind == Lessons.KIND && used >= 3
     /** 她自己的偏好、样子。 */
     val isSelf: Boolean get() = kind == "self"
 }
@@ -30,6 +35,8 @@ class Persona(val id: String, name: String, sys: String) {
     var sys by mutableStateOf(sys)
     /** 跨聊天回忆：开着时，她能翻看你们以前的对话。（记录不受它影响，一直都记。） */
     var memOn by mutableStateOf(true)
+    /** 记做事经验：出了岔子她自己记一句、下次想起来（Lessons.kt）。关掉就不记也不想起。 */
+    var lessonsOn by mutableStateOf(true)
     val items = mutableStateListOf<Mem>()
     var firstAt by mutableLongStateOf(0L)
     var lastAt by mutableLongStateOf(0L)
@@ -101,10 +108,11 @@ object Memory {
         save()
     }
 
-    private fun mem(it: JSONObject) = Mem(it.optString("id"), it.optString("t"), it.optString("d"), it.optLong("at"), it.optString("c"), it.optString("ct"), it.optString("k", "know").ifBlank { "know" }, it.optString("b").ifBlank { if (it.optString("c").isEmpty()) "you" else "her" })
+    private fun mem(it: JSONObject) = Mem(it.optString("id"), it.optString("t"), it.optString("d"), it.optLong("at"), it.optString("c"), it.optString("ct"), it.optString("k", "know").ifBlank { "know" }, it.optString("b").ifBlank { if (it.optString("c").isEmpty()) "you" else "her" },
+        it.optString("pv"), it.optString("sc"), it.optInt("u"), it.optInt("f"), it.optLong("ua"))
 
     private fun read(o: JSONObject) = Persona(o.optString("id"), o.optString("name", "Amor"), o.optString("sys", DEFAULT_SYS).let { if (it.trim() == OLD_DEFAULT_SYS) DEFAULT_SYS else it }).apply {
-        memOn = o.optBoolean("on", true)
+        memOn = o.optBoolean("on", true); lessonsOn = o.optBoolean("lesson", true)
         firstAt = o.optLong("first"); lastAt = o.optLong("last"); chats = o.optInt("chats")
         temp = o.optDouble("temp", .7).toFloat(); topOn = o.optBoolean("topOn", false); top = o.optDouble("top", .9).toFloat(); limit = o.optInt("limit", 40)
         o.optJSONArray("m")?.let { m -> for (i in 0 until m.length()) items += mem(m.getJSONObject(i)) }
@@ -115,8 +123,9 @@ object Memory {
         val a = JSONArray()
         all.forEach { p ->
             val m = JSONArray()
-            p.items.forEach { m.put(JSONObject().put("id", it.id).put("t", it.text).put("d", it.detail).put("at", it.at).put("c", it.conv).put("ct", it.convTitle).put("k", it.kind).put("b", it.by)) }
-            a.put(JSONObject().put("id", p.id).put("name", p.name).put("sys", p.sys).put("on", p.memOn)
+            p.items.forEach { m.put(JSONObject().put("id", it.id).put("t", it.text).put("d", it.detail).put("at", it.at).put("c", it.conv).put("ct", it.convTitle).put("k", it.kind).put("b", it.by)
+                .apply { if (it.kind == Lessons.KIND) put("pv", it.pv).put("sc", it.scene).put("u", it.used).put("f", it.failed).put("ua", it.usedAt) }) }
+            a.put(JSONObject().put("id", p.id).put("name", p.name).put("sys", p.sys).put("on", p.memOn).put("lesson", p.lessonsOn)
                 .put("first", p.firstAt).put("last", p.lastAt).put("chats", p.chats)
                 .put("temp", p.temp.toDouble()).put("topOn", p.topOn).put("top", p.top.toDouble()).put("limit", p.limit).put("m", m).put("e", Entries.write(p.entries)).put("tidyAt", p.tidyAt).put("tidyChats", p.tidyChats))
         }
@@ -183,9 +192,9 @@ object Memory {
         val t = hers(text.trim())
         if (t.isEmpty()) return null
         val dt = hers(detail.trim())
-        val k = when (book) { "about", "pref" -> book; else -> if ("答应" in t || "答应" in dt) "promise" else "know" }
+        val k = when (book) { "about", "pref", Lessons.KIND -> book; else -> if ("答应" in t || "答应" in dt) "promise" else "know" }
         val now = System.currentTimeMillis()
-        val m = Mem("$now-m", t, dt, now, "", "", k, "you")
+        val m = Mem("$now-m", t, dt, now, "", "", k, "you", scene = if (k == Lessons.KIND) Lessons.guessScene(t + dt) else "")
         p.items.add(0, m)
         save()
         return m
