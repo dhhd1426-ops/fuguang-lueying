@@ -76,7 +76,7 @@ private fun SwitchSection() {
     listOf(false to ("连体卡片" to "点名字，从名字下面展开"), true to ("竖排头像" to "侧栏左边一排，一点就换")).forEach { (rail, t) ->
         val on = Skin.rail == rail
         PressSurface(
-            { if (!on) { Skin.setRail(rail); haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove) } },
+            { if (!on) { Skin.useRail(rail); haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove) } },
             Modifier.fillMaxWidth().padding(bottom = 7.dp), shape = RoundedCornerShape(16.dp), pressScale = .985f, label = t.first,
         ) {
             Row(Modifier.fillMaxWidth().padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
