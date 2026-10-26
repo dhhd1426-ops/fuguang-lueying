@@ -83,14 +83,24 @@ object Memory {
 
     fun init(p: Prefs) {
         prefs = p
+        // 换主题、换图标时页面会重建、再走一遍这里（进程还在）：先清空，不然每位助理又多一份，存回去就成了两个
+        all.clear()
+        var dup = false
         runCatching {
             val o = JSONObject(p.string(KEY) ?: return@runCatching)
-            o.optJSONArray("all")?.let { a -> for (i in 0 until a.length()) all += read(a.getJSONObject(i)) }
+            o.optJSONArray("all")?.let { a ->
+                for (i in 0 until a.length()) {
+                    val one = read(a.getJSONObject(i))
+                    // 以前已经存成两份的：同一个 id 只留第一份
+                    if (all.any { it.id == one.id }) dup = true else all += one
+                }
+            }
             activeId = o.optString("active")
             userName = o.optString("user")
         }
         if (all.isEmpty()) migrate(p)
         if (all.none { it.id == activeId }) activeId = all.first().id
+        if (dup) save()
     }
 
     /** 从只有一位助理的旧版本搬过来：名字、系统提示词、记得的事都留着。 */
