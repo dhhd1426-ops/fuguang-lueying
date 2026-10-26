@@ -74,7 +74,7 @@ object Trail {
         Lessons.STEP -> "想起上次"
         Memory.REMEMBER -> "正在记下"; Memory.FORGET -> "正在忘掉"; Recall.TOOL -> "正在翻看以前的聊天"; WebSearch.TOOL -> "正在上网查"
         Skills.OPEN -> "正在翻开本事"; Skills.FIND -> "正在 GitHub 上找本事"; Skills.LEARN -> "等你点头"
-        Materials.OPEN -> "正在打开网页"; Materials.LOOK -> "正在看素材"; Gallery.TOOL -> "正在图库里找"; VideoParse.TOOL -> "正在解析抖音"; VideoParse.SAVE -> "正在存视频"
+        Materials.OPEN -> "正在打开网页"; Materials.LOOK -> "正在看素材"; VideoParse.TOOL -> "正在解析抖音"; VideoParse.SAVE -> "正在存视频"
         PanTools.OPEN -> "正在打开网盘分享"; PanTools.GET -> "正在下网盘里的文件"
         Works.MAKE -> "正在动手做"; WorkJobs.START -> "正在交代"; Works.EDIT -> "正在改作品"; Works.READ -> "正在看原稿"; "list_todos" -> "正在查看羽的待办"; "read_note" -> "正在读羽的笔记"
         else -> if (Mcp.owns(n)) Mcp.note(n).trimEnd('…') else "正在查阅羽的笔记"
@@ -89,7 +89,6 @@ object Trail {
         Works.EDIT -> "改好了「${workTitle(a)}」"
         WorkJobs.START -> (if (a.optString("id").isNotBlank()) "交代了大改" else "交代了作品") + "「${a.optString("title").trim().ifEmpty { "未命名" }.take(20)}」，后台在写"
         Materials.OPEN -> Materials.doneTitle(a.optString("url"))
-        Gallery.TOOL -> Gallery.doneTitle(a.optString("query"))
         VideoParse.TOOL, VideoParse.SAVE -> VideoParse.doneTitle(n, a)
         PanTools.OPEN, PanTools.GET -> PanTools.doneTitle(n, a)
         Materials.LOOK -> "看了 ${a.optJSONArray("urls")?.length() ?: 0} 件素材"
@@ -111,7 +110,6 @@ object Trail {
         Materials.OPEN -> a.optString("url")
         VideoParse.TOOL, VideoParse.SAVE -> Douyin.link(a.optString("text")) ?: a.optString("text")
         PanTools.OPEN, PanTools.GET -> Pan.link(a.optString("text"))?.link ?: a.optString("text")
-        Gallery.TOOL -> a.optString("query")
         Works.EDIT -> "改 ${a.optJSONArray("edits")?.length() ?: 0} 处"
         Works.MAKE -> when (a.optString("kind")) { "slides" -> "作品 · 幻灯片"; "doc" -> "作品 · 文档"; "board" -> "画板"; else -> "作品 · 网页" }
         else -> ""
@@ -120,7 +118,7 @@ object Trail {
     /** 作品用和作品卡同一个图标（圆 + 方）。 */
     fun icon(n: String): Ic = when (n) {
         Lessons.STEP -> bulb
-        Memory.REMEMBER -> bookmark; Memory.FORGET -> eraser; Recall.TOOL -> bubble; WebSearch.TOOL, Materials.OPEN -> globe; Materials.LOOK, Gallery.TOOL -> picture; VideoParse.TOOL -> Icons.play; VideoParse.SAVE, PanTools.GET -> saveIcon; PanTools.OPEN -> globe
+        Memory.REMEMBER -> bookmark; Memory.FORGET -> eraser; Recall.TOOL -> bubble; WebSearch.TOOL, Materials.OPEN -> globe; Materials.LOOK -> picture; VideoParse.TOOL -> Icons.play; VideoParse.SAVE, PanTools.GET -> saveIcon; PanTools.OPEN -> globe
         Skills.OPEN, Skills.FIND, Skills.LEARN -> skillIcon
         Works.MAKE, Works.EDIT -> shapes; Works.READ -> page; "list_todos" -> todo
         else -> if (Mcp.owns(n)) plug else feather
