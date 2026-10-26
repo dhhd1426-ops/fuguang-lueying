@@ -79,14 +79,21 @@ object Downloads {
     private var prefs: Prefs? = null
     private const val UA = "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Mobile Safari/537.36"
 
+    /** 读过一次了：换主题、换图标时页面重建会再走一遍 init（进程还在），不能再读一遍，不然每条下载多一份、下载页的列表 key 重复直接闪退；正在下的也会被旧记录顶掉。 */
+    private var loaded = false
+
     fun init(ctx: Context, p: Prefs) {
         app = ctx.applicationContext; prefs = p
+        if (loaded) return
+        loaded = true
         Torrent.init(File(app.filesDir, "torrent"))
         com.xunlei.downloadlib.XLDownloadManager.ctx = app
         runCatching {
             val a = JSONArray(p.string("downloads") ?: return@runCatching)
             for (i in 0 until a.length()) {
                 val o = a.getJSONObject(i)
+                // 以前已经存成两份的：同一个 id 只留第一份
+                if (list.any { it.id == o.optString("id") }) continue
                 val hs = o.optJSONObject("headers")?.let { h -> h.keys().asSequence().associateWith { k -> h.optString(k) } }.orEmpty()
                 val m = Sniffer.Media(o.optString("kind"), o.optString("url"), o.optString("audio").ifEmpty { null }, headers = hs, page = o.optString("page"), mime = o.optString("mime"), name = o.optString("name"), alts = o.optJSONArray("alts")?.let { a -> (0 until a.length()).map { a.optString(it) } }.orEmpty())
                 list += Dl(o.getString("id"), o.optString("title"), m, o.optString("quality"), o.optString("variant").ifEmpty { null }, o.optBoolean("audioOnly"), o.optBoolean("gallery"), o.optBoolean("wifi"), o.optLong("at")).also {
@@ -130,7 +137,10 @@ object Downloads {
     }
 
     fun start(act: Activity?, title: String, m: Sniffer.Media, quality: String, variant: String?, audioOnly: Boolean, gallery: Boolean, wifiOnly: Boolean) {
-        val d = Dl(System.currentTimeMillis().toString(36), title.ifBlank { "视频" }.take(60), m, quality, variant, audioOnly, gallery, wifiOnly)
+        // 一次下好几个（Telegram 多个视频、网盘一批）会落在同一毫秒：id 撞了下载页就闪退，撞了就往后挪
+        var t = System.currentTimeMillis()
+        while (list.any { it.id == t.toString(36) }) t++
+        val d = Dl(t.toString(36), title.ifBlank { "视频" }.take(60), m, quality, variant, audioOnly, gallery, wifiOnly)
         list.add(0, d); save()
         // 通知栏进度：安卓 13 起要先问一声
         if (act != null && android.os.Build.VERSION.SDK_INT >= 33 &&

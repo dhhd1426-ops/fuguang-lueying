@@ -121,7 +121,7 @@ fun DlTabs(row: @Composable (Dl, Int) -> Unit) {
             Page.MUTED, 13.sp, Modifier.fillMaxWidth().padding(top = 80.dp, start = 30.dp, end = 30.dp), lineHeight = 22.sp, align = TextAlign.Center,
         )
         else LazyColumn(Modifier.fillMaxSize(), contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 14.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            itemsIndexed(items, key = { _, d -> d.id }) { i, d -> Box(Modifier.animateItem()) { row(d, i) } }
+            itemsIndexed(items.distinctBy { it.id }, key = { _, d -> d.id }) { i, d -> Box(Modifier.animateItem()) { row(d, i) } }
             item(key = "foot") {
                 Txt("加了版权保护的视频下不了。下载的视频自己看，别拿去传播。", Page.MUTED.copy(alpha = .5f), 11.5.sp, Modifier.padding(top = 10.dp, start = 4.dp, bottom = 40.dp))
             }
