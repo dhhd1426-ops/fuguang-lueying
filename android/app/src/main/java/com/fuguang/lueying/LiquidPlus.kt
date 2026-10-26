@@ -90,7 +90,8 @@ fun LiquidPlusButton(state: LiquidPlusState, onPick: (Int) -> Unit) {
         Modifier
             .size(36.dp)
             .onGloballyPositioned { state.center = it.boundsInRoot().center; state.origin = it.positionInRoot() }
-            .border(1.dp, Page.LINE, CircleShape)
+            .graphicsLayer { scaleX = press; scaleY = press }
+            .background(veil(lit), CircleShape)
             .pointerInput(Unit) {
                 awaitEachGesture {
                     awaitFirstDown(requireUnconsumed = false)
@@ -125,7 +126,7 @@ fun LiquidPlusButton(state: LiquidPlusState, onPick: (Int) -> Unit) {
                 }
             },
         contentAlignment = Alignment.Center,
-    ) { SvgIcon(Ic("M12 5v14M5 12h14"), Page.INK, 18.dp, modifier = Modifier.rotate(rot.value)) }
+    ) { SvgIcon(Ic("M12 5v14M5 12h14"), Page.ink, 18.dp, modifier = Modifier.rotate(rot.value)) }
 }
 
 /** 盖在整页上的液态层：黏连的球 + 球上的图标。只在打开或动画中绘制。 */
