@@ -91,7 +91,8 @@ object Reflect {
     /** 把这一段交给模型回想，按它给的动作新增、改写、删除。失败就算了，不打扰用户。 */
     suspend fun run(her: Persona, p: Provider, c: ProviderConfig, model: String, window: List<ChatMsg>, conv: String, convTitle: String) {
         val who = Memory.userCall
-        val known = her.items.take(80)
+        // 做事经验（Lessons.kt）另有一套记法和验法，回想不碰它
+        val known = her.items.filter { it.kind != Lessons.KIND }.take(80)
         val talk = window.joinToString("\n") { (if (it.role == "user") "$who：" else "你：") + it.text.take(800) }.take(8000)
         val sys = "你是${her.name}，在整理自己的记忆。只输出 JSON，不要别的文字。你的名字和$who 的称呼另有记录，不要记名字相关的事。"
         val ask = """
@@ -120,11 +121,12 @@ $OPS
      */
     suspend fun tidy(her: Persona, p: Provider, c: ProviderConfig, model: String) {
         val now = System.currentTimeMillis()
-        val due = her.items.size > 60 || (her.items.size >= 8 && now - her.tidyAt > 86_400_000L && her.chats - her.tidyChats >= 5)
+        val mine = her.items.filter { it.kind != Lessons.KIND }
+        val due = mine.size > 60 || (mine.size >= 8 && now - her.tidyAt > 86_400_000L && her.chats - her.tidyChats >= 5)
         if (!due) return
         her.tidyAt = now; her.tidyChats = her.chats; Memory.save()
         val who = Memory.userCall
-        val known = her.items.toList()
+        val known = mine
         val sys = "你是${her.name}，在把自己的记忆从头理一遍。只输出 JSON，不要别的文字。"
         val ask = """
 你现在记得的（m 编号是 id，后面是记下了多久）：

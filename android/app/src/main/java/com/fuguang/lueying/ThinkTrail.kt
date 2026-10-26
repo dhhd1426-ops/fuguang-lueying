@@ -71,6 +71,7 @@ private val saveIcon = Ic("M12 4v11m-4.5-4.5L12 15l4.5-4.5M5 19h14")
 /** 每种工具在时间线上的说法和图标。 */
 object Trail {
     fun liveTitle(n: String): String = when (n) {
+        Lessons.STEP -> "想起上次"
         Memory.REMEMBER -> "正在记下"; Memory.FORGET -> "正在忘掉"; Recall.TOOL -> "正在翻看以前的聊天"; WebSearch.TOOL -> "正在上网查"
         Skills.OPEN -> "正在翻开本事"; Skills.FIND -> "正在 GitHub 上找本事"; Skills.LEARN -> "等你点头"
         Materials.OPEN -> "正在打开网页"; Materials.LOOK -> "正在看素材"; Gallery.TOOL -> "正在图库里找"; VideoParse.TOOL -> "正在解析抖音"; VideoParse.SAVE -> "正在存视频"
@@ -80,6 +81,7 @@ object Trail {
     }
 
     fun doneTitle(n: String, a: JSONObject): String = when (n) {
+        Lessons.STEP -> "想起上次"
         Memory.REMEMBER -> "记下了一条"; Memory.FORGET -> "忘掉了一些"; Recall.TOOL -> "翻了以前的聊天"; WebSearch.TOOL -> "上网查了「${a.optString("query").trim().take(16)}」"
         Skills.OPEN -> a.optJSONArray("names")?.takeIf { it.length() > 1 }?.let { arr -> "翻开了 ${arr.length()} 样本事，合成一种做法" } ?: "翻开了「${(a.optJSONArray("names")?.optString(0) ?: a.optString("name")).trim().take(12)}」"; Skills.FIND -> "在 GitHub 上找了「${a.optString("query").trim().take(16)}」"
         Skills.LEARN -> if (Skills.has(SkillHub.cand(a.optString("repo"), a.optString("path")))) "学会了「${a.optString("title").trim().take(12)}」" else "没学「${a.optString("title").trim().take(12)}」"
@@ -101,6 +103,7 @@ object Trail {
     private fun workTitle(a: JSONObject) = a.optString("title").trim().ifEmpty { Works.get(a.optString("id").trim())?.title ?: "作品" }.take(20)
 
     fun detail(n: String, a: JSONObject): String = when (n) {
+        Lessons.STEP -> a.optString("text")
         Memory.REMEMBER, Memory.FORGET -> a.optString("text")
         Recall.TOOL, "search_notes", WebSearch.TOOL, Skills.FIND -> a.optString("query")
         Skills.OPEN -> a.optJSONArray("names")?.let { arr -> (0 until arr.length()).joinToString("、") { arr.optString(it) } } ?: a.optString("name")
@@ -116,6 +119,7 @@ object Trail {
 
     /** 作品用和作品卡同一个图标（圆 + 方）。 */
     fun icon(n: String): Ic = when (n) {
+        Lessons.STEP -> bulb
         Memory.REMEMBER -> bookmark; Memory.FORGET -> eraser; Recall.TOOL -> bubble; WebSearch.TOOL, Materials.OPEN -> globe; Materials.LOOK, Gallery.TOOL -> picture; VideoParse.TOOL -> Icons.play; VideoParse.SAVE, PanTools.GET -> saveIcon; PanTools.OPEN -> globe
         Skills.OPEN, Skills.FIND, Skills.LEARN -> skillIcon
         Works.MAKE, Works.EDIT -> shapes; Works.READ -> page; "list_todos" -> todo
@@ -126,6 +130,7 @@ object Trail {
     val chevron = Ic("M9.5 6l6 6-6 6")
     private val globe = Ic("M4 12h16M12 4c2.4 2.5 2.4 13.5 0 16M12 4c-2.4 2.5-2.4 13.5 0 16", circles = listOf(floatArrayOf(12f, 12f, 8f)))
     private val picture = Ic("M4 5h16v14H4ZM4 16l4.5-4 3.5 3 3-2.5L20 16", circles = listOf(floatArrayOf(9f, 9.5f, 1.6f)))
+    val bulb = Ic("M9.5 18h5M10.5 21h3M12 3a6 6 0 0 0-3.5 10.9V16h7v-2.1A6 6 0 0 0 12 3Z")
     private val bookmark = Ic("M7 4h10a1 1 0 0 1 1 1v15l-6-3.5L6 20V5a1 1 0 0 1 1-1Z")
     private val eraser = Ic("M8.5 19.5h11M4.8 14.7l9.9-9.9a1.5 1.5 0 0 1 2.1 0l2.4 2.4a1.5 1.5 0 0 1 0 2.1L10.3 18.2a1.5 1.5 0 0 1-2.1 0l-3.4-3.4ZM9.6 9.9l4.5 4.5")
     private val bubble = Ic("M5 5.5h14v10H10l-4 3v-3H5ZM9 10.5h6")
@@ -276,7 +281,8 @@ fun ThinkRow(raw: String, steps: List<ToolStep>, live: Boolean, summary: Boolean
                 live -> ThinkingMotion(latestSentence(raw, 24).ifEmpty { steps.lastOrNull()?.title.orEmpty() }, Modifier.weight(1f, fill = false), size = 14.sp)
                 else -> {
                     SvgIcon(Trail.clock, Page.muted, 16.dp, stroke = 1.5f); Spacer(Modifier.width(8.dp))
-                    val t = if (thinkMs >= 100) "思考了 " + "%.1f".format(thinkMs / 1000f) + " 秒" else "思考过程"
+                    // 没想、只用了工具（或只想起了上次）：写最后一步的标题
+                    val t = if (thinkMs >= 100) "思考了 " + "%.1f".format(thinkMs / 1000f) + " 秒" else if (raw.isBlank()) steps.lastOrNull()?.title.orEmpty().ifEmpty { "思考过程" } else "思考过程"
                     Txt(t, if (pressed) Page.ink else Page.muted, 14.sp, Modifier.weight(1f, fill = false), maxLines = 1)
                 }
             }

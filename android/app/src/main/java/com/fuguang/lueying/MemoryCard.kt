@@ -152,7 +152,7 @@ fun MemoryCardHost() {
                     .graphicsLayer { alpha = ((prog.value - .45f) / .5f).coerceIn(0f, 1f) },
             ) {
                 Txt(
-                    when (MemoryCard.book) { "about" -> "关于你"; "pref" -> "你的偏好"; else -> "让 ${p.name} 记住" },
+                    when (MemoryCard.book) { "about" -> "关于你"; "pref" -> "你的偏好"; Lessons.KIND -> "提醒 ${p.name} 做事时"; else -> "让 ${p.name} 记住" },
                     Page.ink, 17.sp, family = Serif,
                 )
                 Spacer(Modifier.height(14.dp))
@@ -169,7 +169,7 @@ fun MemoryCardHost() {
                                 .padding(horizontal = 14.dp, vertical = 13.dp),
                         ) {
                             if (title.isEmpty()) Txt(
-                                when (MemoryCard.book) { "about" -> "比如：我在济南，是工程师"; "pref" -> "比如：回答简短一点"; else -> "比如：答应周末陪他看完那部片" },
+                                when (MemoryCard.book) { "about" -> "比如：我在济南，是工程师"; "pref" -> "比如：回答简短一点"; Lessons.KIND -> "比如：报价格时说清是哪天查的"; else -> "比如：答应周末陪他看完那部片" },
                                 Page.muted.copy(alpha = .6f), 15.sp, family = Serif, maxLines = 1,
                             )
                             inner()

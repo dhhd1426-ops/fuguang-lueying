@@ -140,6 +140,10 @@ class ChatState(val history: ConvStore) {
     val pendingClips = mutableStateListOf<String>()
     var error by mutableStateOf<String?>(null)
     var needsSetup by mutableStateOf(false)
+    /** 这一轮出的岔子、这一轮真做了的事（work / photo / web）、这一轮想起的做事经验（Lessons.kt）。 */
+    private val slips = mutableSetOf<String>()
+    private val happened = mutableSetOf<String>()
+    private var shownLessons: List<Mem> = emptyList()
     var draft by mutableStateOf("")
     /** 输入框里排着要发的照片、文件（Attach.kt 的引用）。 */
     val atts = mutableStateListOf<String>()
@@ -190,7 +194,11 @@ class ChatState(val history: ConvStore) {
         if (busy) { if (text.isEmpty()) return -1; draft = ""; editing = -1; queue.add(text); return -1 }
         draft = ""
         error = null; needsSetup = false
-        if (editing in messages.indices) while (messages.size > editing) messages.removeAt(messages.lastIndex)
+        // 这句是在纠正她、或是改了话重发：记成岔子，这一轮完了她给自己记一句
+        val correcting = editing < 0 && Lessons.isCorrection(text, messages.lastOrNull())
+        Lessons.settleTalk(Memory.active, text, correcting)
+        if (correcting) slips += Lessons.CORRECT
+        if (editing in messages.indices) { slips += Lessons.REDO; while (messages.size > editing) messages.removeAt(messages.lastIndex) }
         editing = -1
         // 文字里有抖音链接：卡片挂在这条消息下面（先是「正在认」，认出了就填满）
         messages.add(ChatMsg("user", text, clips = listOfNotNull(VideoStore.offer(text)?.link, PanStore.offer(text)?.link, TgStore.offer(text)?.link), files = atts.toList()))
@@ -208,6 +216,7 @@ class ChatState(val history: ConvStore) {
         if (messages.lastOrNull()?.role == "assistant") messages.removeAt(messages.lastIndex)
         if (messages.lastOrNull()?.role != "user") return
         error = null; needsSetup = false
+        slips += Lessons.REDO
         persist()
         ask(scope, store)
     }
@@ -228,9 +237,14 @@ class ChatState(val history: ConvStore) {
             return
         }
         busy = true; thinking = false; thinkText = ""; partial = ""; shown = 0f; streamDone = false; landed = -1; turnPid = store.activeProvider; thinkAt = 0L; thinkEnd = 0L
-        pendingImgs.clear(); pendingWorks.clear(); pendingWorkAt.clear(); workDraft = null; pendingClips.clear(); liveSteps.clear()
+        pendingImgs.clear(); pendingWorks.clear(); pendingWorkAt.clear(); workDraft = null; pendingClips.clear(); liveSteps.clear(); happened.clear()
         val who = Memory.active
         val history = messages.toList()
+        // 做事经验：按这一轮要做的事想起几条，时间线上记一步「想起上次」
+        val pv = store.activeProvider + "|" + store.activeModel.trim().lowercase()
+        shownLessons = Lessons.pick(who, history, pv)
+        if (shownLessons.isNotEmpty()) liveSteps.add(ToolStep(0, Lessons.STEP, "想起上次", shownLessons.joinToString("；") { it.text }, done = true))
+        if (history.lastOrNull()?.files?.any { Attach.isImage(it) } == true) happened += "photo"
         // 思考档位照 Claude App：选哪档就原样发哪档（每个型号各记各的），App 不替模型猜
         val effort = store.effort()
         ChatApi.temperature = who.temp
@@ -245,6 +259,7 @@ class ChatState(val history: ConvStore) {
                         liveSteps.add(ToolStep(0, Materials.LOOK, "正在看照片", "", done = false))
                         val err = AttachLook.ensure(pics, store)
                         if (idx < liveSteps.size) liveSteps[idx] = liveSteps[idx].copy(title = if (err == null) "看了${if (pics.size > 1) " ${pics.size} 张" else ""}照片" else "照片没看清", detail = err.orEmpty(), done = true)
+                        if (err != null) { slips += Lessons.PHOTO; happened -= "photo" }
                     }
                 }
                 // 连接了羽：给模型查笔记的工具；开着跨聊天回忆：再给一个翻以前聊天的工具
@@ -276,7 +291,7 @@ class ChatState(val history: ConvStore) {
                     if (mcp.isNotEmpty()) append("\n").append(Mcp.system())
                 }
                 ChatApi.stream(
-                    p, c, store.activeModel, Prompt.system(who, store.activeModel), Entries.weave(who, history, Prompt.aside(who, history, who.prevAt)), effort,
+                    p, c, store.activeModel, Prompt.system(who, store.activeModel), Entries.weave(who, history, Prompt.aside(who, history, who.prevAt) + Lessons.aside(shownLessons, slips)), effort,
                     onThink = { thinkText += it; thinking = true; val t = System.currentTimeMillis(); if (thinkAt == 0L) thinkAt = t; thinkEnd = t },
                     tools = if (specs.isNotEmpty()) Tools(
                         specs,
@@ -287,6 +302,7 @@ class ChatState(val history: ConvStore) {
                             liveSteps.add(ToolStep(thinkText.length, n, Trail.liveTitle(n), Trail.detail(n, a), done = false))
                             var made = n != Works.MAKE && n != Works.EDIT
                             if (!made && workDraft == null) workDraft = WorkDraft(partial.length, n, 0, WorkDraft.title(n, a.toString()))
+                            when (n) { Works.MAKE, Works.EDIT, WorkJobs.START -> happened += "work"; Materials.LOOK -> happened += "photo"; WebSearch.TOOL -> happened += "web" }
                             try {
                             if (n == Memory.REMEMBER || n == Memory.FORGET) Memory.runTool(who, n, a, cur.orEmpty(), convTitle0)
                             else if (n == Recall.TOOL) Recall.run(store0, cur, a.optString("query"))
@@ -304,10 +320,12 @@ class ChatState(val history: ConvStore) {
                                 throw e
                             } catch (e: Exception) {
                                 // 工具自己出错不拖垮整轮：告诉她没成，她可以重来或如实说
+                                if (n == WebSearch.TOOL) slips += Lessons.WEB
                                 ToolOut("没成功：" + (e.message ?: e.javaClass.simpleName).take(80) + "。可以再试一次，或如实告诉对方没做成。")
                             } finally {
                                 // 没做成的作品如实标出来，不显示「做好了」
                                 val t = if (made) Trail.doneTitle(n, a) else Trail.failTitle(n, a)
+                                if (!made) slips += Lessons.WORK
                                 if (idx < liveSteps.size) liveSteps[idx] = liveSteps[idx].copy(title = t, done = true)
                                 if (n == Works.MAKE || n == Works.EDIT) workDraft = null
                             }
@@ -334,6 +352,13 @@ class ChatState(val history: ConvStore) {
                     val title = this@ChatState.history.get(convId)?.title ?: firstSentence(question, 18)
                     val model = store.activeModel
                     Reflect.later(cid, messages.toList()) { w -> Reflect.run(who, p, c, model, w, cid, title); Reflect.tidy(who, p, c, model) }
+                    // 做事经验：想起过的这一轮算不算用上；出了岔子就请帮手给她记一句，挂在这条回复下面
+                    slips += ChatApi.slips
+                    Lessons.settle(who, shownLessons, slips, happened)
+                    if (slips.isNotEmpty() && who.lessonsOn) {
+                        val win = messages.toList(); val at = win.last().at; val s = slips.toSet()
+                        scope.launch { Lessons.learn(who, store, win, s, pv, cid, title)?.let { m -> attachLesson(cid, at, m.id) } }
+                    }
                 } else error = "没有收到回复，换个模型再试"
             } catch (e: kotlinx.coroutines.CancellationException) {
                 if (partial.isNotBlank() || pendingWorks.isNotEmpty() || pendingClips.isNotEmpty()) messages.add(replyMsg(partial.take(ceil(shown).toInt()).trim()))
@@ -343,6 +368,7 @@ class ChatState(val history: ConvStore) {
                 error = e.message ?: "出错了"
             } finally {
                 val stopped = job?.isCancelled == true
+                slips.clear(); shownLessons = emptyList()
                 partial = ""; shown = 0f; busy = false; thinking = false; thinkText = ""; pendingImgs.clear(); pendingWorks.clear(); pendingWorkAt.clear(); workDraft = null; pendingClips.clear(); liveSteps.clear()
                 persist()
                 // 这轮结束还有排着的话：接着发（你自己点停止的不发，出错的也不发，留着等你）
@@ -391,6 +417,15 @@ class ChatState(val history: ConvStore) {
             messages.indices.forEach { k -> messages[k] = fix(messages[k]) }
             persist()
         } else if (conv != null && conv != convId) history.get(conv)?.let { c -> if (c.msgs.any { from in it.works }) history.save(conv, c.msgs.map(::fix)) }
+    }
+
+    /** 她记下了一条做事经验：挂到那条回复上（换了对话也找得到）。 */
+    private fun attachLesson(conv: String, msgAt: Long, id: String) {
+        fun fix(m: ChatMsg) = if (m.role == "assistant" && m.at == msgAt) m.copy(lesson = id) else m
+        if (messages.any { it.role == "assistant" && it.at == msgAt }) {
+            messages.indices.forEach { k -> messages[k] = fix(messages[k]) }
+            persist()
+        } else if (conv.isNotEmpty() && conv != convId) history.get(conv)?.let { c -> history.save(conv, c.msgs.map(::fix)) }
     }
 
     /** 收成一条她的回复：卡的位置换算到去掉开头空白后的正文里。 */
@@ -715,6 +750,7 @@ private fun Conversation(
                             ReplyFlow(remember(m.text) { ToolText.clean(m.text) }, m.works, m.workAt, null, false, onWork) { t, f -> Reply(t, compact, f) }
                         }
                         UsedSkills(m.steps)
+                        LessonRow(m.lesson)
                         NoteImageRow(m.imgs, onImage)
                         ClipCards(m.clips)
                     }

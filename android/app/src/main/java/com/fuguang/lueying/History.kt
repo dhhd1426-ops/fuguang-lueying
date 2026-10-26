@@ -48,7 +48,7 @@ class ConvStore(private val prefs: Prefs) {
                             m.optJSONArray("v")?.let { a -> List(a.length()) { a.optString(it) } } ?: emptyList(),
                             m.optJSONArray("f")?.let { a -> List(a.length()) { a.optString(it) } } ?: emptyList(),
                             m.optJSONArray("wa")?.let { a -> List(a.length()) { a.optInt(it) } } ?: emptyList(),
-                            m.optString("pv"), m.optLong("tm"))
+                            m.optString("pv"), m.optLong("tm"), lesson = m.optString("ls"))
                     },
                     who = o.optString("a"),
                 )
@@ -102,7 +102,7 @@ class ConvStore(private val prefs: Prefs) {
         val arr = JSONArray()
         all.sortedByDescending { it.updated }.forEach { c ->
             val ms = JSONArray()
-            c.msgs.forEach { m -> ms.put(JSONObject().put("r", m.role).put("x", m.text).apply { if (m.think.isNotEmpty()) put("k", m.think); if (m.imgs.isNotEmpty()) put("i", JSONArray(m.imgs)); if (m.works.isNotEmpty()) put("w", JSONArray(m.works)); if (m.workAt.isNotEmpty()) put("wa", JSONArray(m.workAt)); if (m.clips.isNotEmpty()) put("v", JSONArray(m.clips)); if (m.files.isNotEmpty()) put("f", JSONArray(m.files)); if (m.steps.isNotEmpty()) put("s", JSONArray(m.steps.map { s -> JSONObject().put("a", s.at).put("n", s.name).put("t", s.title).put("d", s.detail) })); if (m.at > 0) put("t", m.at); if (m.pid.isNotEmpty()) put("pv", m.pid); if (m.thinkMs > 0) put("tm", m.thinkMs) }) }
+            c.msgs.forEach { m -> ms.put(JSONObject().put("r", m.role).put("x", m.text).apply { if (m.think.isNotEmpty()) put("k", m.think); if (m.imgs.isNotEmpty()) put("i", JSONArray(m.imgs)); if (m.works.isNotEmpty()) put("w", JSONArray(m.works)); if (m.workAt.isNotEmpty()) put("wa", JSONArray(m.workAt)); if (m.clips.isNotEmpty()) put("v", JSONArray(m.clips)); if (m.files.isNotEmpty()) put("f", JSONArray(m.files)); if (m.steps.isNotEmpty()) put("s", JSONArray(m.steps.map { s -> JSONObject().put("a", s.at).put("n", s.name).put("t", s.title).put("d", s.detail) })); if (m.at > 0) put("t", m.at); if (m.pid.isNotEmpty()) put("pv", m.pid); if (m.thinkMs > 0) put("tm", m.thinkMs); if (m.lesson.isNotEmpty()) put("ls", m.lesson) }) }
             arr.put(JSONObject().put("id", c.id).put("t", c.title).put("c", c.created).put("u", c.updated).put("p", c.pinned).put("a", c.who).put("m", ms))
         }
         prefs.putString(KEY, arr.toString())
