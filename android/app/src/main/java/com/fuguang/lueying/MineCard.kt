@@ -104,13 +104,11 @@ fun MineCardLayer(store: AssistantStore, nav: MineNav) {
             }
             "about" -> AboutPage { nav.screen = "mine" }
             "theme" -> ThemePage { nav.screen = "mine" }
-            "features" -> FeaturesPage({ nav.screen = "mine" }, { nav.screen = "search" }, { nav.screen = "gallery" }) { nav.screen = "skills" }
-            "gallery" -> GalleryPage({ nav.screen = "features" }) { nav.screen = "gallery/$it" }
+            "features" -> FeaturesPage({ nav.screen = "mine" }, { nav.screen = "search" }) { nav.screen = "skills" }
             "skills" -> SkillsPage({ nav.screen = "features" }) { nav.screen = "skills/$it" }
             "search" -> SearchPage({ nav.screen = "features" }) { nav.screen = "search/$it" }
             else -> if (screen.startsWith("skills/")) SkillDetailPage(screen.removePrefix("skills/")) { nav.screen = "skills" }
             else if (screen.startsWith("search/")) SearchSourcePage(screen.removePrefix("search/")) { nav.screen = "search" }
-            else if (screen.startsWith("gallery/")) GallerySourcePage(screen.removePrefix("gallery/")) { nav.screen = "gallery" }
             else Column(Modifier.widthIn(max = 720.dp).fillMaxSize()) {
                 CompositionLocalProvider(LocalTitleEnd provides 36.dp) { MineSub(store, screen, true, 0.dp, nav) }
             }

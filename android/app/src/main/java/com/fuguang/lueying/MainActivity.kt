@@ -38,7 +38,6 @@ class MainActivity : ComponentActivity() {
         WebSearch.init(prefs)
         Skin.init(prefs)
         AppIcon.init(this, prefs)
-        Gallery.init(prefs)
         AdBlock.init(this, prefs)
         Downloads.init(this, prefs)
         DlSeen.init(prefs)
