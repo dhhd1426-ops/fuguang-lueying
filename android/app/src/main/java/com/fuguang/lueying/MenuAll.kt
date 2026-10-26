@@ -106,7 +106,7 @@ internal fun AllConvs(history: ConvStore, current: String?, busy: Boolean, onBac
             Txt(if (key.isEmpty()) "还没有对话" else "没有找到「$key」", SideFaint, 13.5.sp, Modifier.fillMaxWidth().padding(top = 36.dp).padding(horizontal = 16.dp))
         }
         LazyColumn(Modifier.weight(1f).padding(top = 10.dp), contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 10.dp, end = 10.dp, bottom = 96.dp)) {
-            items(rows, key = { it.first.id }) { (c, hit) ->
+            items(rows.distinctBy { it.first.id }, key = { it.first.id }) { (c, hit) ->
                 val on = c.id == current
                 Pressable({ onOpen(c) }, Modifier.fillMaxWidth(), label = c.title) { p ->
                     Row(

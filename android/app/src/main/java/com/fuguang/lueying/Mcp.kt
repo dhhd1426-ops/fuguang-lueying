@@ -93,12 +93,17 @@ object Mcp {
     var catalog by mutableStateOf<List<McpCatalogItem>>(emptyList())
         private set
 
+    private var loaded = false
+
     fun init(p: Prefs) {
         prefs = p
         catalog = BUILTIN
+        // 页面重建时会再走一遍（进程还在）：读过就不再读，不然每个服务多一份
+        if (loaded) return
+        loaded = true
         runCatching {
             val a = JSONArray(prefs.string(KEY) ?: "[]")
-            for (i in 0 until a.length()) servers.add(McpServer.fromJson(a.getJSONObject(i)))
+            for (i in 0 until a.length()) McpServer.fromJson(a.getJSONObject(i)).let { s -> if (servers.none { it.id == s.id }) servers.add(s) }
         }
     }
 

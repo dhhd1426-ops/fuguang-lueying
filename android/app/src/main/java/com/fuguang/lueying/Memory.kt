@@ -81,10 +81,13 @@ object Memory {
     var activeId by mutableStateOf("")
     val active: Persona get() = all.firstOrNull { it.id == activeId } ?: all.first()
 
+    private var loaded = false
+
     fun init(p: Prefs) {
         prefs = p
-        // 换主题、换图标时页面会重建、再走一遍这里（进程还在）：先清空，不然每位助理又多一份，存回去就成了两个
-        all.clear()
+        // 换主题、换图标时页面会重建、再走一遍这里（进程还在）：读过就不再读。不能清空重读：正在聊的那位会被换成新对象，她手上记的东西会丢
+        if (loaded) return
+        loaded = true
         var dup = false
         runCatching {
             val o = JSONObject(p.string(KEY) ?: return@runCatching)

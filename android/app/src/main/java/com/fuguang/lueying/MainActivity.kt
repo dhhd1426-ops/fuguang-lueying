@@ -22,6 +22,7 @@ class MainActivity : ComponentActivity() {
             navigationBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
         )
         super.onCreate(savedInstanceState)
+        CrashLog.arm(this)
         val prefs = Prefs(this)
         Yu.init(this)
         Works.init(this)

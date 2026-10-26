@@ -84,7 +84,7 @@ internal fun TocPage(data: Luoying, r: NoteReading) {
             Txt(if (NoteCard.group == "favorites" && NoteCard.query.isEmpty()) "还没收藏。读的时候点「收藏」。" else "没找到。换个词试试。", Page.muted.copy(alpha = .6f), 13.sp, Modifier.fillMaxWidth().padding(vertical = 28.dp), align = androidx.compose.ui.text.style.TextAlign.Center)
         }
         LazyColumn(Modifier.weight(1f)) {
-            items(list, key = { it.id }) { c ->
+            items(list.distinctBy { it.id }, key = { it.id }) { c ->
                 val cur = c.id == r.last
                 PressSurface({ r.open(c.id); NoteCard.screen = "read" }, Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp), fill = androidx.compose.ui.graphics.Color.Transparent, pressScale = .99f, label = c.title) {
                     Column(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 11.dp)) {
