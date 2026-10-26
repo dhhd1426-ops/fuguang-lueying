@@ -111,9 +111,25 @@ private fun SideMain(
     onWorks: () -> Unit, onBoards: () -> Unit, onJournal: () -> Unit, onAssistants: () -> Unit,
 ) {
     var editing by remember { mutableStateOf<String?>(null) }
-    Column(Modifier.fillMaxSize().padding(top = 22.dp)) {
+    // 换助理的方式（「我的 → 主题」）：竖排头像在左边一条，右边是名字和列表；连体卡片（默认）名字在顶上
+    if (Skin.rail) Row(Modifier.fillMaxSize().padding(top = 22.dp)) {
+        AssistantRail(history, onAssistants)
+        Column(Modifier.weight(1f)) {
+            RailTitle(history, onSearch)
+            SideBody(history, current, busy, editing, { editing = it }, onSearch, onOpen, onNew, onWorks, onBoards, onJournal, narrow = true)
+        }
+    } else Column(Modifier.fillMaxSize().padding(top = 22.dp)) {
         AssistantTitle(history, onSearch, onAssistants)
-        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(start = 10.dp, end = 10.dp, bottom = 96.dp)) {
+        SideBody(history, current, busy, editing, { editing = it }, onSearch, onOpen, onNew, onWorks, onBoards, onJournal, narrow = false)
+    }
+}
+
+@Composable
+private fun androidx.compose.foundation.layout.ColumnScope.SideBody(
+    history: ConvStore, current: String?, busy: Boolean, editing: String?, setEditing: (String?) -> Unit, onSearch: () -> Unit, onOpen: (Conv) -> Unit, onNew: () -> Unit,
+    onWorks: () -> Unit, onBoards: () -> Unit, onJournal: () -> Unit, narrow: Boolean,
+) {
+        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(start = if (narrow) 2.dp else 10.dp, end = 10.dp, bottom = 96.dp)) {
             val all = remember(Works.version) { Works.list() }
             val works = all.count { it.kind != "board" }
             val boards = remember(Works.version) { Boards.list() }
@@ -143,11 +159,11 @@ private fun SideMain(
                     }
                     if (pinnedOf.isNotEmpty()) {
                         SideLabel("已置顶")
-                        pinnedOf.forEach { c -> ConvLine(c, c.id == current, busy && c.id == current, editing == c.id, history, onOpen, { editing = if (editing == c.id) null else c.id }) { if (c.id == current) onNew() } }
+                        pinnedOf.forEach { c -> ConvLine(c, c.id == current, busy && c.id == current, editing == c.id, history, onOpen, { setEditing(if (editing == c.id) null else c.id) }) { if (c.id == current) onNew() } }
                     }
                     if (recentOf.isNotEmpty()) {
                         SideLabel("最近对话")
-                        recentOf.forEach { c -> ConvLine(c, c.id == current, busy && c.id == current, editing == c.id, history, onOpen, { editing = if (editing == c.id) null else c.id }) { if (c.id == current) onNew() } }
+                        recentOf.forEach { c -> ConvLine(c, c.id == current, busy && c.id == current, editing == c.id, history, onOpen, { setEditing(if (editing == c.id) null else c.id) }) { if (c.id == current) onNew() } }
                     }
                     if (hers.isNotEmpty()) {
                         Pressable(onSearch, label = "查看全部对话") { p ->
@@ -161,7 +177,6 @@ private fun SideMain(
                 }
             }
         }
-    }
 }
 
 @Composable

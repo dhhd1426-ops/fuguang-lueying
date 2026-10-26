@@ -29,7 +29,12 @@ object Skin {
     var id by mutableStateOf(FROST)
     private var prefs: Prefs? = null
 
-    fun init(p: Prefs) { prefs = p; id = p.string(KEY)?.takeIf { s -> options.any { it.id == s } } ?: FROST }
+    fun init(p: Prefs) { prefs = p; id = p.string(KEY)?.takeIf { s -> options.any { it.id == s } } ?: FROST; rail = p.string(RAIL) == "1" }
+
+    /** 侧栏顶上换助理的方式：false 连体卡片（默认，点名字从下面展开）；true 竖排头像（侧栏左边一排，一点就换）。 */
+    var rail by mutableStateOf(false)
+    private const val RAIL = "switch-rail"
+    fun setRail(v: Boolean) { rail = v; prefs?.putString(RAIL, if (v) "1" else "0") }
     fun set(v: String) { id = v; prefs?.putString(KEY, v) }
     fun name(v: String = id) = options.firstOrNull { it.id == v }?.name.orEmpty()
 
