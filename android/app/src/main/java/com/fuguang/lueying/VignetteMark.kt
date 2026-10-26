@@ -80,6 +80,7 @@ internal fun VignetteMark(width: Dp, color: Color, modifier: Modifier = Modifier
     LaunchedEffect(Unit) { clock.animateTo(InkPlan.total, tween(InkPlan.total.toInt(), easing = LinearEasing)) }
     val measures = remember { InkPlan.paths.map { p -> PathMeasure().apply { setPath(p, false) } } }
     val paint = remember { Paint() }
+    val clip = remember { Paint().apply { blendMode = BlendMode.SrcIn } }
     Canvas(
         modifier.width(width).aspectRatio(VignetteInk.W / VignetteInk.H)
             .semantics { contentDescription = "Vignette" },
@@ -96,8 +97,11 @@ internal fun VignetteMark(width: Dp, color: Color, modifier: Modifier = Modifier
                 }
                 drawPath(path, Color.Black, style = Stroke(s.width, cap = StrokeCap.Round, join = StrokeJoin.Round))
             }
-            drawPath(InkPlan.fill, color, blendMode = BlendMode.SrcIn)
         }
+        // 字形整层 SrcIn 合上去：只按字形画会留下字外那圈粗笔（白色主题下是一道黑边），整层合成才把字外的清掉
+        drawContext.canvas.saveLayer(Rect(Offset.Zero, size), clip)
+        scale(k, k, pivot = Offset.Zero) { drawPath(InkPlan.fill, color) }
+        drawContext.canvas.restore()
         drawContext.canvas.restore()
     }
 }
