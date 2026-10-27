@@ -93,7 +93,9 @@ fun FuguangApp(prefs: Prefs, fullscreen: Boolean, setFullscreen: (Boolean) -> Un
 
     val mineNav = remember { MineNav() }
     val assistant = remember { AssistantStore(prefs) }
-    val chatState = remember { ChatState(ConvStore(prefs)) }
+    remember { Chats.init(ConvStore(prefs)) }
+    // 手上这段对话；她在回答时切走，那段留在后台写完（Chats.kt）
+    val chatState = Chats.current!!
 
     // 切到后台时暂停，回来后按原状态继续
     val lifecycle = LocalLifecycleOwner.current.lifecycle
@@ -116,7 +118,7 @@ fun FuguangApp(prefs: Prefs, fullscreen: Boolean, setFullscreen: (Boolean) -> Un
 
     // 自动沉浸：停手 7 秒进；最后 2 秒界面先淡一点。有东西开着、她在回答时一直从头算。
     var soon by remember { mutableStateOf(false) }
-    val held = Zen.held || chatState.busy || MineCard.open || NoteCard.open || !foreground || InBrowser.url != null || Downloads.open || ClipLink.showing || PanLink.showing || ClipPlay.playing() != null
+    val held = Zen.held || chatState.busy || Chats.running.isNotEmpty() || MineCard.open || NoteCard.open || !foreground || InBrowser.url != null || Downloads.open || ClipLink.showing || PanLink.showing || ClipPlay.playing() != null
     LaunchedEffect(held, Zen.touchedAt, zen) {
         soon = false
         if (held || zen) { if (held) Zen.touch(); return@LaunchedEffect }

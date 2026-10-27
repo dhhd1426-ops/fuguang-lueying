@@ -24,14 +24,12 @@ fun NotifyHooks(chat: ChatState, store: AssistantStore, scope: CoroutineScope) {
     DisposableEffect(chat, store, scope) {
         Notify.onReply = { conv, text ->
             when {
-                // 她正忙着这段：话排在末尾，做完一步就收到
+                // 她正忙着这段（手上的或后台的）：话排在末尾，做完一步就收到
                 chat.busy && chat.convId == conv -> chat.queue.add(text)
-                // 她在忙别的：先放进那段对话的输入框，你回来再发
-                chat.busy -> Notify.saveDraft(ctx, conv, text)
+                Chats.running[conv] != null -> Chats.running[conv]?.queue?.add(text)
                 else -> {
-                    if (chat.convId != conv) chat.history.get(conv)?.let { chat.open(it) }
-                    chat.draft = text
-                    chat.send(scope, store)
+                    if (chat.convId != conv) chat.history.get(conv)?.let { Chats.open(it) }
+                    Chats.current?.let { c -> c.draft = text; c.send(scope, store) }
                 }
             }
         }
@@ -42,16 +40,14 @@ fun NotifyHooks(chat: ChatState, store: AssistantStore, scope: CoroutineScope) {
         val id = Notify.openConv ?: return@LaunchedEffect
         val retry = Notify.retry
         Notify.openConv = null; Notify.retry = false
-        if (chat.busy && chat.convId != id) return@LaunchedEffect
-        if (chat.convId != id) chat.history.get(id)?.let { chat.open(it) }
-        if (retry) chat.retry(scope, store)
+        if (chat.convId != id) chat.history.get(id)?.let { Chats.open(it) }
+        if (retry) Chats.current?.retry(scope, store)
     }
     // 上次在通知里回了、App 却不在：放回那段对话的输入框
     LaunchedEffect(Unit) {
         val (conv, text) = Notify.takeDraft() ?: return@LaunchedEffect
-        if (chat.busy) return@LaunchedEffect
-        if (chat.convId != conv) chat.history.get(conv)?.let { chat.open(it) }
-        chat.draft = text
+        if (chat.convId != conv) chat.history.get(conv)?.let { Chats.open(it) }
+        Chats.current?.draft = text
     }
     // 看着这段对话：它的通知收掉
     LaunchedEffect(Notify.foreground, chat.convId) {

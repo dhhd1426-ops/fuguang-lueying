@@ -159,11 +159,11 @@ private fun androidx.compose.foundation.layout.ColumnScope.SideBody(
                     }
                     if (pinnedOf.isNotEmpty()) {
                         SideLabel("已置顶")
-                        pinnedOf.forEach { c -> ConvLine(c, c.id == current, busy && c.id == current, editing == c.id, history, onOpen, { setEditing(if (editing == c.id) null else c.id) }) { if (c.id == current) onNew() } }
+                        pinnedOf.forEach { c -> ConvLine(c, c.id == current, Chats.isRunning(c.id), editing == c.id, history, onOpen, { setEditing(if (editing == c.id) null else c.id) }) { if (c.id == current) onNew() } }
                     }
                     if (recentOf.isNotEmpty()) {
                         SideLabel("最近对话")
-                        recentOf.forEach { c -> ConvLine(c, c.id == current, busy && c.id == current, editing == c.id, history, onOpen, { setEditing(if (editing == c.id) null else c.id) }) { if (c.id == current) onNew() } }
+                        recentOf.forEach { c -> ConvLine(c, c.id == current, Chats.isRunning(c.id), editing == c.id, history, onOpen, { setEditing(if (editing == c.id) null else c.id) }) { if (c.id == current) onNew() } }
                     }
                     if (hers.isNotEmpty()) {
                         Pressable(onSearch, label = "查看全部对话") { p ->
