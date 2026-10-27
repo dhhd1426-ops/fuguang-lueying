@@ -23,11 +23,12 @@ import org.json.JSONObject
 object ClockTools {
     const val ALARM = "set_alarm"
     const val NEXT = "next_alarm"
+    const val OFF = "cancel_alarm"
     const val LIST = "calendar_list"
     const val ADD = "calendar_add"
     const val EDIT = "calendar_edit"
     const val DEL = "calendar_delete"
-    val names = setOf(ALARM, NEXT, LIST, ADD, EDIT, DEL)
+    val names = setOf(ALARM, NEXT, OFF, LIST, ADD, EDIT, DEL)
     const val P_ALARM = "alarm:"
     const val P_CAL = "cal:"
 
@@ -41,9 +42,11 @@ object ClockTools {
 
     val specs = listOf(
         ToolSpec(ALARM, "在他手机的系统时钟里定一个闹钟（直接定好，不跳界面）。",
-            obj("time" to str("几点，24 小时制，如 07:00"), "label" to str("闹钟上写的字，几个字，可不写"),
+            obj("time" to str("几点，24 小时制，如 07:00"), "date" to str("哪天响，如 2026-10-28；只响一次时照你算出的日子写上"), "label" to str("闹钟上写的字，几个字，可不写"),
                 "days" to JSONObject().put("type", "array").put("items", JSONObject().put("type", "integer")).put("description", "每周重复哪几天：1=周一 … 7=周日；只响一次就不写"), req = listOf("time"))),
         ToolSpec(NEXT, "看他手机上下一个要响的闹钟是几点（只看得到这一个）。", obj()),
+        ToolSpec(OFF, "关掉他手机时钟里的一个闹钟：按几点找，或按闹钟上的字找。",
+            obj("time" to str("要关的那个是几点，如 09:00"), "label" to str("或者按闹钟上的字找"))),
         ToolSpec(LIST, "看他手机日历里一段时间的日程。",
             obj("from" to str("从哪天起，如 2026-10-27"), "to" to str("到哪天（含这天），如 2026-11-02"), req = listOf("from", "to"))),
         ToolSpec(ADD, "往他手机日历里加一件日程，到点由系统日历提醒他。",
@@ -60,7 +63,8 @@ object ClockTools {
 
     fun system(call: String): String =
         "你能帮${call}在手机上定闹钟，也能看、加、改、删他手机日历里的日程，到点系统会提醒他。" +
-            "闹钟你只看得到下一个要响的那个，看不到全部，也关不掉；他要关闹钟，就说聊天里的闹钟卡点一下能打开时钟。" +
+            "闹钟你只看得到下一个要响的那个，看不到全部；他要关哪个，用 $OFF 按几点或闹钟上的字关掉。" +
+            "系统时钟只认几点、不认哪天：只响一次的闹钟总在最近一次的那个点响。定之前先照现在的时间算清他要的是哪天，写进 date；不是最近那次的话定不了，照工具结果如实说。" +
             "说到具体时间就照他当地的时间算，「明早」「周三下午」这种换成具体日期再用。改、删日程只在他明说时做，删之前没把握是哪件就先问。" +
             "每次聊天里都会落一张卡，时间地点卡上都有，回复里不用再一条条念，说一两句要紧的就好。权限没给就如实说，告诉他在设置里给 Vignette 打开日历权限。"
 
@@ -74,9 +78,9 @@ object ClockTools {
 
     private val said = HashMap<String, String>()
     fun doneTitle(n: String, a: JSONObject): String = synchronized(said) { said[n + a.toString()] } ?: when (n) {
-        ALARM -> "定了闹钟"; NEXT -> "看了下一个闹钟"; LIST -> "看了日历"; ADD -> "加了日程"; EDIT -> "改了日程"; else -> "删了日程"
+        ALARM -> "定了闹钟"; NEXT -> "看了下一个闹钟"; OFF -> "关了闹钟"; LIST -> "看了日历"; ADD -> "加了日程"; EDIT -> "改了日程"; else -> "删了日程"
     }
-    fun liveTitle(n: String) = when (n) { ALARM -> "正在定闹钟"; NEXT -> "正在看闹钟"; LIST -> "正在看日历"; ADD -> "正在加日程"; EDIT -> "正在改日程"; else -> "正在删日程" }
+    fun liveTitle(n: String) = when (n) { ALARM -> "正在定闹钟"; NEXT -> "正在看闹钟"; OFF -> "正在关闹钟"; LIST -> "正在看日历"; ADD -> "正在加日程"; EDIT -> "正在改日程"; else -> "正在删日程" }
     private fun note(n: String, a: JSONObject, t: String) = synchronized(said) { said[n + a.toString()] = t }
 
     suspend fun run(n: String, a: JSONObject, pid: String, onCard: (String) -> Unit): ToolOut {
@@ -84,6 +88,7 @@ object ClockTools {
         return when (n) {
             ALARM -> alarm(ctx, a, onCard)
             NEXT -> next(ctx, a)
+            OFF -> off(ctx, a, onCard)
             else -> {
                 val write = n != LIST
                 val perms = if (write) arrayOf(Manifest.permission.READ_CALENDAR, Manifest.permission.WRITE_CALENDAR) else arrayOf(Manifest.permission.READ_CALENDAR)
@@ -98,6 +103,13 @@ object ClockTools {
         val h = m.groupValues[1].toInt().coerceIn(0, 23); val mi = m.groupValues[2].ifEmpty { "0" }.toInt().coerceIn(0, 59)
         val label = a.optString("label").trim().take(30)
         val days = a.optJSONArray("days")?.let { arr -> (0 until arr.length()).map { arr.optInt(it) }.filter { it in 1..7 }.distinct().sorted() }.orEmpty()
+        val now = LocalDateTime.now()
+        val nearest = if (now.toLocalTime() < java.time.LocalTime.of(h, mi)) now.toLocalDate() else now.toLocalDate().plusDays(1)
+        val want = PhoneCalendar.parse(a.optString("date"))?.first?.toLocalDate()
+        // 只响一次、又不是最近那次：系统时钟做不到（它只认几点），先不定，如实告诉她
+        if (days.isEmpty() && want != null && want != nearest)
+            return ToolOut("没定：系统时钟只认几点、不认哪天，现在定 %d:%02d 会在${dayWord(nearest)}先响，定不到${dayWord(want)}。".format(h, mi) +
+                "可以告诉他：等${dayWord(nearest)}这个点过了再说一声，你再定；或者用 $ADD 在日历里记一条，到点是通知提醒、不会像闹钟一样一直响。")
         val i = Intent(AlarmClock.ACTION_SET_ALARM).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             .putExtra(AlarmClock.EXTRA_HOUR, h).putExtra(AlarmClock.EXTRA_MINUTES, mi).putExtra(AlarmClock.EXTRA_SKIP_UI, true)
         if (label.isNotEmpty()) i.putExtra(AlarmClock.EXTRA_MESSAGE, label)
@@ -106,13 +118,33 @@ object ClockTools {
         try { ctx.startActivity(i) } catch (e: Exception) {
             return ToolOut("没定成：" + (if (e is android.content.ActivityNotFoundException) "手机上没有认这个的时钟 App" else e.message ?: e.javaClass.simpleName).take(60) + "。如实告诉他，可以请他自己在时钟里定。")
         }
-        val now = LocalDateTime.now()
         val whenTxt = if (days.isNotEmpty()) (if (days.size == 7) "每天" else if (days == listOf(1, 2, 3, 4, 5)) "工作日" else "每" + days.joinToString("、") { WEEK[it - 1] })
-            else dayWord(if (now.toLocalTime() < java.time.LocalTime.of(h, mi)) now.toLocalDate() else now.toLocalDate().plusDays(1))
+            else dayWord(nearest)
         val hm = "%d:%02d".format(h, mi)
         onCard(P_ALARM + JSONObject().put("t", hm).put("w", whenTxt).put("l", label).put("at", System.currentTimeMillis()))
         note(ALARM, a, "定了闹钟 · $whenTxt $hm")
         return ToolOut("定好了：$whenTxt $hm" + (if (label.isNotEmpty()) "「$label」" else "") + "。聊天里有一张闹钟卡。")
+    }
+
+    /** 关闹钟：交给时钟按几点 / 按字找（有的时钟会弹一下确认）。 */
+    private fun off(ctx: Context, a: JSONObject, onCard: (String) -> Unit): ToolOut {
+        val m = Regex("(\\d{1,2})[:：点](\\d{0,2})").find(a.optString("time"))
+        val label = a.optString("label").trim()
+        if (m == null && label.isEmpty()) return ToolOut("要说是几点那个，或者闹钟上写的字")
+        val i = Intent(AlarmClock.ACTION_DISMISS_ALARM).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        var hm = ""
+        if (m != null) {
+            val h = m.groupValues[1].toInt().coerceIn(0, 23); val mi = m.groupValues[2].ifEmpty { "0" }.toInt().coerceIn(0, 59)
+            hm = "%d:%02d".format(h, mi)
+            i.putExtra(AlarmClock.EXTRA_ALARM_SEARCH_MODE, AlarmClock.ALARM_SEARCH_MODE_TIME).putExtra(AlarmClock.EXTRA_HOUR, h).putExtra(AlarmClock.EXTRA_MINUTES, mi)
+                .putExtra(AlarmClock.EXTRA_IS_PM, h >= 12)
+        } else i.putExtra(AlarmClock.EXTRA_ALARM_SEARCH_MODE, AlarmClock.ALARM_SEARCH_MODE_LABEL).putExtra(AlarmClock.EXTRA_MESSAGE, label)
+        try { ctx.startActivity(i) } catch (e: Exception) {
+            return ToolOut("没关成：" + (if (e is android.content.ActivityNotFoundException) "手机上的时钟不认这个" else e.message ?: e.javaClass.simpleName).take(60) + "。如实说，请他点闹钟卡在时钟里关。")
+        }
+        onCard(P_ALARM + JSONObject().put("t", hm.ifEmpty { label.take(8) }).put("w", if (hm.isNotEmpty() && label.isNotEmpty()) label else "").put("l", if (hm.isEmpty()) "" else label).put("off", true).put("at", System.currentTimeMillis()))
+        note(OFF, a, "关了闹钟 · " + hm.ifEmpty { "「$label」" })
+        return ToolOut("交给时钟关掉了 ${hm.ifEmpty { "「$label」" }} 那个。有的时钟会弹一下让他确认，或者有好几个对得上时让他挑，提一句就好。")
     }
 
     private fun next(ctx: Context, a: JSONObject): ToolOut {
