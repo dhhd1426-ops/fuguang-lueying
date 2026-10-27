@@ -71,12 +71,14 @@ object Notify {
         Person.Builder().setName(nameOf(p)).setKey("her-" + p.id).setIcon(IconCompat.createWithBitmap(face(p))).build()
 
     /** 头像：有图用图（圆），没图首字圆（杏到墨蓝的渐变）。 */
-    private fun face(p: Persona): Bitmap {
+    private fun face(p: Persona): Bitmap = face(p.id, nameOf(p))
+
+    private fun face(id: String, name: String): Bitmap {
         val s = 192
         val out = Bitmap.createBitmap(s, s, Bitmap.Config.ARGB_8888)
         val cv = Canvas(out)
         val paint = Paint(Paint.ANTI_ALIAS_FLAG)
-        val img = Avatars.get(p.id)?.asAndroidBitmap()
+        val img = runCatching { Avatars.get(id)?.asAndroidBitmap() }.getOrNull()
         if (img != null) {
             paint.shader = android.graphics.BitmapShader(Bitmap.createScaledBitmap(img, s, s, true), Shader.TileMode.CLAMP, Shader.TileMode.CLAMP)
             cv.drawCircle(s / 2f, s / 2f, s / 2f, paint)
@@ -84,7 +86,7 @@ object Notify {
             paint.shader = LinearGradient(0f, 0f, s.toFloat(), s.toFloat(), 0xFFC79A86.toInt(), 0xFF5A4660.toInt(), Shader.TileMode.CLAMP)
             cv.drawCircle(s / 2f, s / 2f, s / 2f, paint)
             val t = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFFFFF4EC.toInt(); textSize = s * .42f; textAlign = Paint.Align.CENTER }
-            cv.drawText(nameOf(p).take(1), s / 2f, s / 2f - (t.descent() + t.ascent()) / 2, t)
+            cv.drawText(name.take(1), s / 2f, s / 2f - (t.descent() + t.ascent()) / 2, t)
         }
         return out
     }
@@ -223,6 +225,22 @@ object Notify {
     fun cancel(conv: String) {
         val ctx = app ?: return
         runCatching { NotificationManagerCompat.from(ctx).cancel(conv, ID); NotificationManagerCompat.from(ctx).cancel(conv, ID + 1) }
+    }
+
+    /** 日程到点：她加日程时写的那句话（系统日历那条照常响）。 */
+    fun herNote(ctx: Context, pid: String, name0: String, id: Long, title: String, text: String) {
+        val name = name0.ifBlank { "她" }
+        val her = Person.Builder().setName(name).setKey("her-$pid").setIcon(IconCompat.createWithBitmap(face(pid, name))).build()
+        val me = Person.Builder().setName("我").setKey("me").build()
+        val st = NotificationCompat.MessagingStyle(me)
+        st.addMessage(text, System.currentTimeMillis(), her)
+        val n = NotificationCompat.Builder(ctx, CH_REPLY).setSmallIcon(R.drawable.ic_notify)
+            .setShortcutId("her-$pid").setCategory(NotificationCompat.CATEGORY_REMINDER).setStyle(st).setSubText(title).setAutoCancel(true)
+            .setContentIntent(PendingIntent.getActivity(ctx, ("note$id").hashCode(), Intent(ctx, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP), PendingIntent.FLAG_IMMUTABLE))
+            .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+            .setPublicVersion(NotificationCompat.Builder(ctx, CH_REPLY).setSmallIcon(R.drawable.ic_notify).setContentTitle(name).setContentText("提醒你一件事").build())
+            .build()
+        runCatching { NotificationManagerCompat.from(ctx).notify("note$id", ID + 2, n) }
     }
 
     /** 通知里只放她说的话：去掉工具标记、格式符号，空了就说做了什么。 */

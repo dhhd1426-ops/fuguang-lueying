@@ -76,6 +76,7 @@ object Trail {
         Skills.OPEN -> "正在翻开本事"; Skills.FIND -> "正在 GitHub 上找本事"; Skills.LEARN -> "等你点头"
         Materials.OPEN -> "正在打开网页"; Materials.LOOK -> "正在看素材"; VideoParse.TOOL -> "正在解析抖音"; VideoParse.SAVE -> "正在存视频"
         PanTools.OPEN -> "正在打开网盘分享"; PanTools.GET -> "正在下网盘里的文件"
+        in ClockTools.names -> ClockTools.liveTitle(n)
         Works.MAKE -> "正在动手做"; WorkJobs.START -> "正在交代"; Works.EDIT -> "正在改作品"; Works.READ -> "正在看原稿"; "list_todos" -> "正在查看羽的待办"; "read_note" -> "正在读羽的笔记"
         else -> if (Mcp.owns(n)) Mcp.note(n).trimEnd('…') else "正在查阅羽的笔记"
     }
@@ -91,6 +92,7 @@ object Trail {
         Materials.OPEN -> Materials.doneTitle(a.optString("url"))
         VideoParse.TOOL, VideoParse.SAVE -> VideoParse.doneTitle(n, a)
         PanTools.OPEN, PanTools.GET -> PanTools.doneTitle(n, a)
+        in ClockTools.names -> ClockTools.doneTitle(n, a)
         Materials.LOOK -> "看了 ${a.optJSONArray("urls")?.length() ?: 0} 件素材"
         Works.READ -> "看了原稿"; "list_todos" -> "看了羽的待办"; "read_note" -> "读了一篇羽的笔记"
         else -> if (Mcp.owns(n)) Mcp.note(n).replace("正在用", "用了").trimEnd('…') else "查了羽的笔记"
@@ -121,9 +123,13 @@ object Trail {
         Memory.REMEMBER -> bookmark; Memory.FORGET -> eraser; Recall.TOOL -> bubble; WebSearch.TOOL, Materials.OPEN -> globe; Materials.LOOK -> picture; VideoParse.TOOL -> Icons.play; VideoParse.SAVE, PanTools.GET -> saveIcon; PanTools.OPEN -> globe
         Skills.OPEN, Skills.FIND, Skills.LEARN -> skillIcon
         Works.MAKE, Works.EDIT -> shapes; Works.READ -> page; "list_todos" -> todo
+        ClockTools.ALARM, ClockTools.NEXT -> alarmIcon
+        in ClockTools.names -> calIcon
         else -> if (Mcp.owns(n)) plug else feather
     }
 
+    private val alarmIcon = Ic("M12 20a7 7 0 1 0 0-14 7 7 0 0 0 0 14ZM12 9.5V13l2.2 1.6M4.5 5.5 7 3.5M19.5 5.5 17 3.5")
+    private val calIcon = Ic("M5 6h14a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1ZM4 10.5h16M8.5 4v4M15.5 4v4")
     val clock = Ic("M3.5 12a8.5 8.5 0 1 0 2.6-6.1M3.5 4.5v3.7h3.7M12 7.5V12l3 2")
     val chevron = Ic("M9.5 6l6 6-6 6")
     private val globe = Ic("M4 12h16M12 4c2.4 2.5 2.4 13.5 0 16M12 4c-2.4 2.5-2.4 13.5 0 16", circles = listOf(floatArrayOf(12f, 12f, 8f)))

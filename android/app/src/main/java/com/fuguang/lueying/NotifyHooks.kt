@@ -20,6 +20,7 @@ import kotlinx.coroutines.CoroutineScope
 @Composable
 fun NotifyHooks(chat: ChatState, store: AssistantStore, scope: CoroutineScope) {
     val ctx = LocalContext.current
+    PermsHost()
     DisposableEffect(chat, store, scope) {
         Notify.onReply = { conv, text ->
             when {
