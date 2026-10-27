@@ -151,6 +151,8 @@ class ChatState(val history: ConvStore) {
     var sent by mutableIntStateOf(0)
     private var streamDone = false
     private var job: Job? = null
+    /** 是不是手上正看着的这段；切走后在后台写完（Chats.kt）。 */
+    var onScreen = true
 
     fun reset() {
         job?.cancel(); job = null
@@ -174,7 +176,7 @@ class ChatState(val history: ConvStore) {
     /** 换了助理：手上这段对话不是她的，就换成和她的新对话。 */
     fun followPersona() {
         val c = history.get(convId) ?: return
-        if (c.who.isNotEmpty() && c.who != Memory.activeId) reset()
+        if (c.who.isNotEmpty() && c.who != Memory.activeId) { if (busy) Chats.fresh() else reset() }
     }
 
     /** 上下文消息限制：这段对话到顶了，只能开新对话。 */
@@ -348,7 +350,7 @@ class ChatState(val history: ConvStore) {
                 ) { partial += it; thinking = false }
                 streamDone = true
                 // 等书写追上再收尾（切到后台没有画面推进书写，直接写完）
-                while (shown < partial.length) { if (!Notify.foreground) shown = partial.length.toFloat(); kotlinx.coroutines.delay(32) }
+                while (shown < partial.length) { if (!Notify.foreground || !onScreen) shown = partial.length.toFloat(); kotlinx.coroutines.delay(32) }
                 if (partial.isNotBlank() || pendingWorks.isNotEmpty() || pendingClips.isNotEmpty()) {
                     messages.add(replyMsg(partial.trim()))
                     // 记忆：不是每句都记，等这段聊停了再整段回想（换对话时马上回想上一段）
@@ -379,13 +381,15 @@ class ChatState(val history: ConvStore) {
                 if (!stopped) {
                     val err = error
                     val r = messages.lastOrNull()?.takeIf { it.role == "assistant" && it.at >= roundAt }
-                    if (err != null) Notify.failed(convId, this@ChatState.history, err)
-                    else if (r != null) Notify.replied(convId, this@ChatState.history, mine, Notify.preview(r))
+                    val seen = Notify.foreground && onScreen
+                    if (err != null) Notify.failed(convId, this@ChatState.history, err, seen)
+                    else if (r != null) Notify.replied(convId, this@ChatState.history, mine, Notify.preview(r), seen)
                 }
                 // 这轮结束还有排着的话：接着发（你自己点停止的不发，出错的也不发，留着等你）
                 val go = sendNowAfterStop || (!stopped && error == null)
                 sendNowAfterStop = false
                 if (go && queue.isNotEmpty()) scope.launch { flushQueue(scope, store) }
+                else if (!onScreen) Chats.finished(this@ChatState)
             }
         }
     }
@@ -557,7 +561,7 @@ fun ChatPage(
                 .imePadding()
                 .padding(start = side, end = side, top = if (compact) 26.dp else 38.dp, bottom = if (compact) 22.dp else 30.dp),
         ) {
-            ChatHeader(compact, chat.messages.isEmpty() && !chat.busy, chat.busy, onMenu = { menu = true }) { chat.reset() }
+            ChatHeader(compact, chat.messages.isEmpty() && !chat.busy, false, onMenu = { menu = true }) { Chats.fresh() }
             Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                 if (chat.messages.isEmpty() && !chat.busy) ChatHello(compact, store, chat)
                 else Conversation(chat, store, compact, flight, onSetup = onSetup, onRetry = { chat.retry(scope, store) }, onThink = { thinkOf = it; thinkOpen = true }, onImage = { viewing = it }, onWork = { workOpen = it },
@@ -595,8 +599,8 @@ fun ChatPage(
             ) {
                 HistoryMenu(
                     chat.history, chat.convId, chat.busy,
-                    onOpen = { if (!chat.busy) chat.open(it); menu = false },
-                    onNew = { if (!chat.busy) chat.reset(); menu = false },
+                    onOpen = { Chats.open(it); menu = false },
+                    onNew = { Chats.fresh(); menu = false },
                     onWorks = { menu = false; shelf = true },
                     onBoards = { menu = false; boards = true },
                     onJournal = { menu = false; NoteCard.open = true },
@@ -627,8 +631,8 @@ fun ChatPage(
         BoardShelf(boards, onClose = { boards = false }, onOpen = { workOpen = it }) {
             // 「让她搭一块」：新开一个对话，输入框里写好开头
             boards = false
-            if (!chat.busy) chat.reset()
-            chat.draft = "帮我搭一块画板："; chat.focusTick++
+            Chats.fresh()
+            Chats.current?.let { it.draft = "帮我搭一块画板："; it.focusTick++ }
         }
         NoteImageViewer(viewing) { viewing = null }
         WorkViewer(workOpen, onClose = { workOpen = null }, onFix = { msg ->
@@ -984,7 +988,7 @@ private fun ChatInput(
                     Spacer(Modifier.width(8.dp))
                     val lim = Memory.active.limit
                     Txt("这段对话已经到上限（$lim/$lim）", css("#e9b48e"), 12.5.sp, Modifier.weight(1f), maxLines = 1)
-                    Pressable({ chat.reset() }, label = "开新对话") { pr ->
+                    Pressable({ Chats.fresh() }, label = "开新对话") { pr ->
                         Txt(
                             "开新对话", css("#e9b48e"), 12.5.sp,
                             Modifier.background(rgba(233, 180, 142, if (pr) .28f else .15f), RoundedCornerShape(50)).padding(horizontal = 12.dp, vertical = 6.dp),

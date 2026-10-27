@@ -148,9 +148,10 @@ object Notify {
     }
 
     /** 她回好了。 */
-    fun replied(conv: String?, history: ConvStore?, mine: String?, reply: String) {
+    /** seen：你正看着这段（App 在前台、而且是手上这段），就不发。 */
+    fun replied(conv: String?, history: ConvStore?, mine: String?, reply: String, seen: Boolean = foreground) {
         val ctx = app ?: return
-        if (foreground || conv == null || reply.isBlank()) return
+        if (seen || conv == null || reply.isBlank()) return
         val p = herOf(conv, history); val her = person(ctx, p)
         val input = RemoteInput.Builder(KEY_TEXT).setLabel("回信给 ${nameOf(p)}…").build()
         val n = base(ctx, CH_REPLY, conv, p, her)
@@ -164,9 +165,9 @@ object Notify {
     }
 
     /** 没回成：说清楚原因，下面「重试」。 */
-    fun failed(conv: String?, history: ConvStore?, why: String) {
+    fun failed(conv: String?, history: ConvStore?, why: String, seen: Boolean = foreground) {
         val ctx = app ?: return
-        if (foreground || conv == null) return
+        if (seen || conv == null) return
         val p = herOf(conv, history); val her = person(ctx, p)
         val n = base(ctx, CH_REPLY, conv, p, her)
             .setContentTitle("${nameOf(p)} · 没回成").setContentText(why.take(120)).setLargeIcon(face(p))
@@ -196,8 +197,12 @@ object Notify {
         return b.build()
     }
 
+    /** 同时在回答的有几段（切到别的对话时，后台那段接着写）：都写完才收起「正在回答」。 */
+    private var lives = 0
+
     fun startLive(conv: String?, history: ConvStore?, mine: String?) {
         val ctx = app ?: return
+        lives++
         ReplyLive.conv = conv; ReplyLive.history = history; ReplyLive.mine = mine
         val ok = runCatching { ctx.startForegroundService(Intent(ctx, ReplyLive::class.java)) }.isSuccess
         // 后台起不了前台服务（比如在通知里回的）：退一步，只发一张普通的「正在回答…」
@@ -206,6 +211,8 @@ object Notify {
 
     fun stopLive() {
         val ctx = app ?: return
+        lives = (lives - 1).coerceAtLeast(0)
+        if (lives > 0) return
         runCatching { ctx.stopService(Intent(ctx, ReplyLive::class.java)) }
         runCatching { NotificationManagerCompat.from(ctx).cancel(LIVE_ID) }
     }

@@ -123,7 +123,7 @@ internal fun AllConvs(history: ConvStore, current: String?, busy: Boolean, onBac
                                 marked(c.title.ifBlank { "新对话" }, key), maxLines = 1, overflow = TextOverflow.Ellipsis,
                                 style = TextStyle(fontFamily = Sans, color = SideInk, fontSize = 15.sp, fontWeight = FontWeight.Normal),
                             )
-                            val meta = ago(c.updated) + (if (busy && on) " · 她在回答" else "")
+                            val meta = ago(c.updated) + (if (Chats.isRunning(c.id)) " · 她在回答" else "")
                             androidx.compose.foundation.text.BasicText(
                                 buildAnnotatedString { append(meta); if (hit.isNotEmpty()) { append(" · "); append(marked(hit, key)) } },
                                 Modifier.padding(top = 3.dp), maxLines = 1, overflow = TextOverflow.Ellipsis,
