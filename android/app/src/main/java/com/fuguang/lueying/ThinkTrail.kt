@@ -123,7 +123,7 @@ object Trail {
         Memory.REMEMBER -> bookmark; Memory.FORGET -> eraser; Recall.TOOL -> bubble; WebSearch.TOOL, Materials.OPEN -> globe; Materials.LOOK -> picture; VideoParse.TOOL -> Icons.play; VideoParse.SAVE, PanTools.GET -> saveIcon; PanTools.OPEN -> globe
         Skills.OPEN, Skills.FIND, Skills.LEARN -> skillIcon
         Works.MAKE, Works.EDIT -> shapes; Works.READ -> page; "list_todos" -> todo
-        ClockTools.ALARM, ClockTools.NEXT -> alarmIcon
+        ClockTools.ALARM, ClockTools.NEXT, ClockTools.OFF -> alarmIcon
         in ClockTools.names -> calIcon
         else -> if (Mcp.owns(n)) plug else feather
     }

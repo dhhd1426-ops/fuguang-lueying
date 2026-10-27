@@ -63,21 +63,22 @@ private fun open(ctx: Context, i: Intent) { runCatching { ctx.startActivity(i.ad
 
 @Composable
 private fun AlarmCard(j: JSONObject, m: Modifier, onOpen: () -> Unit) {
+    val off = j.optBoolean("off")
     PressSurface(onOpen, m.widthIn(max = 300.dp), shape = RoundedCornerShape(18.dp), fill = veil(.06f), pressScale = .98f, label = "在时钟里看") {
         Row(Modifier.padding(horizontal = 16.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f, fill = false)) {
                 Row(verticalAlignment = Alignment.Bottom) {
-                    Txt(j.optString("t"), Page.ink, 30.sp, maxLines = 1)
+                    Txt(j.optString("t"), if (off) Page.muted else Page.ink, 30.sp, maxLines = 1)
                     Spacer(Modifier.width(6.dp))
                     Txt(j.optString("w"), Page.muted, 13.sp, Modifier.padding(bottom = 5.dp), maxLines = 1)
                 }
                 j.optString("l").takeIf { it.isNotBlank() }?.let { Txt(it, Page.muted, 12.5.sp, Modifier.padding(top = 2.dp), maxLines = 1) }
-                Txt("在时钟里看 ›", Warm, 12.sp, Modifier.padding(top = 6.dp))
+                Txt(if (off) "关掉了 · 在时钟里看 ›" else "在时钟里看 ›", Warm, 12.sp, Modifier.padding(top = 6.dp))
             }
             Spacer(Modifier.width(20.dp))
             // 开着的开关：只是样子，开关在时钟里
-            Box(Modifier.size(40.dp, 24.dp).background(Warm, RoundedCornerShape(12.dp)), contentAlignment = Alignment.CenterEnd) {
-                Box(Modifier.padding(end = 3.dp).size(18.dp).background(Color(0xFF2A1D14), CircleShape))
+            Box(Modifier.size(40.dp, 24.dp).background(if (off) veil(.14f) else Warm, RoundedCornerShape(12.dp)), contentAlignment = if (off) Alignment.CenterStart else Alignment.CenterEnd) {
+                Box(Modifier.padding(horizontal = 3.dp).size(18.dp).background(if (off) Page.muted else Color(0xFF2A1D14), CircleShape))
             }
         }
     }
