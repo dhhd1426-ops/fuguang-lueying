@@ -98,6 +98,15 @@
             android:exported="false"
             android:foregroundServiceType="dataSync" />
 
+        <!-- 她回答期间在后台跑完、通知上的回复 / 已读（见 Notify.kt、ReplyLive.kt） -->
+        <service
+            android:name=".ReplyLive"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+        <receiver
+            android:name=".ReplyReceiver"
+            android:exported="false" />
+
         <!-- 连接器 api 3：羽反过来请助理把一段文字整理成导图（见 YuConnector.kt 的 YuProvider） -->
         <provider
             android:name=".YuProvider"

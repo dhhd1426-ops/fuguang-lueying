@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 通知栏小图标：五瓣花（和墨蓝牡丹同一意思），单色 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp" android:viewportWidth="24" android:viewportHeight="24">
+    <group android:pivotX="12" android:pivotY="12">
+        <path android:fillColor="#FFFFFFFF" android:pathData="M12,2.6c1.9,0 3.2,1.9 3.2,4.3s-1.4,5.1 -3.2,5.1s-3.2,-2.7 -3.2,-5.1s1.3,-4.3 3.2,-4.3z"/>
+    </group>
+    <group android:pivotX="12" android:pivotY="12" android:rotation="72">
+        <path android:fillColor="#FFFFFFFF" android:pathData="M12,2.6c1.9,0 3.2,1.9 3.2,4.3s-1.4,5.1 -3.2,5.1s-3.2,-2.7 -3.2,-5.1s1.3,-4.3 3.2,-4.3z"/>
+    </group>
+    <group android:pivotX="12" android:pivotY="12" android:rotation="144">
+        <path android:fillColor="#FFFFFFFF" android:pathData="M12,2.6c1.9,0 3.2,1.9 3.2,4.3s-1.4,5.1 -3.2,5.1s-3.2,-2.7 -3.2,-5.1s1.3,-4.3 3.2,-4.3z"/>
+    </group>
+    <group android:pivotX="12" android:pivotY="12" android:rotation="216">
+        <path android:fillColor="#FFFFFFFF" android:pathData="M12,2.6c1.9,0 3.2,1.9 3.2,4.3s-1.4,5.1 -3.2,5.1s-3.2,-2.7 -3.2,-5.1s1.3,-4.3 3.2,-4.3z"/>
+    </group>
+    <group android:pivotX="12" android:pivotY="12" android:rotation="288">
+        <path android:fillColor="#FFFFFFFF" android:pathData="M12,2.6c1.9,0 3.2,1.9 3.2,4.3s-1.4,5.1 -3.2,5.1s-3.2,-2.7 -3.2,-5.1s1.3,-4.3 3.2,-4.3z"/>
+    </group>
+</vector>

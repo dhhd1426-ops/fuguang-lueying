@@ -165,6 +165,7 @@ class ChatState(val history: ConvStore) {
         reset()
         messages.addAll(c.msgs)
         convId = c.id
+        Notify.cancel(c.id)
         sent++
     }
 
@@ -249,6 +250,10 @@ class ChatState(val history: ConvStore) {
         val effort = store.effort()
         ChatApi.temperature = who.temp
         ChatApi.topP = if (who.topOn) who.top else null
+        // 你切走了她也接着回完；回好了、你不在这里，就发通知（Notify.kt）
+        val roundAt = System.currentTimeMillis()
+        val mine = history.lastOrNull { it.role == "user" }?.text
+        Notify.startLive(convId, this@ChatState.history, mine)
         job = scope.launch {
             try {
                 // 她看不了图：先请能看图的帮她看一眼（AttachLook.kt），时间线上记一步
@@ -340,8 +345,8 @@ class ChatState(val history: ConvStore) {
                     toolNote = extra,
                 ) { partial += it; thinking = false }
                 streamDone = true
-                // 等书写追上再收尾
-                snapshotFlow { shown >= partial.length }.first { it }
+                // 等书写追上再收尾（切到后台没有画面推进书写，直接写完）
+                while (shown < partial.length) { if (!Notify.foreground) shown = partial.length.toFloat(); kotlinx.coroutines.delay(32) }
                 if (partial.isNotBlank() || pendingWorks.isNotEmpty() || pendingClips.isNotEmpty()) {
                     messages.add(replyMsg(partial.trim()))
                     // 记忆：不是每句都记，等这段聊停了再整段回想（换对话时马上回想上一段）
@@ -368,6 +373,13 @@ class ChatState(val history: ConvStore) {
                 slips.clear(); shownLessons = emptyList()
                 partial = ""; shown = 0f; busy = false; thinking = false; thinkText = ""; pendingImgs.clear(); pendingWorks.clear(); pendingWorkAt.clear(); workDraft = null; pendingClips.clear(); liveSteps.clear()
                 persist()
+                Notify.stopLive()
+                if (!stopped) {
+                    val err = error
+                    val r = messages.lastOrNull()?.takeIf { it.role == "assistant" && it.at >= roundAt }
+                    if (err != null) Notify.failed(convId, this@ChatState.history, err)
+                    else if (r != null) Notify.replied(convId, this@ChatState.history, mine, Notify.preview(r))
+                }
                 // 这轮结束还有排着的话：接着发（你自己点停止的不发，出错的也不发，留着等你）
                 val go = sendNowAfterStop || (!stopped && error == null)
                 sendNowAfterStop = false
@@ -468,6 +480,7 @@ fun ChatPage(
     val scope = rememberCoroutineScope()
     val title = Memory.active.name
     LaunchedEffect(Memory.activeId) { chat.followPersona() }
+    NotifyHooks(chat, store, scope)
     val subtitle = "${Memory.active.name} · ${store.config(store.activeProvider).name} · ${store.activeModel}"
 
     // 书写节奏：有积压时每帧推进
