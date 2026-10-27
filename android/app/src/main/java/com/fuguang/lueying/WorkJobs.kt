@@ -102,7 +102,7 @@ object WorkJobs {
             }
             val s = state[key] ?: State(title, editId != null)
             val id = made
-            if (id != null) { state[key] = s.copy(done = id); o.chat.swapWork(o.conv, "$PREFIX$key|$title", id) }
+            if (id != null) { state[key] = s.copy(done = id); o.chat.swapWork(o.conv, "$PREFIX$key|$title", id); Notify.work(o.conv, o.chat.history, title) }
             else state[key] = s.copy(fail = err ?: "后台没把作品写出来")
         }
     }

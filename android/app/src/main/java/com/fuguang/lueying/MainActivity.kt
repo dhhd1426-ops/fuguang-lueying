@@ -23,6 +23,7 @@ class MainActivity : ComponentActivity() {
         )
         super.onCreate(savedInstanceState)
         CrashLog.arm(this)
+        Notify.init(this)
         val prefs = Prefs(this)
         Yu.init(this)
         Works.init(this)
@@ -44,6 +45,7 @@ class MainActivity : ComponentActivity() {
         DlSeen.init(prefs)
         YtDlp.init(this, prefs)
         if (intent?.getStringExtra("open") == "downloads") Downloads.open = true
+        Notify.take(intent)
         intent?.getStringExtra("probe_magnet")?.let { MagnetProbe.run(this, it) }
         Skills.init(this, prefs)
         VideoStore.init(this, prefs)
@@ -87,9 +89,14 @@ class MainActivity : ComponentActivity() {
         window.decorView.postDelayed({ if (hasWindowFocus()) ClipLink.check(this) }, 600)
     }
 
-    // 点通知栏「下好了」回到 App：打开下载页
+    // 点通知栏「下好了」回到 App：打开下载页；点她的通知：打开那段对话
     override fun onNewIntent(intent: android.content.Intent) {
         super.onNewIntent(intent)
         if (intent.getStringExtra("open") == "downloads") Downloads.open = true
+        Notify.take(intent)
     }
+
+    // 看得见 App 时不发通知
+    override fun onStart() { super.onStart(); Notify.foreground = true }
+    override fun onStop() { Notify.foreground = false; super.onStop() }
 }
