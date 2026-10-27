@@ -24,6 +24,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         CrashLog.arm(this)
         Notify.init(this)
+        ClockTools.init(this)
         val prefs = Prefs(this)
         Yu.init(this)
         Works.init(this)

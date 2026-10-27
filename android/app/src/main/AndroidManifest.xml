@@ -11,6 +11,12 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!-- 她帮你定闹钟、读写日历；加日程时她写的那句话到点用通知发（见 ClockTools.kt） -->
+    <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
+    <uses-permission android:name="android.permission.READ_CALENDAR" />
+    <uses-permission android:name="android.permission.WRITE_CALENDAR" />
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+
     <!-- 连接器：能看到笔记 App「羽」，读取它提供的笔记接口 -->
     <queries>
         <package android:name="com.yu.notes" />
@@ -105,6 +111,9 @@
             android:foregroundServiceType="dataSync" />
         <receiver
             android:name=".ReplyReceiver"
+            android:exported="false" />
+        <receiver
+            android:name=".HerNoteReceiver"
             android:exported="false" />
 
         <!-- 连接器 api 3：羽反过来请助理把一段文字整理成导图（见 YuConnector.kt 的 YuProvider） -->

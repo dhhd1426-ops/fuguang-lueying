@@ -73,6 +73,8 @@ fun ClipCards(links: List<String>) {
     if (links.isEmpty()) return
     Column(Modifier.padding(top = 10.dp, bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         links.forEach { l ->
+            // 闹钟卡、日程卡（ClockCards.kt）也挂在这里
+            if (isClockCard(l)) { ClockCard(l); return@forEach }
             VideoStore.clip(l)?.let { ClipCard(it) }
             // 网盘分享也挂在这里（方案三「聊天卡片」）；重开 App 后第一次看到就重新打开
             if (VideoStore.clip(l) == null) androidx.compose.runtime.remember(l) { PanStore.item(l) ?: PanStore.offer(l) }?.let { PanCard(it) }
