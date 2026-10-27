@@ -45,6 +45,8 @@ object Prompt {
         Entries.around(p, "before").takeIf { it.isNotBlank() }?.let { sb.append("\n\n").append(it) }
         sb.append("\n\n").append(Memory.fill(p.sys.trim().ifEmpty { Memory.DEFAULT_SYS }, p, model))
         Entries.around(p, "after").takeIf { it.isNotBlank() }?.let { sb.append("\n\n").append(it) }
+        // 说话的底子：句群层次（Voice.kt），每轮不变，跟着上半段一起缓存
+        sb.append("\n\n").append(Voice.mine(who))
         fun block(head: String, ms: List<Mem>, cap: Int) {
             if (ms.isNotEmpty()) sb.append("\n\n").append(head).append("\n").append(ms.take(cap).joinToString("\n") { line(it, now) })
         }

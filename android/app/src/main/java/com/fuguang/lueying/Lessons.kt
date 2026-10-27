@@ -185,12 +185,13 @@ ${listing(known)}
         val mine = if (CORRECT in slips || REDO in slips) "" else pv
         val m = if (old != null && o.optString("op") == "update") {
             val i = p.items.indexOf(old).takeIf { it >= 0 } ?: return null
-            old.copy(text = t, detail = why.ifEmpty { old.detail }, at = now, scene = sc, used = 0, failed = old.failed, usedAt = now).also { p.items[i] = it }
+            old.copy(text = t, detail = why.ifEmpty { old.detail }, at = now, scene = sc, used = 0, failed = old.failed, usedAt = now, diary = "").also { p.items[i] = it }
         } else {
             if (p.items.any { it.kind == KIND && it.text == t }) return null
             Mem("$now-l", t, why, now, conv, convTitle, KIND, "her", pv = mine, scene = sc, usedAt = now).also { p.items.add(0, it) }
         }
         Memory.save()
+        Diary.later(p, m)
         return m
     }
 }

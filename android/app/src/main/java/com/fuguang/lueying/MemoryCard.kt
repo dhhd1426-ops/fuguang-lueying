@@ -152,7 +152,7 @@ fun MemoryCardHost() {
                     .graphicsLayer { alpha = ((prog.value - .45f) / .5f).coerceIn(0f, 1f) },
             ) {
                 Txt(
-                    when (MemoryCard.book) { "about" -> "关于你"; "pref" -> "你的偏好"; Lessons.KIND -> "提醒 ${p.name} 做事时"; else -> "让 ${p.name} 记住" },
+                    when (MemoryCard.book) { "about" -> "关于你"; "pref" -> "你喜欢的"; Lessons.KIND -> "提醒我做事时"; else -> "让我记住" },
                     Page.ink, 17.sp, family = Serif,
                 )
                 Spacer(Modifier.height(14.dp))
