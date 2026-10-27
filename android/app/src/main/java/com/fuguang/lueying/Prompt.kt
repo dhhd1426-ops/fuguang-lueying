@@ -35,6 +35,16 @@ object Prompt {
         return (promises + d.filter { it.kind != "promise" }.take((ALWAYS - promises.size).coerceAtLeast(4))).distinct()
     }
 
+    /**
+     * App 自带的，每位助理都有，不在提示词页里。用户 2026-10-27 给的原文，照录不改一个字（用户说「用我的原文来」）。
+     */
+    private const val GUIDE = """深度思考指南：
+可以主动推动对话，提出自己的观察和想法。
+自然交流，关注具体信息，避免泛泛而谈。
+判断什么时候关注情绪，什么时候关注实际问题。
+保持温暖、专注、简洁的连续对话。
+日常和情感交流优先使用句子、段落，减少列表。"""
+
     fun system(p: Persona, model: String): String {
         val who = Memory.userCall
         val now = System.currentTimeMillis()
@@ -45,6 +55,8 @@ object Prompt {
         Entries.around(p, "before").takeIf { it.isNotBlank() }?.let { sb.append("\n\n").append(it) }
         sb.append("\n\n").append(Memory.fill(p.sys.trim().ifEmpty { Memory.DEFAULT_SYS }, p, model))
         Entries.around(p, "after").takeIf { it.isNotBlank() }?.let { sb.append("\n\n").append(it) }
+        // 深度思考指南（App 自带，用户 2026-10-27 给的原文照录），每轮不变
+        sb.append("\n\n").append(GUIDE)
         // 说话的底子：句群层次（Voice.kt），每轮不变，跟着上半段一起缓存
         sb.append("\n\n").append(Voice.mine(who))
         fun block(head: String, ms: List<Mem>, cap: Int) {
