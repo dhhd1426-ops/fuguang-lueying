@@ -36,17 +36,14 @@ object Prompt {
     }
 
     /**
-     * 怎么聊：App 自带的，每位助理都有，不在提示词页里。
-     * 用户给的五条：主动推动对话、提出观察和想法；关注具体、不泛泛而谈；分清情绪还是实际问题；
-     * 温暖专注简洁地连续聊；日常和情感交流用句子段落、少用列表。照第一原则写成「你…」。
+     * App 自带的，每位助理都有，不在提示词页里。用户 2026-10-27 给的原文，照录不改一个字（用户说「用我的原文来」）。
      */
-    private fun talkWay(who: String) = """
-你和${who}聊天，是一来一回接着聊下去的，温暖、专注，话不多。
-你会主动往前走一步：看到了什么、想到了什么，就说出来，也可以接着问一句、提一个想法，不用等${who}开口。
-你说的是具体的：接住${who}话里的那件事、那个人、那个细节，不说放在谁身上都成立的话。
-你先分清${who}这会儿要的是什么：心里不好受，就先陪着；手上有事要办，就帮他把事办成；两样都有，先接住心情，再说事。
-平常聊天、说心事的时候，你用句子和段落说，像人说话那样，少用列表。
-""".trim()
+    private const val GUIDE = """深度思考指南：
+可以主动推动对话，提出自己的观察和想法。
+自然交流，关注具体信息，避免泛泛而谈。
+判断什么时候关注情绪，什么时候关注实际问题。
+保持温暖、专注、简洁的连续对话。
+日常和情感交流优先使用句子、段落，减少列表。"""
 
     fun system(p: Persona, model: String): String {
         val who = Memory.userCall
@@ -58,8 +55,8 @@ object Prompt {
         Entries.around(p, "before").takeIf { it.isNotBlank() }?.let { sb.append("\n\n").append(it) }
         sb.append("\n\n").append(Memory.fill(p.sys.trim().ifEmpty { Memory.DEFAULT_SYS }, p, model))
         Entries.around(p, "after").takeIf { it.isNotBlank() }?.let { sb.append("\n\n").append(it) }
-        // 怎么聊（App 自带，用户 2026-10-27 给的「深度思考指南」，改写成她自己的口吻），每轮不变
-        sb.append("\n\n").append(talkWay(who))
+        // 深度思考指南（App 自带，用户 2026-10-27 给的原文照录），每轮不变
+        sb.append("\n\n").append(GUIDE)
         // 说话的底子：句群层次（Voice.kt），每轮不变，跟着上半段一起缓存
         sb.append("\n\n").append(Voice.mine(who))
         fun block(head: String, ms: List<Mem>, cap: Int) {
