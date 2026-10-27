@@ -73,6 +73,7 @@ object Reflect {
 - 不记：寒暄、一次性的问题、当下的情绪；你对$who 性格的评价；你自己提的方案；只提过一次的小爱好。
 - 你们闹着玩、一起编故事时说的话（谁送了什么、谁嘴硬、谁收下了）不记，那不是$who 平时的真实情况；除非$who 说“把这个记住”。
 - 永远不记：证件号、银行卡、密码、验证码、门牌住址、健康和病情、自伤、犯罪、性、未成年人的年龄。
+- 想留着的一刻也记一条：你们之间再想起还会心里一动的那一刻（$who 第一次说的某句话、聊得特别开心的一晚、$who 说“记住今晚”）。kind 写 talk，加 "moment": true；一段对话最多一条，普通的甜话、随口的玩笑不记。这一条不受上面“当下的情绪不记”的限制，但一起编故事、戏里的话仍然不记。
 - 要你一味顺着说、不许提意见的要求，不当成偏好记。
 - 措辞跟着证据走：$who 说“可能”就写“可能”；写不会过期的说法（“在济南工作”，不写“今天在加班”）。
 """.trim()
@@ -86,7 +87,7 @@ object Reflect {
         }.joinToString("\n").ifBlank { "（还没有）" }
     }
 
-    private const val OPS = """输出：{"ops":[{"op":"add","kind":"pref","text":"…","why":"…"},{"op":"update","id":"m3","text":"…"},{"op":"delete","id":"m5"}]}"""
+    private const val OPS = """输出：{"ops":[{"op":"add","kind":"pref","text":"…","why":"…"},{"op":"add","kind":"talk","text":"…","moment":true},{"op":"update","id":"m3","text":"…"},{"op":"delete","id":"m5"}]}"""
 
     /** 把这一段交给模型回想，按它给的动作新增、改写、删除。失败就算了，不打扰用户。 */
     suspend fun run(her: Persona, p: Provider, c: ProviderConfig, model: String, window: List<ChatMsg>, conv: String, convTitle: String) {
@@ -160,12 +161,15 @@ $OPS
                 "add" -> {
                     if (t.isEmpty() || sensitive(t) || sensitive(why) || her.items.any { it.text == t }) continue
                     val k = o.optString("kind").trim().lowercase().let { if (it in kinds) it else "know" }
-                    her.items.add(0, Mem("$now-$i", t, why, now, conv, convTitle, k)); changed = true
+                    val mo = o.optBoolean("moment") && k == "talk"
+                    val m = Mem("$now-$i", t, why, now, conv, convTitle, k, moment = mo)
+                    her.items.add(0, m); Diary.later(her, m); changed = true
                 }
                 "update" -> {
                     if (old == null || old.by == "you" || t.isEmpty() || sensitive(t)) continue
                     val at = her.items.indexOf(old).takeIf { it >= 0 } ?: continue
-                    her.items[at] = old.copy(text = t, detail = why.ifEmpty { old.detail }, at = now); changed = true
+                    val m = old.copy(text = t, detail = why.ifEmpty { old.detail }, at = now, diary = "")
+                    her.items[at] = m; Diary.later(her, m); changed = true
                 }
                 "delete" -> {
                     if (old == null || old.by == "you") continue

@@ -20,7 +20,9 @@ import org.json.JSONObject
  */
 data class Mem(val id: String, val text: String, val detail: String, val at: Long, val conv: String, val convTitle: String, val kind: String = "know", val by: String = "her",
     /** 只有做事经验（kind = lesson）用：哪家哪个型号出的岔子（空 = 不分）；什么时候想起（work / photo / web / talk）；用上几次；没帮上几次；上次想起是什么时候。 */
-    val pv: String = "", val scene: String = "", val used: Int = 0, val failed: Int = 0, val usedAt: Long = 0) {
+    val pv: String = "", val scene: String = "", val used: Int = 0, val failed: Int = 0, val usedAt: Long = 0,
+    /** 记忆页里她写的那段话（Diary.kt，照 Voice 的句群层次）；空 = 还没写。想留着的一刻（暧昧、开心）。 */
+    val diary: String = "", val moment: Boolean = false) {
     /** 属于哪一本：diary / about / pref / lesson。 */
     val book: String get() = if (kind == "about" || kind == "pref" || kind == Lessons.KIND) kind else "diary"
     /** 做事经验用顺手了（用上 3 次），哪个型号都带着。 */
@@ -122,7 +124,7 @@ object Memory {
     }
 
     private fun mem(it: JSONObject) = Mem(it.optString("id"), it.optString("t"), it.optString("d"), it.optLong("at"), it.optString("c"), it.optString("ct"), it.optString("k", "know").ifBlank { "know" }, it.optString("b").ifBlank { if (it.optString("c").isEmpty()) "you" else "her" },
-        it.optString("pv"), it.optString("sc"), it.optInt("u"), it.optInt("f"), it.optLong("ua"))
+        it.optString("pv"), it.optString("sc"), it.optInt("u"), it.optInt("f"), it.optLong("ua"), it.optString("w"), it.optBoolean("mo"))
 
     private fun read(o: JSONObject) = Persona(o.optString("id"), o.optString("name", "Amor"), o.optString("sys", DEFAULT_SYS).let { if (it.trim() == OLD_DEFAULT_SYS) DEFAULT_SYS else it }).apply {
         memOn = o.optBoolean("on", true); lessonsOn = o.optBoolean("lesson", true)
@@ -137,6 +139,7 @@ object Memory {
         all.forEach { p ->
             val m = JSONArray()
             p.items.forEach { m.put(JSONObject().put("id", it.id).put("t", it.text).put("d", it.detail).put("at", it.at).put("c", it.conv).put("ct", it.convTitle).put("k", it.kind).put("b", it.by)
+                .apply { if (it.diary.isNotBlank()) put("w", it.diary); if (it.moment) put("mo", true) }
                 .apply { if (it.kind == Lessons.KIND) put("pv", it.pv).put("sc", it.scene).put("u", it.used).put("f", it.failed).put("ua", it.usedAt) }) }
             a.put(JSONObject().put("id", p.id).put("name", p.name).put("sys", p.sys).put("on", p.memOn).put("lesson", p.lessonsOn)
                 .put("first", p.firstAt).put("last", p.lastAt).put("chats", p.chats)
@@ -210,6 +213,7 @@ object Memory {
         val m = Mem("$now-m", t, dt, now, "", "", k, "you", scene = if (k == Lessons.KIND) Lessons.guessScene(t + dt) else "")
         p.items.add(0, m)
         save()
+        Diary.later(p, m)
         return m
     }
 
@@ -269,7 +273,8 @@ object Memory {
             val k = a.optString("kind").trim().let { if (it in setOf("about", "pref", "self", "promise", "talk", "know")) it else "know" }
             if (p.items.any { it.text == t }) return ToolOut("已经记得了。")
             val now = System.currentTimeMillis()
-            p.items.add(0, Mem("$now-t", t, a.optString("why").trim().take(80), now, conv, convTitle, k, "her"))
+            val m = Mem("$now-t", t, a.optString("why").trim().take(80), now, conv, convTitle, k, "her")
+            p.items.add(0, m); Diary.later(p, m)
             save()
             return ToolOut("记下了。")
         }
