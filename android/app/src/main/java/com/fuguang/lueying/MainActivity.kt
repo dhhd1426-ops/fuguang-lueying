@@ -25,6 +25,7 @@ class MainActivity : ComponentActivity() {
         CrashLog.arm(this)
         Notify.init(this)
         ClockTools.init(this)
+        Yiyan.init(this)
         val prefs = Prefs(this)
         Yu.init(this)
         Works.init(this)
