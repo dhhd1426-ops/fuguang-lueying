@@ -46,6 +46,7 @@ import java.util.Locale
 
 /**
  * 手记：和「我的」同一种悬浮卡片。首页写此刻手记，下面「翻一翻」浮光 / 掠影 / 绯句；
+ * 最下面「显示」：暗度、虚化、只看画面（见 NoteLook.kt）。
  * 掠影是目录 → 正文（或原始对话），绯句是留言列表 → 一封，都在卡片里推进。
  */
 object NoteCard : FloatCard() {
@@ -141,6 +142,7 @@ private fun NoteHome(store: ContentStore, prefs: Prefs, t: Float) {
                 store.markLettersSeen(); NoteCard.screen = "letters"
             }
         }
+        NoteDisplay(6, t)
         Spacer(Modifier.height(8.dp))
     }
 }
