@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 新的一句：等旧的走开一点（90ms）再从下面淡入，280ms 减速 -->
+<set xmlns:android="http://schemas.android.com/apk/res/android"
+    android:interpolator="@android:anim/decelerate_interpolator"
+    android:startOffset="90"
+    android:duration="280">
+    <alpha android:fromAlpha="0" android:toAlpha="1" />
+    <translate android:fromYDelta="6%" android:toYDelta="0" />
+</set>

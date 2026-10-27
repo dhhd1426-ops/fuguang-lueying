@@ -116,6 +116,19 @@
             android:name=".HerNoteReceiver"
             android:exported="false" />
 
+        <!-- 桌面小组件「每日一言」：手记里的一言，每 2 小时换一句（见 Yiyan.kt） -->
+        <receiver
+            android:name=".YiyanWidget"
+            android:label="每日一言"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/yiyan_widget" />
+        </receiver>
+
         <!-- 连接器 api 3：羽反过来请助理把一段文字整理成导图（见 YuConnector.kt 的 YuProvider） -->
         <provider
             android:name=".YuProvider"

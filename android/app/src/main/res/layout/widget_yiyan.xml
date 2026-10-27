@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 每日一言：透明背景，只有一句话。两面翻着换句子（见 Yiyan.kt），字号跟着小组件大小自动放到最大。 -->
+<ViewFlipper xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/yiyan_flip"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:inAnimation="@anim/yiyan_in"
+    android:outAnimation="@anim/yiyan_out"
+    android:autoStart="false">
+
+    <TextView
+        android:id="@+id/yiyan_a"
+        style="@style/YiyanLine" />
+
+    <TextView
+        android:id="@+id/yiyan_b"
+        style="@style/YiyanLine" />
+</ViewFlipper>

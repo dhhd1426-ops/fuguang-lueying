@@ -45,7 +45,7 @@ import java.util.Date
 import java.util.Locale
 
 /**
- * 手记：和「我的」同一种悬浮卡片。首页写此刻手记，下面「翻一翻」浮光 / 掠影 / 绯句；
+ * 手记：和「我的」同一种悬浮卡片。首页写此刻手记，下面「翻一翻」一言（NoteYiyan.kt，桌面小组件用）/ 浮光 / 掠影 / 绯句；
  * 最下面「显示」：暗度、虚化、只看画面（见 NoteLook.kt）。
  * 掠影是目录 → 正文（或原始对话），绯句是留言列表 → 一封，都在卡片里推进。
  */
@@ -58,7 +58,7 @@ object NoteCard : FloatCard() {
 
     fun back(): Boolean {
         screen = when (screen) {
-            "scene", "toc", "letters" -> "note"
+            "scene", "toc", "letters", "yiyan" -> "note"
             "read", "talks" -> "toc"
             "letter" -> "letters"
             else -> return false
@@ -69,7 +69,7 @@ object NoteCard : FloatCard() {
 
 private fun depth(s: String) = when (s) {
     "note" -> 0
-    "scene", "toc", "letters" -> 1
+    "scene", "toc", "letters", "yiyan" -> 1
     else -> 2
 }
 
@@ -95,6 +95,7 @@ fun NoteCardLayer(store: ContentStore, prefs: Prefs) {
             "talks" -> TalksPage(store.luoying)
             "letters" -> LettersPage(store.letters)
             "letter" -> LetterPage(store.letters)
+            "yiyan" -> YiyanPage()
         }
     }
 }
@@ -131,18 +132,19 @@ private fun NoteHome(store: ContentStore, prefs: Prefs, t: Float) {
         NoteField(prefs, Modifier.mineRise(1, t))
         Txt("翻一翻", Page.muted, 11.sp, Modifier.padding(start = 8.dp, top = 16.dp, bottom = 8.dp).mineRise(2, t), spacing = ls(2.75f, 11f))
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            NoteRow(3, t, "浮", "浮光", "背景场景 · WLOP-Sky2-海琴烟", false) { NoteCard.screen = "scene" }
+            NoteRow(3, t, "言", "一言", yiyanSub(), false) { NoteCard.screen = "yiyan" }
+            NoteRow(4, t, "浮", "浮光", "背景场景 · WLOP-Sky2-海琴烟", false) { NoteCard.screen = "scene" }
             val chapters = store.luoying.chapters
             val last = chapters.firstOrNull { it.id == prefs.lastChapter }
-            NoteRow(4, t, "掠", "掠影", "${chapters.size} 篇" + (last?.let { " · 上次读到「${it.title}」" } ?: ""), store.newLuoying) {
+            NoteRow(5, t, "掠", "掠影", "${chapters.size} 篇" + (last?.let { " · 上次读到「${it.title}」" } ?: ""), store.newLuoying) {
                 store.markLuoyingSeen(); NoteCard.screen = "toc"
             }
             val letters = store.letters
-            NoteRow(5, t, "绯", "绯句", "${letters.size} 封留言" + (letters.lastOrNull()?.let { " · 最近一封来自${it.author.removePrefix("——")}" } ?: ""), store.newLetters) {
+            NoteRow(6, t, "绯", "绯句", "${letters.size} 封留言" + (letters.lastOrNull()?.let { " · 最近一封来自${it.author.removePrefix("——")}" } ?: ""), store.newLetters) {
                 store.markLettersSeen(); NoteCard.screen = "letters"
             }
         }
-        NoteDisplay(6, t)
+        NoteDisplay(7, t)
         Spacer(Modifier.height(8.dp))
     }
 }
