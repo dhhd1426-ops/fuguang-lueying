@@ -542,7 +542,7 @@ fun ChatPage(
                 .imePadding()
                 .padding(start = side, end = side, top = if (compact) 26.dp else 38.dp, bottom = if (compact) 22.dp else 30.dp),
         ) {
-            ChatHeader(compact, onMenu = { menu = true })
+            ChatHeader(compact, chat.messages.isEmpty() && !chat.busy, chat.busy, onMenu = { menu = true }) { chat.reset() }
             Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                 if (chat.messages.isEmpty() && !chat.busy) ChatHello(compact, store, chat)
                 else Conversation(chat, store, compact, flight, onSetup = onSetup, onRetry = { chat.retry(scope, store) }, onThink = { thinkOf = it; thinkOpen = true }, onImage = { viewing = it }, onWork = { workOpen = it },
@@ -676,13 +676,13 @@ fun ChatPage(
 }
 
 @Composable
-private fun ChatHeader(compact: Boolean, onMenu: () -> Unit) {
-    // 左：侧栏（对话、作品、手记、切换助理、新对话）；右：和主页同一颗菜单钮
+private fun ChatHeader(compact: Boolean, empty: Boolean, busy: Boolean, onMenu: () -> Unit, onNew: () -> Unit) {
+    // 左：侧栏（对话、作品、手记、切换助理、新对话）；右：新对话（照 Claude App）
     Box(Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
         Pressable(onMenu, Modifier.align(Alignment.CenterStart), label = "对话和助理") { pressed ->
             SvgIcon(Ic("M4 6.5h15M4 12h10M4 17.5h13"), if (pressed) Page.ink else Page.ink.copy(alpha = .85f), 22.dp, modifier = Modifier.padding(6.dp))
         }
-        Box(Modifier.align(Alignment.CenterEnd)) { CornerMenuButton(compact) }
+        Box(Modifier.align(Alignment.CenterEnd)) { NewChatButton(empty, busy, compact, onNew) }
     }
 }
 

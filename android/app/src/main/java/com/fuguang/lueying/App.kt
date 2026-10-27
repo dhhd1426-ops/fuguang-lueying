@@ -87,8 +87,9 @@ fun FuguangApp(prefs: Prefs, fullscreen: Boolean, setFullscreen: (Boolean) -> Un
     var paused by remember { mutableStateOf(false) }
     var foreground by remember { mutableStateOf(true) }
     var zen by remember { mutableStateOf(false) }
-    var dim by remember { mutableIntStateOf(prefs.dim) }
-    var blur by remember { mutableIntStateOf(prefs.blur) }
+    remember { ScreenLook.init(prefs) }
+    val dim = ScreenLook.dim
+    val blur = ScreenLook.blur
 
     val mineNav = remember { MineNav() }
     val assistant = remember { AssistantStore(prefs) }
@@ -115,7 +116,7 @@ fun FuguangApp(prefs: Prefs, fullscreen: Boolean, setFullscreen: (Boolean) -> Un
 
     // 自动沉浸：停手 7 秒进；最后 2 秒界面先淡一点。有东西开着、她在回答时一直从头算。
     var soon by remember { mutableStateOf(false) }
-    val held = Zen.held || chatState.busy || MineCard.open || NoteCard.open || CornerMenu.open || !foreground || InBrowser.url != null || Downloads.open || ClipLink.showing || PanLink.showing || ClipPlay.playing() != null
+    val held = Zen.held || chatState.busy || MineCard.open || NoteCard.open || !foreground || InBrowser.url != null || Downloads.open || ClipLink.showing || PanLink.showing || ClipPlay.playing() != null
     LaunchedEffect(held, Zen.touchedAt, zen) {
         soon = false
         if (held || zen) { if (held) Zen.touch(); return@LaunchedEffect }
@@ -127,6 +128,14 @@ fun FuguangApp(prefs: Prefs, fullscreen: Boolean, setFullscreen: (Boolean) -> Un
     }
     // 沉浸时连状态栏、底部横条一起收起
     LaunchedEffect(zen) { setFullscreen(zen) }
+    // 手记里点了「只看画面」：卡片先缩回，再进沉浸
+    LaunchedEffect(ScreenLook.zenNow) {
+        if (!ScreenLook.zenNow) return@LaunchedEffect
+        NoteCard.open = false
+        delay(240)
+        ScreenLook.zenNow = false
+        zen = true
+    }
 
     val haze = rememberHazeState()
 
@@ -224,12 +233,6 @@ fun FuguangApp(prefs: Prefs, fullscreen: Boolean, setFullscreen: (Boolean) -> Un
         // 聊天里放抖音：小窗、全屏
         ClipPlayLayer()
 
-        if (!zen) CornerMenuLayer(
-            dim = dim, blur = blur,
-            onDim = { dim = it; prefs.dim = it },
-            onBlur = { blur = it; prefs.blur = it },
-            onNote = { NoteCard.from = CornerMenu.anchor.center; NoteCard.open = true },
-        )
         // 看照片、圈画：盖在最上面
         PhotoLayer()
     }
