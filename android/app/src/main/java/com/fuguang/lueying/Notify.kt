@@ -134,10 +134,11 @@ object Notify {
     private fun style(ctx: Context, her: Person, mine: String?, line: String): NotificationCompat.MessagingStyle {
         val me = Person.Builder().setName(Memory.userName.ifBlank { "我" }).setKey("me").build()
         val now = System.currentTimeMillis()
-        return NotificationCompat.MessagingStyle(me).apply {
-            if (!mine.isNullOrBlank()) addMessage(mine.take(400), now - 1, me)
-            addMessage(line, now, her)
-        }
+        // 不用 apply：MessagingStyle 自己有个同名方法
+        val st = NotificationCompat.MessagingStyle(me)
+        if (!mine.isNullOrBlank()) st.addMessage(mine.take(400), now - 1, me)
+        st.addMessage(line, now, her)
+        return st
     }
 
     private fun post(ctx: Context, conv: String, n: android.app.Notification) {
