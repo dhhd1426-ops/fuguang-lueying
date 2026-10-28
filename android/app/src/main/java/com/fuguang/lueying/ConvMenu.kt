@@ -331,7 +331,7 @@ private fun MenuItem(ic: Ic, label: String, red: Boolean, filled: Boolean, onCli
 }
 
 /**
- * 弹出卡片（第 331 版，原型 XzZHhDoKrNXhGwYGF4hSNg）：重命名、删除确认都在中间弹出，键盘弹起来时停在键盘上面那块的正中。
+ * 弹出卡片（第 331 版，原型 XzZHhDoKrNXhGwYGF4hSNg 第 2 版）：重命名、删除确认在视觉中心弹出（偏上一点），键盘弹起来时停在键盘上面那块的视觉中心。
  * 进：缩放 .94 → 1、淡入 260ms 减速；出：160ms 加速收回。点卡片外面、按返回都等于取消。
  */
 @Composable
@@ -342,7 +342,8 @@ private fun Sheet(open: Boolean, onDismiss: () -> Unit, content: @Composable () 
     if (t.value <= 0f && !open) return
     Box(Modifier.fillMaxSize()) {
         Box(Modifier.fillMaxSize().background(Skin.scrim(.4f * t.value)).pointerInput(Unit) { detectTapGestures { onDismiss() } })
-        Box(Modifier.fillMaxSize().imePadding().navigationBarsPadding().padding(horizontal = 22.dp), contentAlignment = Alignment.Center) {
+        // 视觉中心：比几何正中偏上一点（卡片中心在可用高度的 42% 处），正中放会显得往下坠
+        Box(Modifier.fillMaxSize().imePadding().navigationBarsPadding().padding(horizontal = 22.dp), contentAlignment = androidx.compose.ui.BiasAlignment(0f, -.16f)) {
             Column(
                 Modifier.widthIn(max = 340.dp).fillMaxWidth()
                     .graphicsLayer { alpha = t.value.coerceIn(0f, 1f); val k = .94f + .06f * t.value; scaleX = k; scaleY = k }
