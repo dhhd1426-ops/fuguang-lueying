@@ -107,7 +107,7 @@ private fun SwitchSection() {
 private fun CardSection() {
     val haptic = LocalHapticFeedback.current
     Txt("卡片样式", Page.muted, 12.sp, Modifier.padding(start = 8.dp, top = 14.dp, bottom = 10.dp), spacing = ls(1f, 12f))
-    listOf(true to ("整页" to "「我的」「手记」这些一打开就铺满"), false to ("悬浮卡片" to "浮在中间，↗ 能临时展开")).forEach { (whole, t) ->
+    listOf(true to ("整页" to "像手机页面，‹ 一级一级往回退"), false to ("悬浮卡片" to "浮在中间，↗ 能临时展开")).forEach { (whole, t) ->
         val on = Skin.wholeCards == whole
         PressSurface(
             { if (!on) { Skin.useWhole(whole); haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove) } },
