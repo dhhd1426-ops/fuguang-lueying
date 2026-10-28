@@ -583,7 +583,7 @@ fun ChatPage(
         SendFlightLayer(flight)
         if (menuT > 0f) {
             Box(
-                Modifier.fillMaxSize().alpha(menuT).background(rgba(6, 9, 14, .68f))
+                Modifier.fillMaxSize().alpha(menuT).background(Skin.scrim(.68f))
                     .pointerInput(Unit) { detectTapGestures { menu = false } },
             )
         }
@@ -1078,7 +1078,7 @@ private fun ChatInput(
         ) { p ->
             LaunchedEffect(p) { pressed = p }
             Box(Modifier.size(ball).graphicsLayer { scaleX = pulse.value; scaleY = pulse.value }, contentAlignment = Alignment.Center) {
-                SvgIcon(icon, css("#2a211b"), 18.dp, stroke = 1.6f)
+                SvgIcon(icon, Skin.onAccent, 18.dp, stroke = 1.6f)
             }
         }
     }
@@ -1114,7 +1114,7 @@ private fun ModelDrawer(open: Boolean, store: AssistantStore, compact: Boolean, 
     Box(Modifier.fillMaxSize().onGloballyPositioned { host = it }) {
         // 暗幕：点空白处收起
         Box(
-            Modifier.fillMaxSize().alpha(shown).background(rgba(6, 9, 14, .5f))
+            Modifier.fillMaxSize().alpha(shown).background(Skin.scrim(.5f))
                 .pointerInput(Unit) { detectTapGestures { onClose() } },
         )
         BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {

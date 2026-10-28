@@ -73,7 +73,7 @@ import kotlinx.coroutines.launch
 /* 「我的」卡片首页的行：色块、左边方形图标、右边状态。 */
 
 private val warm: Color get() = Skin.accent
-private val warmInk = Color(0xFF2A211B)
+private val warmInk: Color get() = Skin.onAccent
 
 @Composable
 internal fun MineRow(
@@ -150,7 +150,7 @@ internal fun MineTgRow(i: Int, t: Float) {
         RowBody("Telegram", sub, glyph = { Txt("T", warm, 17.sp, family = Serif) }) {
             if (on) PressSurface(
                 { if (sure) scope.launch { Td.logout(); sure = false } else sure = true },
-                fill = Color.White.copy(alpha = .08f), pressedFill = Color.White.copy(alpha = .14f), pressScale = .93f, label = "退出 Telegram",
+                fill = veil(.08f), pressedFill = veil(.14f), pressScale = .93f, label = "退出 Telegram",
             ) { Txt(if (sure) "确认退出" else "退出", if (sure) ClipBad else Page.ink, 13.sp, Modifier.padding(horizontal = 13.dp, vertical = 7.dp)) }
             else Txt("未登录", Page.muted, 13.sp)
         }

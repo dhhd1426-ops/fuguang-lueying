@@ -122,7 +122,7 @@ fun CenterCardLayer(
         Box(
             Modifier.fillMaxSize()
                 .graphicsLayer { alpha = pv.coerceIn(0f, 1f) }
-                .background(rgba(6, 8, 12, .55f))
+                .background(Skin.scrim(.55f))
                 .pointerInput(Unit) { detectTapGestures { card.open = false } },
         )
         val cardW = min(340.dp, maxWidth - 40.dp)

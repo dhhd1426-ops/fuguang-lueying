@@ -59,7 +59,7 @@ object Magnet {
 }
 
 private val Warm: Color get() = Skin.accent
-private val Sheet = Color(0xFF1F232A)
+private val Sheet: Color get() = Skin.sheet.copy(alpha = 1f)
 private val Rose = Color(0xFFD79A94)
 private val magnetIc = Ic("M6 4h4v8a2 2 0 0 0 4 0V4h4v8a6 6 0 0 1-12 0Z M6 8h4 M14 8h4")
 private val playIc = Ic("M8 5.5v13l10.5-6.5Z")
@@ -107,19 +107,19 @@ fun MagnetSheet(online: Int = 0, onOnline: () -> Unit = {}, onToast: (String) ->
                 .pointerInput(Unit) { detectTapGestures { } }
                 .windowInsetsPadding(WindowInsets.navigationBars).padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 16.dp),
         ) {
-            Box(Modifier.align(Alignment.CenterHorizontally).padding(bottom = 12.dp).size(40.dp, 4.dp).background(Color.White.copy(alpha = .25f), RoundedCornerShape(2.dp)))
+            Box(Modifier.align(Alignment.CenterHorizontally).padding(bottom = 12.dp).size(40.dp, 4.dp).background(veil(.25f), RoundedCornerShape(2.dp)))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.size(34.dp).background(Warm.copy(alpha = .12f), RoundedCornerShape(10.dp)), contentAlignment = Alignment.Center) { SvgIcon(magnetIc, Warm, 17.dp, stroke = 1.7f) }
                 Spacer(Modifier.width(10.dp))
                 Column(Modifier.weight(1f)) {
-                    Txt(m?.name ?: Torrent.nameOf(a.key).ifBlank { if (a.file) "种子文件" else "磁力链接" }, Page.INK, 15.sp, family = Serif, maxLines = 2)
+                    Txt(m?.name ?: Torrent.nameOf(a.key).ifBlank { if (a.file) "种子文件" else "磁力链接" }, Page.ink, 15.sp, family = Serif, maxLines = 2)
                     val sub = when {
                         already != null -> "已经在下载里了"
                         m != null -> "${m.items.size} 个文件 · 共 ${mb(m.items.sumOf { it.size })}"
                         failed -> "没找到"
                         else -> "磁力"
                     }
-                    Txt(sub, Page.MUTED, 12.sp, Modifier.padding(top = 2.dp), maxLines = 1)
+                    Txt(sub, Page.muted, 12.sp, Modifier.padding(top = 2.dp), maxLines = 1)
                 }
             }
             Spacer(Modifier.size(12.dp))
@@ -129,10 +129,10 @@ fun MagnetSheet(online: Int = 0, onOnline: () -> Unit = {}, onToast: (String) ->
                     0 -> Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             LoadRing(Warm, 15.dp); Spacer(Modifier.width(9.dp))
-                            Txt("在找种子信息 · $secs 秒", Page.INK, 13.5.sp)
+                            Txt("在找种子信息 · $secs 秒", Page.ink, 13.5.sp)
                         }
                         val nodes = remember(secs) { Torrent.nodes() }
-                        Txt((if (nodes > 0) "已连上 $nodes 个节点。" else "正在连 DHT 网络。") + "冷门的种子可能要等一两分钟。", Page.MUTED, 12.sp, Modifier.padding(top = 6.dp, start = 24.dp), lineHeight = 19.sp)
+                        Txt((if (nodes > 0) "已连上 $nodes 个节点。" else "正在连 DHT 网络。") + "冷门的种子可能要等一两分钟。", Page.muted, 12.sp, Modifier.padding(top = 6.dp, start = 24.dp), lineHeight = 19.sp)
                     }
                     1 -> Column(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
                         Txt("等了一分半钟，没找到分享这个种子的人。可能太冷门，或者这个网络连不上 DHT。", Rose, 13.sp, lineHeight = 20.sp)
@@ -145,12 +145,12 @@ fun MagnetSheet(online: Int = 0, onOnline: () -> Unit = {}, onToast: (String) ->
             }
             // 网页上本来就有在线视频：直接下在线那份，一般比磁力快得多（不靠有没有人做种）
             if (online > 0 && already == null) PressSurface({ Magnet.ask = null; onOnline() }, Modifier.fillMaxWidth().padding(top = 10.dp), shape = RoundedCornerShape(14.dp),
-                fill = Color.White.copy(alpha = .05f), pressScale = .98f, label = "下在线视频") {
+                fill = veil(.05f), pressScale = .98f, label = "下在线视频") {
                 Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                     SvgIcon(playIc, Warm, 14.dp, stroke = 2f); Spacer(Modifier.width(10.dp))
                     Column(Modifier.weight(1f)) {
-                        Txt("这页能在线放（认出 $online 个视频）", Page.INK, 13.5.sp, maxLines = 1)
-                        Txt("下在线那份通常快得多，不用等人做种", Page.MUTED, 11.5.sp, Modifier.padding(top = 2.dp), maxLines = 1)
+                        Txt("这页能在线放（认出 $online 个视频）", Page.ink, 13.5.sp, maxLines = 1)
+                        Txt("下在线那份通常快得多，不用等人做种", Page.muted, 11.5.sp, Modifier.padding(top = 2.dp), maxLines = 1)
                     }
                     Txt("换这个", Warm, 12.5.sp, maxLines = 1)
                 }
@@ -191,24 +191,24 @@ private fun Files(m: Torrent.Meta, sel: Set<Int>, onFlip: (Int) -> Unit) {
             LaunchedEffect(Unit) { delay(40L * n.coerceAtMost(8)); rise.animateTo(1f, tween(320, easing = Curves.decel)) }
             val on = it.i in sel
             PressSurface({ onFlip(it.i) }, Modifier.fillMaxWidth().graphicsLayer { alpha = rise.value; translationY = (1f - rise.value) * 8.dp.toPx() },
-                shape = RoundedCornerShape(14.dp), fill = if (on) Warm.copy(alpha = .13f) else Color.White.copy(alpha = .05f), pressScale = .98f, label = it.name) {
+                shape = RoundedCornerShape(14.dp), fill = if (on) Warm.copy(alpha = .13f) else veil(.05f), pressScale = .98f, label = it.name) {
                 Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                     val c by animateFloatAsState(if (on) 1f else 0f, tween(220, easing = Curves.decel), label = "c")
                     Canvas(Modifier.size(18.dp)) {
                         val w = 1.5.dp.toPx(); val r = CornerRadius(5.dp.toPx())
-                        if (c < 1f) drawRoundRect(Color.White.copy(alpha = .32f), Offset(w / 2, w / 2), androidx.compose.ui.geometry.Size(size.width - w, size.height - w), r, style = Stroke(w))
+                        if (c < 1f) drawRoundRect(veil(.32f), Offset(w / 2, w / 2), androidx.compose.ui.geometry.Size(size.width - w, size.height - w), r, style = Stroke(w))
                         if (c > 0f) {
                             drawRoundRect(Warm.copy(alpha = c), cornerRadius = r)
                             val s = size.minDimension / 24f; val a = Offset(6f * s, 12.5f * s); val b = Offset(10f * s, 16.5f * s); val e = Offset(18f * s, 8f * s)
-                            val ink = Color(0xFF2A211B)
+                            val ink = Skin.onAccent
                             drawLine(ink, a, a + (b - a) * (c * 2f).coerceAtMost(1f), 2.dp.toPx(), StrokeCap.Round)
                             if (c > .5f) drawLine(ink, b, b + (e - b) * ((c - .5f) * 2f), 2.dp.toPx(), StrokeCap.Round)
                         }
                     }
                     Spacer(Modifier.width(10.dp))
                     Column(Modifier.weight(1f)) {
-                        Txt(it.name, if (on) Page.INK else Page.INK.copy(alpha = .78f), 13.5.sp, maxLines = 2)
-                        Txt(listOf(mb(it.size).ifBlank { "很小" }, if (it.video) "视频" else Torrent.ext(it.name).uppercase()).filter { s -> s.isNotBlank() }.joinToString(" · "), Page.MUTED.copy(alpha = .7f), 11.5.sp, Modifier.padding(top = 2.dp), maxLines = 1)
+                        Txt(it.name, if (on) Page.ink else Page.ink.copy(alpha = .78f), 13.5.sp, maxLines = 2)
+                        Txt(listOf(mb(it.size).ifBlank { "很小" }, if (it.video) "视频" else Torrent.ext(it.name).uppercase()).filter { s -> s.isNotBlank() }.joinToString(" · "), Page.muted.copy(alpha = .7f), 11.5.sp, Modifier.padding(top = 2.dp), maxLines = 1)
                     }
                 }
             }

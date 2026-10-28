@@ -146,12 +146,12 @@ internal fun TgLogin(onDone: () -> Unit) {
 internal fun Wide(text: String?, enabled: Boolean, main: Boolean = true, onClick: () -> Unit) {
     PressSurface(
         onClick, Modifier.fillMaxWidth().height(38.dp), RoundedCornerShape(11.dp), enabled = enabled && text != null,
-        fill = if (main) ClipWarm else Color.White.copy(alpha = .08f), pressedFill = if (main) ClipWarm.copy(alpha = .85f) else Color.White.copy(alpha = .14f),
+        fill = if (main) ClipWarm else veil(.08f), pressedFill = if (main) ClipWarm.copy(alpha = .85f) else veil(.14f),
         label = text ?: "处理中",
     ) {
         Box(Modifier.alpha(if (enabled || text == null) 1f else .45f)) {
-            if (text == null) LoadRing(if (main) Color(0xFF2A211B) else Page.ink, 14.dp)
-            else Txt(text, if (main) Color(0xFF2A211B) else Page.ink, 13.5.sp)
+            if (text == null) LoadRing(if (main) Skin.onAccent else Page.ink, 14.dp)
+            else Txt(text, if (main) Skin.onAccent else Page.ink, 13.5.sp)
         }
     }
 }
@@ -171,7 +171,7 @@ private fun CodeBoxes(v: String, n: Int, onChange: (String) -> Unit) {
                     val on = i < v.length
                     val s by animateFloatAsState(if (on) 1.04f else 1f, tween(180, easing = Curves.standard), label = "code")
                     Box(Modifier.weight(1f).height(46.dp).graphicsLayer { scaleX = s; scaleY = s }
-                        .background(if (on) ClipWarm.copy(alpha = .16f) else Color.White.copy(alpha = .06f), RoundedCornerShape(10.dp)), contentAlignment = Alignment.Center) {
+                        .background(if (on) ClipWarm.copy(alpha = .16f) else veil(.06f), RoundedCornerShape(10.dp)), contentAlignment = Alignment.Center) {
                         if (on) Txt(v[i].toString(), Page.ink, 20.sp)
                         else if (i == v.length) Box(Modifier.align(Alignment.BottomCenter).width(14.dp).height(2.dp).background(ClipWarm))
                     }

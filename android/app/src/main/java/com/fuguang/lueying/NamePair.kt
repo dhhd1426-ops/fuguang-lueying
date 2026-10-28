@@ -194,9 +194,9 @@ private fun AvatarButton(id: String, letter: String, fill: Brush, scale: Animata
                 Box(
                     Modifier.align(Alignment.BottomEnd).offset(3.dp, 3.dp).size(19.dp)
                         .graphicsLayer { scaleX = cam.value; scaleY = cam.value; alpha = cam.value.coerceIn(0f, 1f) }
-                        .background(Color(0xFF2D323C), CircleShape).padding(2.dp).background(warm, CircleShape),
+                        .background(Skin.pop, CircleShape).padding(2.dp).background(warm, CircleShape),
                     contentAlignment = Alignment.Center,
-                ) { SvgIcon(camera, Color(0xFF2A211B), 11.dp, stroke = 2.2f) }
+                ) { SvgIcon(camera, Skin.onAccent, 11.dp, stroke = 2.2f) }
             }
         }
         if (menu.currentState || menu.targetState) {
@@ -219,7 +219,7 @@ private fun AvatarButton(id: String, letter: String, fill: Brush, scale: Animata
                     enter = fadeIn(tween(200)) + scaleIn(spring(dampingRatio = .72f, stiffness = 520f), .94f, TransformOrigin(.5f, 0f)),
                     exit = fadeOut(tween(140, easing = Curves.accel)) + scaleOut(tween(200, easing = Curves.accel), .94f, TransformOrigin(.5f, 0f)),
                 ) {
-                    Row(Modifier.width(210.dp).background(Color(0xFF323844), RoundedCornerShape(18.dp)).padding(5.dp), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                    Row(Modifier.width(210.dp).background(Skin.pop, RoundedCornerShape(18.dp)).padding(5.dp), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                         MenuTile("换一张", photo, Modifier.weight(1f)) { menu.targetState = false; choose() }
                         MenuTile("用首字", letterIc, Modifier.weight(1f)) { menu.targetState = false; Avatars.clear(id); scope.launch { scale.snapTo(.92f); scale.animateTo(1f, spring(dampingRatio = .4f, stiffness = 520f)) } }
                     }
@@ -231,7 +231,7 @@ private fun AvatarButton(id: String, letter: String, fill: Brush, scale: Animata
 
 @Composable
 private fun MenuTile(text: String, icon: Ic, modifier: Modifier, onClick: () -> Unit) {
-    PressSurface(onClick, modifier.height(40.dp), shape = RoundedCornerShape(13.dp), fill = Color.White.copy(alpha = .05f), pressedFill = Color.White.copy(alpha = .1f), pressScale = .96f, label = text) {
+    PressSurface(onClick, modifier.height(40.dp), shape = RoundedCornerShape(13.dp), fill = veil(.05f), pressedFill = veil(.1f), pressScale = .96f, label = text) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             SvgIcon(icon, warm, 16.dp, stroke = 1.6f)
             Spacer(Modifier.width(8.dp))

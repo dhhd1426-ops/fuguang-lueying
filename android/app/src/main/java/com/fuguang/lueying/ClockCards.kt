@@ -78,7 +78,7 @@ private fun AlarmCard(j: JSONObject, m: Modifier, onOpen: () -> Unit) {
             Spacer(Modifier.width(20.dp))
             // 开着的开关：只是样子，开关在时钟里
             Box(Modifier.size(40.dp, 24.dp).background(if (off) veil(.14f) else Warm, RoundedCornerShape(12.dp)), contentAlignment = if (off) Alignment.CenterStart else Alignment.CenterEnd) {
-                Box(Modifier.padding(horizontal = 3.dp).size(18.dp).background(if (off) Page.muted else Color(0xFF2A1D14), CircleShape))
+                Box(Modifier.padding(horizontal = 3.dp).size(18.dp).background(if (off) Page.muted else Skin.onAccent, CircleShape))
             }
         }
     }

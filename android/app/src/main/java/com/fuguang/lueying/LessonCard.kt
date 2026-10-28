@@ -97,7 +97,7 @@ fun LessonCardLayer() {
                         Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { Txt("不用记这个", Page.ink.copy(alpha = .85f), 14.sp) }
                     }
                     PressSurface({ LessonCard.open = false }, Modifier.weight(1f).height(44.dp), shape = RoundedCornerShape(14.dp), fill = warm.copy(alpha = .92f), pressedFill = warm.copy(alpha = .75f), pressScale = .96f, label = "好") {
-                        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { Txt("好", css("#2a211b"), 14.sp) }
+                        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { Txt("好", Skin.onAccent, 14.sp) }
                     }
                 }
             }

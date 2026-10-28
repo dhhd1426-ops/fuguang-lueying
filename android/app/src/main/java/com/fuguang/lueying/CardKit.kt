@@ -78,7 +78,7 @@ val CardBlock get() = veil(.045f)
 val CardBlockPress get() = veil(.09f)
 val CardRose = css("#e8a1a1")
 private val warm: Color get() = Skin.accent
-private val warmInk = css("#2a211b")
+private val warmInk: Color get() = Skin.onAccent
 
 private class RippleDrop(val at: Offset) { val t = Animatable(0f) }
 

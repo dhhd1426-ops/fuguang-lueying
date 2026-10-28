@@ -125,7 +125,7 @@ fun MemoryCardHost() {
         Box(
             Modifier.fillMaxSize()
                 .graphicsLayer { alpha = prog.value.coerceIn(0f, 1f) }
-                .background(rgba(5, 7, 11, .74f))
+                .background(Skin.scrim(.74f))
                 .pointerInput(Unit) { detectTapGestures { close() } },
         )
         Box(
@@ -199,7 +199,7 @@ fun MemoryCardHost() {
                         Box(
                             Modifier.background(warm.copy(alpha = if (pr) .75f else .92f), RoundedCornerShape(50))
                                 .padding(horizontal = 30.dp, vertical = 12.dp),
-                        ) { Txt("记住", css("#2a211b"), 15.sp) }
+                        ) { Txt("记住", Skin.onAccent, 15.sp) }
                     }
                 }
             }

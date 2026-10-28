@@ -74,7 +74,7 @@ fun IdentityHint(draft: String, onApply: (String) -> Unit) {
                 Spacer(Modifier.height(12.dp))
                 Pressable({ onApply(fixed) }, label = "换成这段") { pr ->
                     Txt(
-                        "换成这段", css("#2a211b"), 13.sp,
+                        "换成这段", Skin.onAccent, 13.sp,
                         Modifier.background(warm.copy(alpha = if (pr) .75f else .92f), RoundedCornerShape(50)).padding(horizontal = 16.dp, vertical = 8.dp),
                     )
                 }

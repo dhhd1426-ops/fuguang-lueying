@@ -113,7 +113,7 @@ fun ProviderCardLayer(state: ProviderCardState, store: AssistantStore, anchor: R
     Box(Modifier.fillMaxSize().onSizeChanged { host = it }) {
         // 遮罩：点空白收起
         Box(
-            Modifier.fillMaxSize().alpha(t.coerceIn(0f, 1f)).background(rgba(4, 6, 10, .38f))
+            Modifier.fillMaxSize().alpha(t.coerceIn(0f, 1f)).background(Skin.scrim(.38f))
                 .pointerInput(Unit) { detectTapGestures { state.dismiss(store) } },
         )
         if (anchor == null || host == IntSize.Zero) return@Box

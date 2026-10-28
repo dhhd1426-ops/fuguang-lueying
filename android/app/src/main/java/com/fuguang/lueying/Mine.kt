@@ -184,7 +184,7 @@ private fun Switch(on: Boolean, label: String, onChange: (Boolean) -> Unit) {
                 .background(if (on) Skin.accent.copy(alpha = .85f) else veil(.12f), RoundedCornerShape(50))
                 .padding(3.dp),
             contentAlignment = if (on) Alignment.CenterEnd else Alignment.CenterStart,
-        ) { Box(Modifier.size(22.dp).background(if (on) css("#2a211b") else Page.ink.copy(alpha = .7f), CircleShape)) }
+        ) { Box(Modifier.size(22.dp).background(if (on) Skin.onAccent else Page.ink.copy(alpha = .7f), CircleShape)) }
     }
 }
 
@@ -196,7 +196,7 @@ private fun PillButton(text: String, icon: Ic?, primary: Boolean, enabled: Boole
             primary -> Skin.accent.copy(alpha = if (pressed) .7f else .9f)
             else -> veil(if (pressed) .12f else .06f)
         }
-        val ink = when { !enabled -> Page.muted.copy(alpha = .5f); primary -> css("#2a211b"); else -> Page.ink }
+        val ink = when { !enabled -> Page.muted.copy(alpha = .5f); primary -> Skin.onAccent; else -> Page.ink }
         Row(
             Modifier.background(fill, RoundedCornerShape(50)).border(1.dp, if (primary && enabled) Color.Transparent else Page.line, RoundedCornerShape(50))
                 .padding(horizontal = 20.dp, vertical = 12.dp),
@@ -256,13 +256,13 @@ private fun ColumnScope.AssistantScreen(compact: Boolean, blur: Dp, nav: MineNav
             exit = androidx.compose.animation.slideOutVertically { it } + androidx.compose.animation.fadeOut(),
         ) {
             Row(
-                Modifier.widthIn(max = 520.dp).fillMaxWidth().background(rgba(47, 49, 54, .97f), RoundedCornerShape(16.dp))
+                Modifier.widthIn(max = 520.dp).fillMaxWidth().background(Skin.toast, RoundedCornerShape(16.dp))
                     .padding(start = 16.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Txt("已删除 ${undo?.first?.name.orEmpty()} 和她的对话", Page.ink, 13.5.sp, Modifier.weight(1f), maxLines = 1)
+                Txt("已删除 ${undo?.first?.name.orEmpty()} 和她的对话", Skin.toastInk, 13.5.sp, Modifier.weight(1f), maxLines = 1)
                 Pressable({ undo?.let { (p, i, was) -> Memory.restore(p, i, was) }; undo = null }, label = "撤销") { pr ->
-                    Txt("撤销", warm, 13.5.sp, Modifier.background(if (pr) veil(.06f) else Color.Transparent, RoundedCornerShape(12.dp)).padding(horizontal = 12.dp, vertical = 9.dp))
+                    Txt("撤销", warm, 13.5.sp, Modifier.background(if (pr) Skin.toastInk.copy(alpha = .1f) else Color.Transparent, RoundedCornerShape(12.dp)).padding(horizontal = 12.dp, vertical = 9.dp))
                 }
             }
         }
@@ -405,13 +405,13 @@ private fun ColumnScope.PersonaScreen(store: AssistantStore, p: Persona, compact
             exit = androidx.compose.animation.slideOutVertically { it } + androidx.compose.animation.fadeOut(),
         ) {
             Row(
-                Modifier.widthIn(max = 520.dp).fillMaxWidth().background(rgba(47, 49, 54, .97f), RoundedCornerShape(16.dp))
+                Modifier.widthIn(max = 520.dp).fillMaxWidth().background(Skin.toast, RoundedCornerShape(16.dp))
                     .padding(start = 16.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Txt("已删除", Page.ink, 13.5.sp, Modifier.weight(1f))
+                Txt("已删除", Skin.toastInk, 13.5.sp, Modifier.weight(1f))
                 Pressable({ undo?.let { (m, i) -> Memory.restore(p, m, i) }; undo = null }, label = "撤销") { pr ->
-                    Txt("撤销", warm, 13.5.sp, Modifier.background(if (pr) veil(.06f) else Color.Transparent, RoundedCornerShape(12.dp)).padding(horizontal = 12.dp, vertical = 9.dp))
+                    Txt("撤销", warm, 13.5.sp, Modifier.background(if (pr) Skin.toastInk.copy(alpha = .1f) else Color.Transparent, RoundedCornerShape(12.dp)).padding(horizontal = 12.dp, vertical = 9.dp))
                 }
             }
         }
@@ -696,7 +696,7 @@ private fun SaveButton(dirty: Boolean, onSave: () -> Unit) {
                 Spacer(Modifier.width(6.dp))
                 Txt("已保存", warm, 13.sp, maxLines = 1)
             }
-            else -> Txt(if (dirty) "保存" else "已保存", if (dirty) css("#2a211b") else Page.muted, 13.sp, maxLines = 1)
+            else -> Txt(if (dirty) "保存" else "已保存", if (dirty) Skin.onAccent else Page.muted, 13.sp, maxLines = 1)
         }
     }
 }
@@ -1171,7 +1171,7 @@ private fun mcpTint(id: String) = css(mcpTints[kotlin.math.abs(id.hashCode()) % 
 @Composable
 private fun McpIcon(id: String, letter: String, size: Dp) {
     Box(Modifier.size(size).background(mcpTint(id), RoundedCornerShape(size * .32f)), contentAlignment = Alignment.Center) {
-        Txt(letter, css("#2a211b"), (size.value * .43f).sp, family = Serif, weight = FontWeight.Medium)
+        Txt(letter, Skin.onAccent, (size.value * .43f).sp, family = Serif, weight = FontWeight.Medium)
     }
 }
 
@@ -1242,7 +1242,7 @@ private fun ColumnScope.McpMarketTab(blur: Dp, nav: MineNav) {
                             Txt(if (have.enabled) "已连接" else "已关", Page.muted, 12.sp)
                         } else Chip(
                             when (item.auth) { "key" -> "填 key"; "paste" -> "贴地址"; "bearer" -> "填 token"; else -> "连接" },
-                            fill = Skin.accent.copy(alpha = .92f), ink = css("#2a211b"),
+                            fill = Skin.accent.copy(alpha = .92f), ink = Skin.onAccent,
                         )
                     }
                 }
@@ -1399,7 +1399,7 @@ private fun ColumnScope.McpServerScreen(key: String, compact: Boolean, blur: Dp,
                             Box(
                                 Modifier.size(20.dp).background(if (on) Skin.accent.copy(alpha = .9f) else veil(.1f), RoundedCornerShape(6.dp)),
                                 contentAlignment = Alignment.Center,
-                            ) { if (on) SvgIcon(Ic("M6 12.5l4 4 8-9"), css("#2a211b"), 14.dp, stroke = 2.2f) }
+                            ) { if (on) SvgIcon(Ic("M6 12.5l4 4 8-9"), Skin.onAccent, 14.dp, stroke = 2.2f) }
                             Spacer(Modifier.width(12.dp))
                             Column(Modifier.weight(1f)) {
                                 Txt(t.name, if (on) Page.ink else Page.muted, 13.sp, family = androidx.compose.ui.text.font.FontFamily.Monospace, maxLines = 1)

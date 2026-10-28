@@ -91,7 +91,7 @@ import kotlin.random.Random
 
 private val Bodoni = FontFamily(Font(R.font.bodoni_moda_semibold_italic, FontWeight.SemiBold, FontStyle.Italic))
 private val Apricot: Color get() = Skin.accent
-private val OnApricot = Color(0xFF2A211B)
+private val OnApricot: Color get() = Skin.onAccent
 /** 进度条右端收进去的深色，和抽屉底色一致。 */
 private val Deep = Color(13, 16, 22)
 

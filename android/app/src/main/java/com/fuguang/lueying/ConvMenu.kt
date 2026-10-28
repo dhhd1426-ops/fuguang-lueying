@@ -163,7 +163,7 @@ internal fun ConvMenuLayer(history: ConvStore) {
             // 点菜单外面就关；⋮ 那边底下压一层淡暗，侧栏不压
             Box(
                 Modifier.fillMaxSize()
-                    .background(if (sideNow) Color.Transparent else Color.Black.copy(alpha = (if (Skin.light) .12f else .28f) * t.value))
+                    .background(if (sideNow) Color.Transparent else Skin.scrim(.28f * t.value))
                     .pointerInput(Unit) { detectTapGestures { ConvMenu.close() } },
             )
             val items = if (sideNow) listOf("rename", "pin", "del") else listOf("share", "rename", "pin", "del")
@@ -186,7 +186,7 @@ internal fun ConvMenuLayer(history: ConvStore) {
                     }
                     .widthIn(min = 128.dp, max = 168.dp)
                     .shadow(18.dp, RoundedCornerShape(16.dp), ambientColor = Color.Black.copy(alpha = .4f), spotColor = Color.Black.copy(alpha = .4f))
-                    .background(Skin.sheet.copy(alpha = 1f), RoundedCornerShape(16.dp))
+                    .background(Skin.pop, RoundedCornerShape(16.dp))
                     .pointerInput(Unit) { detectTapGestures { } }
                     .padding(vertical = 6.dp),
             ) {
@@ -285,16 +285,16 @@ internal fun ConvMenuLayer(history: ConvStore) {
                 Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 120.dp, start = 16.dp, end = 16.dp)
                     .graphicsLayer { alpha = tt; translationY = (1f - tt) * 10.dp.toPx() }
                     .widthIn(max = 520.dp).fillMaxWidth()
-                    .background(rgba(47, 49, 54, .97f), RoundedCornerShape(16.dp))
+                    .background(Skin.toast, RoundedCornerShape(16.dp))
                     .padding(start = 16.dp, end = 6.dp, top = 6.dp, bottom = 6.dp).height(40.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Txt(lastTip, Page.INK, 13.5.sp, Modifier.weight(1f), maxLines = 1)
+                Txt(lastTip, Skin.toastInk, 13.5.sp, Modifier.weight(1f), maxLines = 1)
                 if (undo != null) Pressable({
                     undo?.let { u -> history.restore(u); if (wasCurrent) history.get(u.id)?.let { Chats.open(it) } }
                     undo = null
                 }, label = "撤销") { pr ->
-                    Txt("撤销", Color(0xFFE9B48E), 13.5.sp, Modifier.background(if (pr) Color.White.copy(alpha = .08f) else Color.Transparent, RoundedCornerShape(12.dp)).padding(horizontal = 12.dp, vertical = 9.dp))
+                    Txt("撤销", Skin.accent, 13.5.sp, Modifier.background(if (pr) Skin.toastInk.copy(alpha = .1f) else Color.Transparent, RoundedCornerShape(12.dp)).padding(horizontal = 12.dp, vertical = 9.dp))
                 }
             }
         }
@@ -338,7 +338,7 @@ private fun Sheet(open: Boolean, onDismiss: () -> Unit, content: @Composable () 
     BackHandler(open) { onDismiss() }
     if (t.value <= 0f && !open) return
     Box(Modifier.fillMaxSize()) {
-        Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = (if (Skin.light) .18f else .4f) * t.value)).pointerInput(Unit) { detectTapGestures { onDismiss() } })
+        Box(Modifier.fillMaxSize().background(Skin.scrim(.4f * t.value)).pointerInput(Unit) { detectTapGestures { onDismiss() } })
         Column(
             Modifier.align(Alignment.BottomCenter).fillMaxWidth().widthIn(max = 600.dp).imePadding()
                 .graphicsLayer { translationY = (1f - t.value) * size.height }
@@ -358,6 +358,6 @@ private fun SheetButton(text: String, main: Boolean, enabled: Boolean = true, re
         pressedFill = if (!main) veil(.08f) else (if (red) danger else Skin.accent).copy(alpha = .8f),
         enabled = enabled, label = text,
     ) {
-        Txt(text, if (!main) Page.muted else if (Skin.light) Color.White else Color(0xFF2A1D14), 14.5.sp, Modifier.padding(horizontal = 18.dp))
+        Txt(text, if (!main) Page.muted else if (Skin.light) Color.White else Skin.onAccent, 14.5.sp, Modifier.padding(horizontal = 18.dp))
     }
 }

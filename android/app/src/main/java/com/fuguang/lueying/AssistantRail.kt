@@ -129,7 +129,7 @@ private fun PeekCard(history: ConvStore, p: Persona, onDismiss: () -> Unit, onUs
                 Spacer(Modifier.width(8.dp))
                 val on = p.id == Memory.activeId
                 PressSurface(onUse, Modifier.weight(1f).height(38.dp), shape = RoundedCornerShape(12.dp), fill = SideWarm, pressedFill = SideWarm.copy(alpha = .85f), label = if (on) "就是她" else "换成她") {
-                    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { Txt(if (on) "就是她" else "换成她", Color(0xFF2A211B), 13.5.sp) }
+                    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { Txt(if (on) "就是她" else "换成她", Skin.onAccent, 13.5.sp) }
                 }
             }
         }
