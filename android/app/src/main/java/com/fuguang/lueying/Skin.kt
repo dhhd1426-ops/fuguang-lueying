@@ -40,6 +40,7 @@ object Skin {
     fun init(p: Prefs) {
         prefs = p; id = p.string(KEY)?.takeIf { s -> options.any { it.id == s } } ?: FROST; rail = p.string(RAIL) == "1"
         pal = (p.string(PAL)?.toIntOrNull() ?: 0).coerceIn(0, Grad.all.lastIndex).toFloat()
+        wholeCards = p.string(CARDS) != "float"
     }
 
     /** 渐变的配色位置：0..7，滑动时在两套中间连续变；停稳才存（[savePal]）。 */
@@ -51,6 +52,11 @@ object Skin {
     var rail by mutableStateOf(false)
     private const val RAIL = "switch-rail"
     fun useRail(v: Boolean) { rail = v; prefs?.putString(RAIL, if (v) "1" else "0") }
+
+    /** 卡片样式（第 331 版）：true 整页（默认，「我的」「手记」这些一打开就铺满）；false 悬浮卡片（原来的，浮在中间、↗ 能临时展开）。 */
+    var wholeCards by mutableStateOf(true)
+    private const val CARDS = "card-mode"
+    fun useWhole(v: Boolean) { wholeCards = v; prefs?.putString(CARDS, if (v) "full" else "float") }
     fun set(v: String) { id = v; prefs?.putString(KEY, v) }
     fun name(v: String = id) = options.firstOrNull { it.id == v }?.name.orEmpty() +
         (if (v == GRAD) " · " + Grad.all[Math.round(pal).coerceIn(0, Grad.all.lastIndex)].title else "")

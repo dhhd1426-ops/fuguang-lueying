@@ -76,6 +76,7 @@ internal fun Modifier.mineRise(i: Int, t: Float) = graphicsLayer {
  * 所有悬浮卡片共用的样子：同一个位置（屏幕视觉中心，中心在 47% 高处）、同一个尺寸（宽 min(340, 屏宽−40)，高 min(540, 屏高−120)），
  * 从 from 弹簧长出、原路缩回。卡片里一页页推进（往深处新页从右进，往回从左进）；右上角 ↗ 随时展开成整页，转成 ↙ 再点缩回；
  * 整页时关掉先缩回卡片再收走。返回键：整页先缩回 → onBack 退一层 → 关卡片。
+ * 「主题 → 卡片样式」选整页（默认，[Skin.wholeCards]）：一打开就从点的地方长成整页（460ms 减速，不弹），右上角换成 ✕ 关上，原路缩回。
  */
 @Composable
 fun CenterCardLayer(
@@ -91,19 +92,22 @@ fun CenterCardLayer(
     val f = remember { Animatable(0f) }
     val rise = remember { Animatable(0f) }
     val haptic = LocalHapticFeedback.current
+    val whole = Skin.wholeCards
     LaunchedEffect(card.open) {
         if (card.open) {
             haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
             launch { rise.snapTo(0f); rise.animateTo(1f, tween(RISE_MS.toInt(), easing = LinearEasing)) }
-            p.animateTo(1f, spring(dampingRatio = .7f, stiffness = 380f))
+            if (Skin.wholeCards) { f.snapTo(1f); p.animateTo(1f, tween(460, easing = Curves.decel)) }
+            else { f.snapTo(0f); p.animateTo(1f, spring(dampingRatio = .7f, stiffness = 380f)) }
         } else {
-            if (f.value > 0f) { card.full = false; f.animateTo(0f, tween(440, easing = Curves.standard)) }
-            p.animateTo(0f, tween(200, easing = Curves.accel))
+            if (!Skin.wholeCards && f.value > 0f) { card.full = false; f.animateTo(0f, tween(440, easing = Curves.standard)) }
+            p.animateTo(0f, tween(if (Skin.wholeCards) 260 else 200, easing = Curves.accel))
+            card.full = false
             onClosed()
         }
     }
     LaunchedEffect(card.full) {
-        if (card.open) f.animateTo(if (card.full) 1f else 0f, tween(440, easing = Curves.standard))
+        if (card.open && !Skin.wholeCards) f.animateTo(if (card.full) 1f else 0f, tween(440, easing = Curves.standard))
     }
     BackHandler(enabled = card.open) {
         when {
@@ -167,14 +171,15 @@ fun CenterCardLayer(
             ) { s ->
                 Box(pad, contentAlignment = Alignment.TopCenter) { page(s, rise.value) }
             }
-            // ↗ 钉在右上角，换页也不动
+            // ↗ 钉在右上角，换页也不动；整页样式下是 ✕ 关上
             PressSurface(
-                { card.full = !card.full },
+                { if (whole) card.open = false else card.full = !card.full },
                 Modifier.align(Alignment.TopEnd).padding(top = lerp(4.dp, statusTop + 8.dp, fv), end = 4.dp).size(44.dp),
                 shape = CircleShape, fill = Color.Transparent, pressScale = .9f,
-                label = if (card.full) "缩回卡片" else "展开成整页",
+                label = if (whole) "关上" else if (card.full) "缩回卡片" else "展开成整页",
             ) {
-                SvgIcon(arrowOut, Page.muted, 17.dp, stroke = 1.5f, modifier = Modifier.align(Alignment.Center).graphicsLayer { rotationZ = 180f * fv })
+                if (whole) SvgIcon(Icons.close, Page.muted, 17.dp, stroke = 1.6f, modifier = Modifier.align(Alignment.Center))
+                else SvgIcon(arrowOut, Page.muted, 17.dp, stroke = 1.5f, modifier = Modifier.align(Alignment.Center).graphicsLayer { rotationZ = 180f * fv })
             }
         }
         above()
