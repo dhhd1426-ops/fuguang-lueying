@@ -32,7 +32,7 @@ import androidx.compose.ui.unit.sp
  * 三角框 13u × 12.4u，点径 5.4u（u = 字号 ÷ 14 × dotScale）；
  * 文字流光 2000ms 线性三角波，透明度 .22 ↔ 1，峰值停留 100ms，逐字延迟 22ms。
  */
-private object Tk {
+internal object Tk {
     private val P = mapOf(
         "T" to floatArrayOf(0f, -6.2f), "BL" to floatArrayOf(-6.5f, 6.2f), "BR" to floatArrayOf(6.5f, 6.2f),
         "TL" to floatArrayOf(-6.5f, -6.2f), "TR" to floatArrayOf(6.5f, -6.2f), "B" to floatArrayOf(0f, 6.2f),
@@ -108,11 +108,14 @@ fun ThinkingMotion(
     dotScale: Float = .65f,
     /** false：只要流光字，不画三点（思考过程里记号已经单独画了）。 */
     showDots: Boolean = true,
+    /** true：字跟着旁边的变形弹跳走——每次落地从左往右敲亮一下（Toy.strike），不用自己的流光。 */
+    strike: Boolean = false,
 ) {
     var now by remember { mutableLongStateOf(0L) }
+    var abs by remember { mutableLongStateOf(0L) }
     LaunchedEffect(Unit) {
         val start = withFrameMillis { it }
-        while (true) withFrameMillis { now = it - start }
+        while (true) withFrameMillis { now = it - start; abs = it }
     }
     val density = LocalDensity.current
     val fontPx = with(density) { size.toPx() }
@@ -131,7 +134,7 @@ fun ThinkingMotion(
         BasicText(
             buildAnnotatedString {
                 text.forEachIndexed { k, ch ->
-                    pushStyle(SpanStyle(color = ink.copy(alpha = ink.alpha * Tk.glow(now, k))))
+                    pushStyle(SpanStyle(color = ink.copy(alpha = ink.alpha * if (strike) Toy.strike(abs, k) else Tk.glow(now, k))))
                     append(ch)
                     pop()
                 }
