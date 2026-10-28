@@ -51,7 +51,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 private val Warm: Color get() = ClipWarm
-private val Bad = ClipBad
+private val Bad: Color get() = ClipBad
 
 /**
  * 剪贴板里的抖音：顶上滑下的长条。只管「复制了就提醒」：封面 + 标题 +「存下来 / 让她看看 / ×」。

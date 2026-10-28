@@ -56,7 +56,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 private val Warm: Color get() = ClipWarm
-private val Bad = ClipBad
+private val Bad: Color get() = ClipBad
 private val OnWarmInk: Color get() = Skin.onAccent
 
 /**

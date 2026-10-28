@@ -103,7 +103,7 @@ private fun EntryEditor(p: Persona, start: Entry, onClose: () -> Unit) {
         Label("她读到的")
         Input(e.body, "用「你…」来写，比如：你们约好了谁都不许糟蹋米饭", minH = 84.dp) { e = e.copy(body = it.take(1200)) }
         val hits = Identity.found(e.body)
-        if (hits.isNotEmpty()) Txt("「${hits.joinToString("、")}」会让她觉得自己在演", css("#e39a8f"), 12.sp, Modifier.padding(top = 6.dp))
+        if (hits.isNotEmpty()) Txt("「${hits.joinToString("、")}」会让她觉得自己在演", Skin.danger, 12.sp, Modifier.padding(top = 6.dp))
         Label("什么时候出现")
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             ChoiceChip("一直在", e.always) { e = e.copy(always = true) }
@@ -141,7 +141,7 @@ private fun EntryEditor(p: Persona, start: Entry, onClose: () -> Unit) {
             ChoiceChip(if (e.on) "开着" else "关着", e.on) { e = e.copy(on = !e.on) }
             Spacer(Modifier.weight(1f))
             Pressable({ Entries.remove(p, e); onClose() }, label = "删掉这条") { pr ->
-                Txt("删掉", css("#e39a8f"), 13.sp, Modifier.background(rgba(227, 154, 143, if (pr) .18f else .08f), RoundedCornerShape(50)).padding(horizontal = 14.dp, vertical = 7.dp))
+                Txt("删掉", Skin.danger, 13.sp, Modifier.background(Skin.danger.copy(alpha = if (pr) .18f else .08f), RoundedCornerShape(50)).padding(horizontal = 14.dp, vertical = 7.dp))
             }
         }
     }

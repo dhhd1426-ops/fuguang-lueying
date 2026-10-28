@@ -49,7 +49,7 @@ import kotlinx.coroutines.launch
 
 internal val skillWarm: Color get() = Skin.accent
 internal val skillInk: Color get() = Skin.onAccent
-internal val skillBad = Color(0xFFD79A94)
+internal val skillBad: Color get() = Skin.danger
 private val tints = listOf(0xFFE9B48E, 0xFFA9B6CC, 0xFF9FB79A, 0xFFC9BC97, 0xFFB3A6D9, 0xFFD98A6A)
 internal val skillIcon = Ic("M6 4.5h9l3 3v12H6ZM15 4.5v3h3M12 10.2l.9 1.9 2 .3-1.45 1.4.35 2-1.8-.95-1.8.95.35-2-1.45-1.4 2-.3Z")
 private val plus = Ic("M12 5v14M5 12h14")

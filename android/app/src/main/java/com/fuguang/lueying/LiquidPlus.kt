@@ -152,7 +152,7 @@ fun LiquidPlusLayer(state: LiquidPlusState, onPick: (Int) -> Unit) {
 
     Box(Modifier.fillMaxSize().onGloballyPositioned { origin = it.positionInRoot() }) {
         // 托底：后面整屏压暗，小球和字不再压在她的话上看不清；点空白处收起
-        Box(Modifier.fillMaxSize().graphicsLayer { alpha = base.value }.background(Color(0xA80A0B0E)))
+        Box(Modifier.fillMaxSize().graphicsLayer { alpha = base.value }.background(Skin.scrim(.66f)))
         if (state.open) Box(Modifier.fillMaxSize().pointerInput(Unit) { detectTapGestures { state.open = false } })
         // 黏连层：模糊 + 透明度对比（Android 12 起有效；更早的系统就是普通的球）
         Canvas(

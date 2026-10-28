@@ -60,7 +60,7 @@ object Magnet {
 
 private val Warm: Color get() = Skin.accent
 private val Sheet: Color get() = Skin.sheet.copy(alpha = 1f)
-private val Rose = Color(0xFFD79A94)
+private val Rose: Color get() = Skin.danger
 private val magnetIc = Ic("M6 4h4v8a2 2 0 0 0 4 0V4h4v8a6 6 0 0 1-12 0Z M6 8h4 M14 8h4")
 private val playIc = Ic("M8 5.5v13l10.5-6.5Z")
 private val down = Ic("M12 4v11M7.5 10.5L12 15l4.5-4.5M5 19h14")
@@ -99,7 +99,7 @@ fun MagnetSheet(online: Int = 0, onOnline: () -> Unit = {}, onToast: (String) ->
     }
     val m = meta
     Box(Modifier.fillMaxSize()) {
-        Box(Modifier.fillMaxSize().graphicsLayer { alpha = k }.background(Color(0x80000000)).pointerInput(Unit) { detectTapGestures { Magnet.ask = null } })
+        Box(Modifier.fillMaxSize().graphicsLayer { alpha = k }.background(Skin.scrim(.5f)).pointerInput(Unit) { detectTapGestures { Magnet.ask = null } })
         Column(
             Modifier.align(Alignment.BottomCenter).widthIn(max = 640.dp).fillMaxWidth()
                 .graphicsLayer { translationY = (1f - k) * size.height }

@@ -150,8 +150,8 @@ private fun FailCard(title: String, why: String?, canRetry: Boolean, onRetry: ()
             Modifier.fillMaxWidth().background(veil(if (pressed) .085f else .055f), RoundedCornerShape(16.dp)).padding(10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Box(Modifier.size(56.dp).background(Color(0x1FD79A94), RoundedCornerShape(11.dp)), contentAlignment = Alignment.Center) {
-                SvgIcon(WorkIcons.page, Color(0xFFD79A94), 24.dp, stroke = 1.5f)
+            Box(Modifier.size(56.dp).background(Skin.danger.copy(alpha = .12f), RoundedCornerShape(11.dp)), contentAlignment = Alignment.Center) {
+                SvgIcon(WorkIcons.page, Skin.danger, 24.dp, stroke = 1.5f)
             }
             Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {

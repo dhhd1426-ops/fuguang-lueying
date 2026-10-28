@@ -66,7 +66,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 private val warm: Color get() = Skin.accent
-private val bad = Color(0xFFD79A94)
+private val bad: Color get() = Skin.danger
 private val stripFill: Color get() = Skin.pop
 private val down = Ic("M12 4v10M8 10.5l4 4 4-4M5 16.5v2.5h14v-2.5")
 private val doc = Ic("M6 4h8l4 4v12H6ZM14 4v4h4M9 13h6M9 16.5h4")

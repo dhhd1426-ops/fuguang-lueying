@@ -41,9 +41,10 @@ object Page {
     val INK = css("#faf5ee")
     val MUTED = rgba(250, 245, 238, .6f)
     val LINE = rgba(255, 255, 255, .2f)
-    val accent = css("#edc6a5")
-    val eyebrow = css("#ebd0b9")
-    val dot = css("#efc5a6")
+    /** 以前写死的浅杏色：浅色主题下太淡，换成主题的点缀色。 */
+    val accent: Color get() = if (Skin.light) Skin.accent else css("#edc6a5")
+    val eyebrow: Color get() = if (Skin.light) Skin.accent else css("#ebd0b9")
+    val dot: Color get() = if (Skin.light) Skin.accent else css("#efc5a6")
     val glassFill: Color get() = if (Skin.light) rgba(0, 0, 0, .045f) else rgba(225, 229, 233, .065f)
     val glassBorder: Color get() = if (Skin.light) rgba(0, 0, 0, .08f) else rgba(255, 255, 255, .17f)
 }

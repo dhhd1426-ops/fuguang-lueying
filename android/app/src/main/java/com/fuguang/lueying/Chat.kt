@@ -803,7 +803,7 @@ private fun Conversation(
                 if (chat.queue.isNotEmpty()) QueuedBubbles(chat, compact) { chat.sendNow(scope, store) }
                 chat.error?.let { err ->
                     Column(Modifier.padding(top = 6.dp, start = 2.dp)) {
-                        Txt(err, css("#d79a94"), 13.sp, lineHeight = 21.sp)
+                        Txt(err, Skin.danger, 13.sp, lineHeight = 21.sp)
                         Spacer(Modifier.height(10.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                             if (chat.needsSetup) SmallButton("去设置", onSetup)

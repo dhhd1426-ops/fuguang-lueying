@@ -162,7 +162,7 @@ private fun BoardCell(b: BoardInfo, i: Int, onClick: () -> Unit) {
                 Spacer(Modifier.height(8.dp))
                 MiniBlocks(b)
             }
-            if (b.edits > 0) Txt("你改过", Skin.accent, 10.sp, Modifier.align(Alignment.TopEnd).padding(9.dp).background(rgba(0, 0, 0, .35f), RoundedCornerShape(50)).padding(horizontal = 7.dp, vertical = 2.dp), maxLines = 1)
+            if (b.edits > 0) Txt("你改过", Skin.accent, 10.sp, Modifier.align(Alignment.TopEnd).padding(9.dp).background(Color.Black.copy(alpha = .35f), RoundedCornerShape(50)).padding(horizontal = 7.dp, vertical = 2.dp), maxLines = 1)
             if (b.of > 0) Box(Modifier.align(Alignment.BottomCenter).padding(11.dp).fillMaxWidth().height(3.dp).background(veil(.1f), RoundedCornerShape(2.dp))) {
                 Box(Modifier.fillMaxWidth(b.done.toFloat() / b.of).fillMaxHeight().background(b.acc, RoundedCornerShape(2.dp)))
             }

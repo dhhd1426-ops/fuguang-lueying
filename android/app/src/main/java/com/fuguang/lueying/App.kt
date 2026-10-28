@@ -256,7 +256,7 @@ private fun ShowUiButton(blur: Dp, onClick: () -> Unit) {
     Pressable(onClick, Modifier.navigationBarsPadding().padding(bottom = 25.dp), label = "显示界面") { pressed ->
         Row(
             Modifier
-                .glass(RoundedCornerShape(50), blur.coerceAtLeast(10.dp), fill = rgba(20, 25, 30, if (pressed) .55f else .35f), border = Page.line)
+                .glass(RoundedCornerShape(50), blur.coerceAtLeast(10.dp), fill = if (Skin.light) Color.White.copy(alpha = if (pressed) .75f else .55f) else Skin.cardFill(if (pressed) .55f else .35f), border = Page.line)
                 .padding(horizontal = 20.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
