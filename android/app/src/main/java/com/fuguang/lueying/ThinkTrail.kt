@@ -234,7 +234,7 @@ fun proseItems(raw: String, steps: List<ToolStep>, live: Boolean): List<TrailIte
     return out
 }
 
-private val TrailApricot = Color(0xFFE9B48E)
+private val TrailApricot: Color get() = Skin.accent
 private val TrailLive = Color(0xFFD97757)
 
 /** Thinking + 三个点依次跳（照原型：每个点隔 150ms，上跳 4dp，1.2 秒一轮）。 */

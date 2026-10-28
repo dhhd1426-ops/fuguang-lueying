@@ -162,7 +162,7 @@ private fun BoardCell(b: BoardInfo, i: Int, onClick: () -> Unit) {
                 Spacer(Modifier.height(8.dp))
                 MiniBlocks(b)
             }
-            if (b.edits > 0) Txt("你改过", css("#e9b48e"), 10.sp, Modifier.align(Alignment.TopEnd).padding(9.dp).background(rgba(0, 0, 0, .35f), RoundedCornerShape(50)).padding(horizontal = 7.dp, vertical = 2.dp), maxLines = 1)
+            if (b.edits > 0) Txt("你改过", Skin.accent, 10.sp, Modifier.align(Alignment.TopEnd).padding(9.dp).background(rgba(0, 0, 0, .35f), RoundedCornerShape(50)).padding(horizontal = 7.dp, vertical = 2.dp), maxLines = 1)
             if (b.of > 0) Box(Modifier.align(Alignment.BottomCenter).padding(11.dp).fillMaxWidth().height(3.dp).background(rgba(255, 255, 255, .1f), RoundedCornerShape(2.dp))) {
                 Box(Modifier.fillMaxWidth(b.done.toFloat() / b.of).fillMaxHeight().background(b.acc, RoundedCornerShape(2.dp)))
             }
@@ -202,7 +202,7 @@ private fun AskCell(i: Int, onAsk: () -> Unit) {
     val k = riseIn(i)
     PressSurface(onAsk, Modifier.graphicsLayer { alpha = k.value; translationY = (1f - k.value) * 10.dp.toPx() }.fillMaxWidth().aspectRatio(3f / 4f), shape = RoundedCornerShape(16.dp), fill = Color.Transparent, pressScale = .97f, label = "让她搭一块", edge = rgba(255, 255, 255, .14f)) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            SvgIcon(SideIcons.plus, css("#e9b48e"), 22.dp, stroke = 1.6f)
+            SvgIcon(SideIcons.plus, Skin.accent, 22.dp, stroke = 1.6f)
             Spacer(Modifier.height(8.dp))
             Txt("让她搭一块", Page.MUTED, 12.5.sp, maxLines = 1)
         }

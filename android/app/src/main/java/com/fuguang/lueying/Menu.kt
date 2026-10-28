@@ -13,6 +13,7 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -44,7 +45,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 internal val SidePanel get() = if (Skin.frost) rgba(18, 21, 27, .72f) else Skin.panel
-internal val SideWarm = Color(0xFFE9B48E)
+internal val SideWarm: Color get() = Skin.accent
 internal val SideFaint get() = Skin.ink.copy(alpha = .34f)
 internal val SideInk get() = Skin.ink.copy(alpha = .86f)
 
@@ -70,7 +71,7 @@ internal fun convIcon(c: Conv): Ic = when {
 
 /**
  * 聊天页左侧栏（照 Claude App）：现在这位助理的名字（点开切换）+ 搜索 → 作品 / 画板 / 手记 / 下载 → 已置顶 → 她的最近对话 → 查看全部；
- * 底下左边是你的头像（去「我的」），右边「新对话」。长按一条对话：置顶 / 删除。
+ * 底下左边是你的头像（去「我的」），右边「新对话」。长按一条对话：重命名 / 置顶 / 删除（ConvMenu.kt）。
  */
 @Composable
 fun HistoryMenu(
@@ -136,7 +137,7 @@ private fun androidx.compose.foundation.layout.ColumnScope.SideBody(
             SideRow(SideIcons.work, "作品", onWorks) { if (works > 0) Txt(works.toString(), SideFaint, 11.5.sp) }
             // 画板：计划、安排、日程。你改过、她还没读的，数字前亮一个杏色小点
             SideRow(SideIcons.board, "画板", onBoards) {
-                if (boards.any { it.edits > 0 }) { Box(Modifier.size(6.dp).background(css("#e9b48e"), androidx.compose.foundation.shape.CircleShape)); Spacer(Modifier.width(8.dp)) }
+                if (boards.any { it.edits > 0 }) { Box(Modifier.size(6.dp).background(Skin.accent, androidx.compose.foundation.shape.CircleShape)); Spacer(Modifier.width(8.dp)) }
                 if (boards.isNotEmpty()) Txt(boards.size.toString(), SideFaint, 11.5.sp)
             }
             SideRow(SideIcons.pen, "手记", onJournal, modifier = Modifier.onGloballyPositioned { NoteCard.from = it.boundsInRoot().center })
@@ -201,32 +202,41 @@ internal fun SideRow(icon: Ic, label: String, onClick: () -> Unit, selected: Boo
     }
 }
 
-/** 一条对话：一行字，前面图标；正在看的是淡杏色块，她还在回答的带一颗小橙点。长按出「置顶 / 删除」。 */
+/**
+ * 一条对话：一行字，前面图标；正在看的是淡杏色块，她还在回答的带一颗小橙点。
+ * 按下当帧淡淡一层；长按这一行变灰色块，旁边出「重命名 / 置顶 / 删除」（ConvMenu.kt），菜单和弹层关了才复原。
+ */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 internal fun ConvLine(
     c: Conv, on: Boolean, live: Boolean, editing: Boolean, history: ConvStore,
     onOpen: (Conv) -> Unit, onLong: () -> Unit, onDeletedCurrent: () -> Unit,
 ) {
-    Column {
-        Row(
-            Modifier.fillMaxWidth()
-                .background(if (on) SideWarm.copy(alpha = .13f) else Color.Transparent, RoundedCornerShape(12.dp))
-                .combinedClickable(remember { MutableInteractionSource() }, null, onClick = { onOpen(c) }, onLongClick = onLong)
-                .padding(horizontal = 12.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            SvgIcon(convIcon(c), if (on) SideWarm else SideFaint, 17.dp, stroke = 1.4f)
-            Spacer(Modifier.width(12.dp))
-            Txt(c.title.ifBlank { "新对话" }, if (on) Page.ink else SideInk, 14.5.sp, Modifier.weight(1f), maxLines = 1)
-            if (live) Box(Modifier.padding(start = 8.dp).size(6.dp).background(Color(0xFFD97757), CircleShape))
-        }
-        if (editing) {
-            Row(Modifier.padding(start = 40.dp, top = 2.dp, bottom = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                MenuAction(if (c.pinned) "取消置顶" else "置顶") { history.togglePin(c.id); onLong() }
-                MenuAction("删除", danger = true) { history.delete(c.id); onLong(); onDeletedCurrent() }
-            }
-        }
+    val src = remember { MutableInteractionSource() }
+    val pressed by src.collectIsPressedAsState()
+    val held = ConvMenu.held == c.id
+    var bounds by remember { mutableStateOf(androidx.compose.ui.geometry.Rect.Zero) }
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
+    val k by androidx.compose.animation.core.animateFloatAsState(
+        if (held) 1f else if (pressed) .35f else 0f,
+        androidx.compose.animation.core.tween(if (pressed || held) 60 else 220), label = "convHeld",
+    )
+    Row(
+        Modifier.fillMaxWidth()
+            .onGloballyPositioned { bounds = it.boundsInRoot() }
+            .background(if (on && k < .5f) SideWarm.copy(alpha = .13f) else Color.Transparent, RoundedCornerShape(12.dp))
+            .background(veil(.16f * k), RoundedCornerShape(12.dp))
+            .combinedClickable(src, null, onClick = { onOpen(c) }, onLongClick = {
+                haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                ConvMenu.openSide(c, bounds)
+            })
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        SvgIcon(convIcon(c), if (on && !held) SideWarm else if (held) Page.ink else SideFaint, 17.dp, stroke = 1.4f)
+        Spacer(Modifier.width(12.dp))
+        Txt(c.title.ifBlank { "新对话" }, if (on || held) Page.ink else SideInk, 14.5.sp, Modifier.weight(1f), maxLines = 1)
+        if (live) Box(Modifier.padding(start = 8.dp).size(6.dp).background(Color(0xFFD97757), CircleShape))
     }
 }
 

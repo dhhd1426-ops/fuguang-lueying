@@ -63,7 +63,7 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import kotlinx.coroutines.launch
 import androidx.compose.ui.unit.sp
 
-internal val ClipWarm = Color(0xFFE9B48E)
+internal val ClipWarm: Color get() = Skin.accent
 internal val ClipBad = Color(0xFFE07A6E)
 private val OnWarm = Color(0xFF2A211B)
 

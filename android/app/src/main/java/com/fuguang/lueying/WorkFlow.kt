@@ -39,7 +39,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-private val Apricot = Color(0xFFE9B48E)
+private val Apricot: Color get() = Skin.accent
 
 /** 正在写 / 正在改的那件作品：at = 她动手时正文写到第几个字；chars = 参数已经来了多少字；title 从参数开头抠出来（改作品就是原来的名字）。 */
 class WorkDraft(val at: Int, val name: String, val chars: Int, val title: String?) {

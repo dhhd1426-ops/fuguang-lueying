@@ -66,7 +66,7 @@ class LiquidPlusState {
 
 private val GooColor = Color(0xFF2B2F37)
 private val GooHover = Color(0xFF4A3F37)
-private val Warm = Color(0xFFE9B48E)
+private val Warm: Color get() = Skin.accent
 private val Items = listOf("照片" to Ic("M4 7.5A2.5 2.5 0 0 1 6.5 5h11A2.5 2.5 0 0 1 20 7.5v9a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 16.5zM5 17l4.5-4.5 3.5 3.5 2.5-2.5L20 17", circles = listOf(floatArrayOf(9.5f, 10f, 1.6f))),
     "拍照" to Ic("M4 8.5A1.5 1.5 0 0 1 5.5 7H8l1.5-2h5L16 7h2.5A1.5 1.5 0 0 1 20 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 17.5z", circles = listOf(floatArrayOf(12f, 12.5f, 3.2f))),
     "文件" to Ic("M7 3.5h7l4 4V20.5H7zM14 3.5v4h4"))

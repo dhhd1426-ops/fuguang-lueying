@@ -561,7 +561,7 @@ fun ChatPage(
                 .imePadding()
                 .padding(start = side, end = side, top = if (compact) 26.dp else 38.dp, bottom = if (compact) 22.dp else 30.dp),
         ) {
-            ChatHeader(compact, chat.messages.isEmpty() && !chat.busy, false, onMenu = { menu = true }) { Chats.fresh() }
+            ChatHeader(compact, chat.messages.isEmpty() && !chat.busy, false, chat.convId?.let { chat.history.get(it) }, onMenu = { menu = true }) { Chats.fresh() }
             Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                 if (chat.messages.isEmpty() && !chat.busy) ChatHello(compact, store, chat)
                 else Conversation(chat, store, compact, flight, onSetup = onSetup, onRetry = { chat.retry(scope, store) }, onThink = { thinkOf = it; thinkOpen = true }, onImage = { viewing = it }, onWork = { workOpen = it },
@@ -593,7 +593,7 @@ fun ChatPage(
             Box(
                 Modifier.fillMaxHeight().width(menuW)
                     .graphicsLayer { translationX = (menuT - 1f) * menuPx }
-                    .then(if (Skin.frost) Modifier.frost(RectangleShape, Skin.panel) else Modifier.background(Skin.panel))
+                    .then(if (Skin.glass) Modifier.frost(RectangleShape, Skin.panel) else Modifier.background(Skin.panel))
                     .pointerInput(Unit) { detectTapGestures { } }
                     .windowInsetsPadding(WindowInsets.safeDrawing),
             ) {
@@ -690,18 +690,22 @@ fun ChatPage(
             }
         }
         SelectTextPage(selectText) { selectText = null }
+        ConvMenuLayer(chat.history)
         BoxToast(toast, Modifier.align(Alignment.BottomCenter).padding(bottom = 150.dp)) { toast = null }
     }
 }
 
 @Composable
-private fun ChatHeader(compact: Boolean, empty: Boolean, busy: Boolean, onMenu: () -> Unit, onNew: () -> Unit) {
-    // 左：侧栏（对话、作品、手记、切换助理、新对话）；右：新对话（照 Claude App）
+private fun ChatHeader(compact: Boolean, empty: Boolean, busy: Boolean, conv: Conv?, onMenu: () -> Unit, onNew: () -> Unit) {
+    // 左：侧栏（对话、作品、手记、切换助理、新对话）；右：新对话（照 Claude App），有话了再加一个 ⋮（ConvMenu.kt）
     Box(Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
         Pressable(onMenu, Modifier.align(Alignment.CenterStart), label = "对话和助理") { pressed ->
             SvgIcon(Ic("M4 6.5h15M4 12h10M4 17.5h13"), if (pressed) Page.ink else Page.ink.copy(alpha = .85f), 22.dp, modifier = Modifier.padding(6.dp))
         }
-        Box(Modifier.align(Alignment.CenterEnd)) { NewChatButton(empty, busy, compact, onNew) }
+        Row(Modifier.align(Alignment.CenterEnd), verticalAlignment = Alignment.CenterVertically) {
+            NewChatButton(empty, busy, compact, onNew)
+            MoreButton(if (empty) null else conv, compact)
+        }
     }
 }
 
@@ -832,7 +836,7 @@ private fun userLinks(text: String): AnnotatedString = buildAnnotatedString {
     append(text)
     urlRe.findAll(text).forEach { m ->
         val u = m.value.trimEnd('.', ',', ')', ';', '!', '?', ':', '\'', ']')
-        if (u.length > 10) addLink(androidx.compose.ui.text.LinkAnnotation.Clickable(u, androidx.compose.ui.text.TextLinkStyles(SpanStyle(color = css("#e9b48e"), textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline))) { InBrowser.open(u) }, m.range.first, m.range.first + u.length)
+        if (u.length > 10) addLink(androidx.compose.ui.text.LinkAnnotation.Clickable(u, androidx.compose.ui.text.TextLinkStyles(SpanStyle(color = Skin.accent, textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline))) { InBrowser.open(u) }, m.range.first, m.range.first + u.length)
     }
 }
 
@@ -916,7 +920,7 @@ private fun inline(block: String, fade: Int): AnnotatedString {
         append(s)
         bold.forEach { r -> val a = map[min(r.first, s0.length)]; val b = map[min(r.last + 1, s0.length)]; if (a < b) addStyle(SpanStyle(fontWeight = FontWeight.SemiBold, color = Page.ink), a, b) }
         links.forEach { (a, b, u) ->
-            addLink(androidx.compose.ui.text.LinkAnnotation.Clickable(u, androidx.compose.ui.text.TextLinkStyles(SpanStyle(color = css("#e9b48e"), textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline))) { InBrowser.open(u) }, a, b)
+            addLink(androidx.compose.ui.text.LinkAnnotation.Clickable(u, androidx.compose.ui.text.TextLinkStyles(SpanStyle(color = Skin.accent, textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline))) { InBrowser.open(u) }, a, b)
         }
         if (fade > 0) {
             val n = min(fade, s.length)
@@ -984,14 +988,14 @@ private fun ChatInput(
                 exit = androidx.compose.animation.shrinkVertically(tween(220)) + androidx.compose.animation.fadeOut(tween(180)),
             ) {
                 Row(Modifier.fillMaxWidth().padding(start = 4.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.size(5.dp).background(css("#e9b48e"), CircleShape))
+                    Box(Modifier.size(5.dp).background(Skin.accent, CircleShape))
                     Spacer(Modifier.width(8.dp))
                     val lim = Memory.active.limit
-                    Txt("这段对话已经到上限（$lim/$lim）", css("#e9b48e"), 12.5.sp, Modifier.weight(1f), maxLines = 1)
+                    Txt("这段对话已经到上限（$lim/$lim）", Skin.accent, 12.5.sp, Modifier.weight(1f), maxLines = 1)
                     Pressable({ Chats.fresh() }, label = "开新对话") { pr ->
                         Txt(
-                            "开新对话", css("#e9b48e"), 12.5.sp,
-                            Modifier.background(rgba(233, 180, 142, if (pr) .28f else .15f), RoundedCornerShape(50)).padding(horizontal = 12.dp, vertical = 6.dp),
+                            "开新对话", Skin.accent, 12.5.sp,
+                            Modifier.background(Skin.accent.copy(alpha = if (pr) .28f else .15f), RoundedCornerShape(50)).padding(horizontal = 12.dp, vertical = 6.dp),
                             maxLines = 1,
                         )
                     }
@@ -1004,9 +1008,9 @@ private fun ChatInput(
                 exit = androidx.compose.animation.shrinkVertically(tween(220)) + androidx.compose.animation.fadeOut(tween(180)),
             ) {
                 Row(Modifier.fillMaxWidth().padding(start = 4.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                    SvgIcon(Ic("M13.5 6.5l4 4M5 19l1-4.5L15.5 5a1.5 1.5 0 0 1 2 0l1.5 1.5a1.5 1.5 0 0 1 0 2L9.5 18z"), css("#e9b48e"), 15.dp)
+                    SvgIcon(Ic("M13.5 6.5l4 4M5 19l1-4.5L15.5 5a1.5 1.5 0 0 1 2 0l1.5 1.5a1.5 1.5 0 0 1 0 2L9.5 18z"), Skin.accent, 15.dp)
                     Spacer(Modifier.width(6.dp))
-                    Txt("编辑消息，发送后从这里重新回答", css("#e9b48e"), 12.5.sp, Modifier.weight(1f), maxLines = 1)
+                    Txt("编辑消息，发送后从这里重新回答", Skin.accent, 12.5.sp, Modifier.weight(1f), maxLines = 1)
                     Pressable({ chat.editing = -1; chat.draft = "" }, label = "放弃编辑") { _ ->
                         SvgIcon(Icons.close, Page.muted, 16.dp, modifier = Modifier.padding(4.dp))
                     }
@@ -1171,14 +1175,14 @@ private fun DrawerRow(text: String, selected: Boolean, dim: Boolean = false, onC
         Row(
             Modifier.fillMaxWidth()
                 .background(
-                    when { selected -> rgba(233, 180, 142, .16f); pressed -> veil(.05f); else -> Color.Transparent },
+                    when { selected -> Skin.accent.copy(alpha = .16f); pressed -> veil(.05f); else -> Color.Transparent },
                     RoundedCornerShape(14.dp),
                 )
                 .padding(horizontal = 16.dp, vertical = 14.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Txt(text, if (selected) Page.ink else if (dim) Page.muted else Page.ink.copy(alpha = .78f), 15.sp, Modifier.weight(1f), maxLines = 1)
-            if (selected) SvgIcon(Ic("M5 12.5l4.5 4.5L19 7.5"), rgba(233, 180, 142, 1f), 18.dp, stroke = 1.8f)
+            if (selected) SvgIcon(Ic("M5 12.5l4.5 4.5L19 7.5"), Skin.accent.copy(alpha = 1f), 18.dp, stroke = 1.8f)
         }
     }
 }

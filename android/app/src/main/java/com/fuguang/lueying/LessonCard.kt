@@ -1,5 +1,6 @@
 package com.fuguang.lueying
 
+import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -41,7 +42,7 @@ object LessonCard : FloatCard() {
     fun find(memId: String): Mem? = if (memId.isEmpty()) null else Memory.active.items.firstOrNull { it.id == memId && it.kind == Lessons.KIND }
 }
 
-private val warm = css("#e9b48e")
+private val warm: Color get() = Skin.accent
 
 @Composable
 fun LessonRow(memId: String) {

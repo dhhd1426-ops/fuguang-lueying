@@ -42,7 +42,7 @@ import org.json.JSONObject
  * 聊天里的闹钟卡、日程卡（原型 CDpQRxvKNs1HdRh6VLCZtx）。色块、不描边；落下时轻轻放大浮出。
  * 点闹钟卡打开时钟，点日程卡打开系统日历到那一天。
  */
-private val Warm = Color(0xFFE9B48E)
+private val Warm: Color get() = Skin.accent
 private val bell = Ic("M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15ZM10 21h4")
 
 /** clips 里是不是闹钟 / 日程卡。 */

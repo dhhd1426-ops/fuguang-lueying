@@ -47,7 +47,7 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-internal val skillWarm = Color(0xFFE9B48E)
+internal val skillWarm: Color get() = Skin.accent
 internal val skillInk = Color(0xFF2A211B)
 internal val skillBad = Color(0xFFD79A94)
 private val tints = listOf(0xFFE9B48E, 0xFFA9B6CC, 0xFF9FB79A, 0xFFC9BC97, 0xFFB3A6D9, 0xFFD98A6A)

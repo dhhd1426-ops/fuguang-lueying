@@ -55,7 +55,7 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-private val Warm = ClipWarm
+private val Warm: Color get() = ClipWarm
 private val Bad = ClipBad
 private val OnWarmInk = Color(0xFF2A211B)
 

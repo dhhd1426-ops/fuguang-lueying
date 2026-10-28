@@ -1,5 +1,6 @@
 package com.fuguang.lueying
 
+import androidx.compose.ui.graphics.Color
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
@@ -42,7 +43,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 
-private val Warm = css("#e9b48e")
+private val Warm: Color get() = Skin.accent
 
 /** 下好的里面你看过哪些：侧栏「下载」那行有没下好、你还没看的，亮一个杏色小点。存 prefs `dl-seen`。 */
 object DlSeen {

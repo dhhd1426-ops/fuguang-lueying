@@ -76,7 +76,7 @@ object MineCard : FloatCard()
 private val person = Ic("M5.5 19.5c.9-3.4 3.4-5.3 6.5-5.3s5.6 1.9 6.5 5.3", circles = listOf(floatArrayOf(12f, 8.5f, 3.4f)))
 private val chevron = Ic("M9.5 6l6 6-6 6")
 private val tune = Ic("M6 4v5M6 14v6M12 4v2M12 11v9M18 4v9M18 18v2", circles = listOf(floatArrayOf(6f, 11.5f, 2.3f), floatArrayOf(12f, 8.5f, 2.3f), floatArrayOf(18f, 15.5f, 2.3f)))
-private val warm = Color(0xFFE9B48E)
+private val warm: Color get() = Skin.accent
 private val warmInk = Color(0xFF2A211B)
 
 /** 页面深度：往深处走新页从右边进，往回走从左边进。 */

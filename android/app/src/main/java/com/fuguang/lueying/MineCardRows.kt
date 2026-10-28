@@ -72,7 +72,7 @@ import kotlinx.coroutines.launch
 
 /* 「我的」卡片首页的行：色块、左边方形图标、右边状态。 */
 
-private val warm = Color(0xFFE9B48E)
+private val warm: Color get() = Skin.accent
 private val warmInk = Color(0xFF2A211B)
 
 @Composable
@@ -93,7 +93,7 @@ private fun RowBody(title: String, sub: String, glyph: @Composable () -> Unit, s
         Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(Modifier.size(38.dp).background(rgba(233, 180, 142, .1f), RoundedCornerShape(11.dp)), contentAlignment = Alignment.Center) { glyph() }
+        Box(Modifier.size(38.dp).background(Skin.accent.copy(alpha = .1f), RoundedCornerShape(11.dp)), contentAlignment = Alignment.Center) { glyph() }
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Txt(title, Page.ink, 15.sp, maxLines = 1)

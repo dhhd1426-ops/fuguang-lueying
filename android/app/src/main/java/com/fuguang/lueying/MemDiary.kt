@@ -62,7 +62,7 @@ private fun Sheen() {
             androidx.compose.foundation.layout.Box(
                 Modifier.fillMaxWidth(w).height(10.dp).background(
                     Brush.linearGradient(
-                        listOf(veil(.05f), rgba(233, 180, 142, .22f), veil(.05f)),
+                        listOf(veil(.05f), Skin.accent.copy(alpha = .22f), veil(.05f)),
                         start = Offset(-400f + x * 1200f, 0f), end = Offset(x * 1200f, 0f),
                     ),
                     RoundedCornerShape(5.dp),

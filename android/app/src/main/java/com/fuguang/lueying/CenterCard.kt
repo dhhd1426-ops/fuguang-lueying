@@ -145,7 +145,7 @@ fun CenterCardLayer(
                     clip = true
                     shadowElevation = 24.dp.toPx() * (1f - fv)
                 }
-                .then(if (Skin.frost) Modifier.frost(RectangleShape, Skin.card) else Modifier.background(Skin.card))
+                .then(if (Skin.glass) Modifier.frost(RectangleShape, Skin.card) else Modifier.background(Skin.card))
                 .pointerInput(Unit) { detectTapGestures { } },
         ) {
             val pad = Modifier.fillMaxSize().padding(

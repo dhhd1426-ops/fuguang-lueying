@@ -41,7 +41,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 
-private val warm = Color(0xFFE9B48E)
+private val warm: Color get() = Skin.accent
 private val globe = Ic("M4 12h16M12 4c2.4 2.5 2.4 13.5 0 16M12 4c-2.4 2.5-2.4 13.5 0 16", circles = listOf(floatArrayOf(12f, 12f, 8f)))
 private val chevron = Ic("M9.5 6l6 6-6 6")
 private val check = Ic("M5 12.5l4.5 4.5L19 7.5")
