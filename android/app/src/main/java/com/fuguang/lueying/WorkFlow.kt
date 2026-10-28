@@ -116,7 +116,7 @@ private fun DraftCard(d: WorkDraft) {
     val sweep by t.animateFloat(-1f, 1f, infiniteRepeatable(tween(1400, easing = LinearEasing), RepeatMode.Restart), label = "sweep")
     Column(Modifier.padding(top = 10.dp, bottom = 12.dp)) {
         Row(
-            Modifier.widthIn(max = 440.dp).fillMaxWidth().background(rgba(255, 255, 255, .055f), RoundedCornerShape(16.dp)).padding(10.dp),
+            Modifier.widthIn(max = 440.dp).fillMaxWidth().background(veil(.055f), RoundedCornerShape(16.dp)).padding(10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(
@@ -131,12 +131,12 @@ private fun DraftCard(d: WorkDraft) {
             Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
                 AnimatedContent(d.title, transitionSpec = { fadeIn(tween(220)) togetherWith fadeOut(tween(140)) }, label = "draftTitle") { title ->
-                    if (title == null) Box(Modifier.padding(vertical = 6.dp).width(110.dp).height(10.dp).background(Page.LINE.copy(alpha = .6f), RoundedCornerShape(5.dp)))
-                    else Txt(title, Page.INK, 16.sp, family = Serif, maxLines = 1)
+                    if (title == null) Box(Modifier.padding(vertical = 6.dp).width(110.dp).height(10.dp).background(Page.line.copy(alpha = .6f), RoundedCornerShape(5.dp)))
+                    else Txt(title, Page.ink, 16.sp, family = Serif, maxLines = 1)
                 }
                 Spacer(Modifier.height(4.dp))
                 val verb = if (d.editing) "正在改" else "正在写"
-                Txt(if (d.chars < 200) "$verb…" else "$verb · 已写 %.1fk 字".format(d.chars / 1000f), Page.MUTED, 12.5.sp, maxLines = 1)
+                Txt(if (d.chars < 200) "$verb…" else "$verb · 已写 %.1fk 字".format(d.chars / 1000f), Page.muted, 12.5.sp, maxLines = 1)
             }
         }
     }
@@ -147,7 +147,7 @@ private fun DraftCard(d: WorkDraft) {
 private fun FailCard(title: String, why: String?, canRetry: Boolean, onRetry: () -> Unit) {
     Pressable(onRetry, Modifier.padding(top = 10.dp, bottom = 12.dp).widthIn(max = 440.dp).fillMaxWidth(), enabled = canRetry, label = "再写一次") { pressed ->
         Row(
-            Modifier.fillMaxWidth().background(rgba(255, 255, 255, if (pressed) .085f else .055f), RoundedCornerShape(16.dp)).padding(10.dp),
+            Modifier.fillMaxWidth().background(veil(if (pressed) .085f else .055f), RoundedCornerShape(16.dp)).padding(10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(Modifier.size(56.dp).background(Color(0x1FD79A94), RoundedCornerShape(11.dp)), contentAlignment = Alignment.Center) {
@@ -155,9 +155,9 @@ private fun FailCard(title: String, why: String?, canRetry: Boolean, onRetry: ()
             }
             Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
-                Txt(title.ifBlank { "作品" }, Page.INK, 16.sp, family = Serif, maxLines = 1)
+                Txt(title.ifBlank { "作品" }, Page.ink, 16.sp, family = Serif, maxLines = 1)
                 Spacer(Modifier.height(4.dp))
-                Txt(if (canRetry) "没写成" + (why?.let { "（$it）" } ?: "") + " · 点一下再写一次" else "没写完（App 中途关掉了），让她再做一次", Page.MUTED, 12.5.sp, maxLines = 2)
+                Txt(if (canRetry) "没写成" + (why?.let { "（$it）" } ?: "") + " · 点一下再写一次" else "没写完（App 中途关掉了），让她再做一次", Page.muted, 12.5.sp, maxLines = 2)
             }
         }
     }

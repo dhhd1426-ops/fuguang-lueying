@@ -76,7 +76,7 @@ internal fun FeaturesPage(onBack: () -> Unit, onSearch: () -> Unit, onSkills: ()
 @Composable
 private fun Logo(s: SearchSource, size: Dp) {
     Box(Modifier.size(size).background(Color(s.tint), RoundedCornerShape(size * .3f)), contentAlignment = Alignment.Center) {
-        Txt(s.letter, Color(0xFF2A211B), (size.value * (if (s.letter.length > 1) .36f else .44f)).sp, family = Serif, maxLines = 1)
+        Txt(s.letter, Skin.onAccent, (size.value * (if (s.letter.length > 1) .36f else .44f)).sp, family = Serif, maxLines = 1)
     }
 }
 
@@ -233,7 +233,7 @@ internal fun SearchSourcePage(id: String, onBack: () -> Unit) {
                     }
                 },
                 Modifier.size(44.dp), shape = CircleShape, fill = warm, pressedFill = warm.copy(alpha = .85f), pressScale = .92f, label = "试搜",
-            ) { if (busy) LoadRing(Color(0xFF2A211B), 18.dp) else SvgIcon(play, Color(0xFF2A211B), 16.dp, stroke = 1.6f) }
+            ) { if (busy) LoadRing(Skin.onAccent, 18.dp) else SvgIcon(play, Skin.onAccent, 16.dp, stroke = 1.6f) }
         }
         if (err.isNotEmpty()) Txt(err, Color(0xFFD79A94), 12.sp, Modifier.padding(start = 8.dp, top = 10.dp))
         hits?.forEach { h ->

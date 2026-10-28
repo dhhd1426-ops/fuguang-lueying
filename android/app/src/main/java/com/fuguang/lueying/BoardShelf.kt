@@ -104,26 +104,26 @@ fun BoardShelf(open: Boolean, onClose: () -> Unit, onOpen: (String) -> Unit, onA
     val show = all.filter { b -> when (f) { 1 -> b.of > 0 && b.done < b.of; 2 -> b.edits > 0; else -> true } }
     BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
         val h = maxHeight
-        Box(Modifier.fillMaxSize().graphicsLayer { alpha = t }.background(rgba(6, 9, 14, .5f)).pointerInput(Unit) { detectTapGestures { onClose() } })
+        Box(Modifier.fillMaxSize().graphicsLayer { alpha = t }.background(Skin.scrim(.5f)).pointerInput(Unit) { detectTapGestures { onClose() } })
         Column(
             Modifier.widthIn(max = 640.dp).fillMaxWidth().height(h * .82f)
                 .graphicsLayer { translationY = (1f - t) * h.toPx() * .5f; alpha = t }
-                .background(rgba(20, 24, 31, .97f), RoundedCornerShape(topStart = 26.dp, topEnd = 26.dp))
+                .background(Skin.sheet, RoundedCornerShape(topStart = 26.dp, topEnd = 26.dp))
                 .pointerInput(Unit) { detectTapGestures { } }
                 .padding(start = 18.dp, end = 18.dp, top = 10.dp),
         ) {
-            Box(Modifier.align(Alignment.CenterHorizontally).padding(bottom = 14.dp).width(40.dp).height(4.dp).background(rgba(255, 255, 255, .25f), RoundedCornerShape(2.dp)))
+            Box(Modifier.align(Alignment.CenterHorizontally).padding(bottom = 14.dp).width(40.dp).height(4.dp).background(veil(.25f), RoundedCornerShape(2.dp)))
             Box(Modifier.fillMaxWidth()) {
                 Pressable(onClose, Modifier.align(Alignment.CenterStart), label = "关闭") { _ ->
-                    SvgIcon(Icons.close, Page.INK, 20.dp, modifier = Modifier.padding(6.dp))
+                    SvgIcon(Icons.close, Page.ink, 20.dp, modifier = Modifier.padding(6.dp))
                 }
-                Txt("画板", Page.INK, 16.5.sp, Modifier.align(Alignment.Center), family = Serif, weight = FontWeight.SemiBold, maxLines = 1)
+                Txt("画板", Page.ink, 16.5.sp, Modifier.align(Alignment.Center), family = Serif, weight = FontWeight.SemiBold, maxLines = 1)
             }
             if (all.isNotEmpty()) Row(Modifier.padding(top = 12.dp, bottom = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 listOf("全部", "没做完", "你改过").forEachIndexed { i, s -> ChoiceChip(s, f == i) { f = i } }
             }
             Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(top = 10.dp, bottom = 30.dp)) {
-                if (all.isEmpty()) Txt("还没有画板。\n计划、安排、日程、清单，让她搭一块：读书会、搬家、这周吃什么都行。", Page.MUTED, 13.sp, Modifier.fillMaxWidth().padding(vertical = 40.dp, horizontal = 10.dp), lineHeight = 22.sp, align = androidx.compose.ui.text.style.TextAlign.Center)
+                if (all.isEmpty()) Txt("还没有画板。\n计划、安排、日程、清单，让她搭一块：读书会、搬家、这周吃什么都行。", Page.muted, 13.sp, Modifier.fillMaxWidth().padding(vertical = 40.dp, horizontal = 10.dp), lineHeight = 22.sp, align = androidx.compose.ui.text.style.TextAlign.Center)
                 val cells: List<BoardInfo?> = show + listOf(null)
                 cells.chunked(2).forEachIndexed { r, pair ->
                     Row(Modifier.fillMaxWidth().padding(bottom = 14.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -154,29 +154,29 @@ private fun riseIn(i: Int): Animatable<Float, AnimationVector1D> {
 private fun BoardCell(b: BoardInfo, i: Int, onClick: () -> Unit) {
     val k = riseIn(i)
     Column(Modifier.graphicsLayer { alpha = k.value; translationY = (1f - k.value) * 10.dp.toPx() }) {
-        PressSurface(onClick, Modifier.fillMaxWidth().aspectRatio(3f / 4f), shape = RoundedCornerShape(16.dp), fill = lerp(Base, b.acc, .1f), pressedFill = lerp(Base, b.acc, .16f), ripple = b.acc, pressScale = .97f, label = "打开画板 ${b.title}", edge = rgba(255, 255, 255, .06f)) {
+        PressSurface(onClick, Modifier.fillMaxWidth().aspectRatio(3f / 4f), shape = RoundedCornerShape(16.dp), fill = lerp(Base, b.acc, .1f), pressedFill = lerp(Base, b.acc, .16f), ripple = b.acc, pressScale = .97f, label = "打开画板 ${b.title}", edge = veil(.06f)) {
             Column(Modifier.fillMaxSize().padding(horizontal = 11.dp, vertical = 12.dp)) {
                 Txt(b.glyph, b.acc, 30.sp, family = Serif, maxLines = 1)
                 Spacer(Modifier.height(6.dp))
-                Txt(b.title, Page.INK, 12.sp, family = Serif, maxLines = 1)
+                Txt(b.title, Page.ink, 12.sp, family = Serif, maxLines = 1)
                 Spacer(Modifier.height(8.dp))
                 MiniBlocks(b)
             }
             if (b.edits > 0) Txt("你改过", Skin.accent, 10.sp, Modifier.align(Alignment.TopEnd).padding(9.dp).background(rgba(0, 0, 0, .35f), RoundedCornerShape(50)).padding(horizontal = 7.dp, vertical = 2.dp), maxLines = 1)
-            if (b.of > 0) Box(Modifier.align(Alignment.BottomCenter).padding(11.dp).fillMaxWidth().height(3.dp).background(rgba(255, 255, 255, .1f), RoundedCornerShape(2.dp))) {
+            if (b.of > 0) Box(Modifier.align(Alignment.BottomCenter).padding(11.dp).fillMaxWidth().height(3.dp).background(veil(.1f), RoundedCornerShape(2.dp))) {
                 Box(Modifier.fillMaxWidth(b.done.toFloat() / b.of).fillMaxHeight().background(b.acc, RoundedCornerShape(2.dp)))
             }
         }
         Spacer(Modifier.height(8.dp))
-        Txt(b.title, Page.INK, 13.5.sp, maxLines = 1)
-        Txt(day(b.updated) + if (b.of > 0) " · ${b.done}/${b.of}" else "", Page.MUTED.copy(alpha = .6f), 11.sp, Modifier.padding(top = 2.dp), maxLines = 1)
+        Txt(b.title, Page.ink, 13.5.sp, maxLines = 1)
+        Txt(day(b.updated) + if (b.of > 0) " · ${b.done}/${b.of}" else "", Page.muted.copy(alpha = .6f), 11.sp, Modifier.padding(top = 2.dp), maxLines = 1)
     }
 }
 
 /** 缩小的积木轮廓：标题一道短杏色、段落一道长灰线、待办是方框加线、看板 / 分栏 / 卡片墙是三小块。 */
 @Composable
 private fun MiniBlocks(b: BoardInfo) {
-    val line = rgba(255, 255, 255, .1f)
+    val line = veil(.1f)
     Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
         b.shape.forEach { s ->
             when (s) {
@@ -187,7 +187,7 @@ private fun MiniBlocks(b: BoardInfo) {
                     Box(Modifier.fillMaxWidth(.7f).height(5.dp).background(line, RoundedCornerShape(3.dp)))
                 }
                 "kanban", "columns", "gallery", "week", "table" -> Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    repeat(3) { Box(Modifier.weight(1f).height(20.dp).background(rgba(255, 255, 255, .07f), RoundedCornerShape(5.dp))) }
+                    repeat(3) { Box(Modifier.weight(1f).height(20.dp).background(veil(.07f), RoundedCornerShape(5.dp))) }
                 }
                 "progress" -> Box(Modifier.fillMaxWidth().height(4.dp).background(b.acc.copy(alpha = .4f), RoundedCornerShape(2.dp)))
                 "divider" -> Box(Modifier.fillMaxWidth().height(1.dp).background(line))
@@ -200,11 +200,11 @@ private fun MiniBlocks(b: BoardInfo) {
 @Composable
 private fun AskCell(i: Int, onAsk: () -> Unit) {
     val k = riseIn(i)
-    PressSurface(onAsk, Modifier.graphicsLayer { alpha = k.value; translationY = (1f - k.value) * 10.dp.toPx() }.fillMaxWidth().aspectRatio(3f / 4f), shape = RoundedCornerShape(16.dp), fill = Color.Transparent, pressScale = .97f, label = "让她搭一块", edge = rgba(255, 255, 255, .14f)) {
+    PressSurface(onAsk, Modifier.graphicsLayer { alpha = k.value; translationY = (1f - k.value) * 10.dp.toPx() }.fillMaxWidth().aspectRatio(3f / 4f), shape = RoundedCornerShape(16.dp), fill = Color.Transparent, pressScale = .97f, label = "让她搭一块", edge = veil(.14f)) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             SvgIcon(SideIcons.plus, Skin.accent, 22.dp, stroke = 1.6f)
             Spacer(Modifier.height(8.dp))
-            Txt("让她搭一块", Page.MUTED, 12.5.sp, maxLines = 1)
+            Txt("让她搭一块", Page.muted, 12.5.sp, maxLines = 1)
         }
     }
 }

@@ -17,7 +17,7 @@ import androidx.compose.ui.unit.dp
  */
 @Composable
 fun PanCard(it: PanItem) {
-    Box(Modifier.widthIn(max = 440.dp).fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(rgba(255, 255, 255, .055f)).padding(top = 8.dp)) {
+    Box(Modifier.widthIn(max = 440.dp).fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(veil(.055f)).padding(top = 8.dp)) {
         PanPane(it) { }
     }
 }

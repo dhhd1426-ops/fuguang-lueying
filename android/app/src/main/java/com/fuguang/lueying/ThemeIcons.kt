@@ -150,7 +150,7 @@ private fun IconTile(id: String, on: Boolean, onClick: () -> Unit) {
                     Modifier.align(Alignment.BottomEnd).offset(x = (-1).dp, y = (-1).dp).size(20.dp).graphicsLayer { scaleX = badge; scaleY = badge; alpha = badge.coerceIn(0f, 1f) }
                         .background(SideWarm, CircleShape),
                     contentAlignment = Alignment.Center,
-                ) { if (on) DrawnCheck(Color(0xFF2A1D14), 13.dp) }
+                ) { if (on) DrawnCheck(Skin.onAccent, 13.dp) }
             }
             Spacer(Modifier.height(5.dp))
             Txt(name, if (on) Page.ink else Page.muted, 12.sp, maxLines = 1)

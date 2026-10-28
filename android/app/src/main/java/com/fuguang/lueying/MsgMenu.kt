@@ -107,7 +107,7 @@ fun MsgMenu(
     var origin by remember { mutableStateOf(Offset.Zero) }
     val d = LocalDensity.current
     BoxWithConstraints(Modifier.fillMaxSize().onGloballyPositioned { origin = it.positionInRoot() }) {
-        Box(Modifier.fillMaxSize().alpha(shown).background(rgba(6, 9, 14, .42f)).pointerInput(Unit) { detectTapGestures { onClose() } })
+        Box(Modifier.fillMaxSize().alpha(shown).background(Skin.scrim(.42f)).pointerInput(Unit) { detectTapGestures { onClose() } })
         val time = msgTime(m.at)
         val cardH = with(d) { ((if (time.isNotEmpty()) 34.dp else 6.dp) + 48.dp * items.size + 12.dp).toPx() }
         val gap = with(d) { 8.dp.toPx() }
@@ -121,7 +121,7 @@ fun MsgMenu(
                 .offset { IntOffset(0, y.roundToInt()) }
                 .width(208.dp)
                 .graphicsLayer { alpha = shown; val s = .92f + .08f * shown; scaleX = s; scaleY = s; transformOrigin = androidx.compose.ui.graphics.TransformOrigin(1f, 0f) }
-                .background(rgba(42, 44, 49, .98f), RoundedCornerShape(18.dp))
+                .background(Skin.pop, RoundedCornerShape(18.dp))
                 .pointerInput(Unit) { detectTapGestures { } }
                 .padding(vertical = 6.dp),
         ) {
@@ -183,8 +183,8 @@ fun BoxToast(text: String?, modifier: Modifier, onGone: () -> Unit) {
     LaunchedEffect(text) { if (text != null) { kotlinx.coroutines.delay(1400); onGone() } }
     if (shown <= 0f) return
     Txt(
-        last, Page.ink, 13.5.sp,
+        last, Skin.toastInk, 13.5.sp,
         modifier.graphicsLayer { alpha = shown; translationY = (1f - shown) * 24f }
-            .background(rgba(47, 49, 54, .97f), RoundedCornerShape(50)).padding(horizontal = 18.dp, vertical = 9.dp),
+            .background(Skin.toast, RoundedCornerShape(50)).padding(horizontal = 18.dp, vertical = 9.dp),
     )
 }

@@ -43,7 +43,7 @@ fun MaterialStack(faces: List<File>) {
                     .graphicsLayer { rotationZ = r; alpha = t; scaleX = .9f + .1f * t; scaleY = .9f + .1f * t }
                     .shadow(6.dp, RoundedCornerShape(8.dp))
                     .clip(RoundedCornerShape(8.dp))
-                    .background(rgba(255, 255, 255, .06f)),
+                    .background(veil(.06f)),
             ) {
                 bmp?.let { Image(it.asImageBitmap(), null, Modifier.size(38.dp, 49.dp), contentScale = ContentScale.Crop) }
             }

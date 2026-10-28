@@ -35,25 +35,25 @@ fun WorksShelf(open: Boolean, onClose: () -> Unit, onOpen: (String) -> Unit) {
     val ids = remember(open, Works.version) { Works.list().filter { it.kind != "board" }.map { it.id } }
     BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
         val h = maxHeight
-        Box(Modifier.fillMaxSize().graphicsLayer { alpha = t }.background(rgba(6, 9, 14, .5f)).pointerInput(Unit) { detectTapGestures { onClose() } })
+        Box(Modifier.fillMaxSize().graphicsLayer { alpha = t }.background(Skin.scrim(.5f)).pointerInput(Unit) { detectTapGestures { onClose() } })
         Column(
             Modifier.widthIn(max = 640.dp).fillMaxWidth().height(h * .82f)
                 .graphicsLayer { translationY = (1f - t) * h.toPx() * .5f; alpha = t }
-                .background(rgba(20, 24, 31, .97f), RoundedCornerShape(topStart = 26.dp, topEnd = 26.dp))
+                .background(Skin.sheet, RoundedCornerShape(topStart = 26.dp, topEnd = 26.dp))
                 .pointerInput(Unit) { detectTapGestures { } }
                 .padding(start = 20.dp, end = 20.dp, top = 10.dp),
         ) {
-            Box(Modifier.align(Alignment.CenterHorizontally).padding(bottom = 14.dp).widthIn(min = 40.dp, max = 40.dp).height(4.dp).background(rgba(255, 255, 255, .25f), RoundedCornerShape(2.dp)))
+            Box(Modifier.align(Alignment.CenterHorizontally).padding(bottom = 14.dp).widthIn(min = 40.dp, max = 40.dp).height(4.dp).background(veil(.25f), RoundedCornerShape(2.dp)))
             Box(Modifier.fillMaxWidth()) {
                 Pressable(onClose, Modifier.align(Alignment.CenterStart), label = "关闭") { _ ->
-                    SvgIcon(Icons.close, Page.INK, 20.dp, modifier = Modifier.padding(6.dp))
+                    SvgIcon(Icons.close, Page.ink, 20.dp, modifier = Modifier.padding(6.dp))
                 }
-                Txt("作品", Page.INK, 16.5.sp, Modifier.align(Alignment.Center), family = Serif, weight = FontWeight.SemiBold, maxLines = 1)
+                Txt("作品", Page.ink, 16.5.sp, Modifier.align(Alignment.Center), family = Serif, weight = FontWeight.SemiBold, maxLines = 1)
             }
             Spacer(Modifier.height(6.dp))
             if (ids.isEmpty()) {
                 Box(Modifier.fillMaxWidth().padding(top = 60.dp), contentAlignment = Alignment.Center) {
-                    Txt("还没有作品。让她画点什么、做个页面，就会出现在这里。", Page.MUTED, 13.sp, lineHeight = 22.sp)
+                    Txt("还没有作品。让她画点什么、做个页面，就会出现在这里。", Page.muted, 13.sp, lineHeight = 22.sp)
                 }
             } else Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(bottom = 30.dp)) {
                 WorkCards(ids, onOpen)

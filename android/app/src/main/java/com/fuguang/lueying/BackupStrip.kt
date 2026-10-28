@@ -67,7 +67,7 @@ import kotlinx.coroutines.launch
 
 private val warm: Color get() = Skin.accent
 private val bad = Color(0xFFD79A94)
-private val stripFill = Color(0xFF323844)
+private val stripFill: Color get() = Skin.pop
 private val down = Ic("M12 4v10M8 10.5l4 4 4-4M5 16.5v2.5h14v-2.5")
 private val doc = Ic("M6 4h8l4 4v12H6ZM14 4v4h4M9 13h6M9 16.5h4")
 private val box = Ic("M4 8l8-4 8 4v8l-8 4-8-4ZM4 8l8 4 8-4M12 12v8")
@@ -215,8 +215,8 @@ private fun Tiles(sizes: Pair<Long, Long>?, onPick: (Boolean) -> Unit) {
                 { if (picked == null) picked = pack },
                 Modifier.weight(1f).graphicsLayer { alpha = 1f - gone; scaleX = 1f - .06f * gone; scaleY = 1f - .06f * gone },
                 shape = RoundedCornerShape(15.dp),
-                fill = if (picked == pack) warm.copy(alpha = .14f) else Color.White.copy(alpha = .05f),
-                pressedFill = Color.White.copy(alpha = .09f),
+                fill = if (picked == pack) warm.copy(alpha = .14f) else veil(.05f),
+                pressedFill = veil(.09f),
                 pressScale = .97f,
                 label = if (pack) "打包：备份数据加上安装包" else "备份数据",
             ) {
@@ -309,7 +309,7 @@ private fun Ring(frac: Float, done: Boolean, failed: Boolean, onCheck: (Offset) 
 
 @Composable
 private fun Pill(text: String, main: Boolean, modifier: Modifier, onClick: () -> Unit) {
-    PressSurface(onClick, modifier.height(38.dp), fill = if (main) warm else Color.White.copy(alpha = .07f), pressedFill = if (main) warm.copy(alpha = .85f) else Color.White.copy(alpha = .12f), pressScale = .96f, label = text) {
-        Txt(text, if (main) Color(0xFF2A211B) else Page.ink.copy(alpha = .86f), 13.5.sp)
+    PressSurface(onClick, modifier.height(38.dp), fill = if (main) warm else veil(.07f), pressedFill = if (main) warm.copy(alpha = .85f) else veil(.12f), pressScale = .96f, label = text) {
+        Txt(text, if (main) Skin.onAccent else Page.ink.copy(alpha = .86f), 13.5.sp)
     }
 }

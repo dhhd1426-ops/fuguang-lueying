@@ -65,7 +65,7 @@ import androidx.compose.ui.unit.sp
 
 internal val ClipWarm: Color get() = Skin.accent
 internal val ClipBad = Color(0xFFE07A6E)
-private val OnWarm = Color(0xFF2A211B)
+private val OnWarm: Color get() = Skin.onAccent
 
 /** 挂在消息下面的抖音卡（和作品卡同一个位置）。 */
 @Composable
@@ -104,7 +104,7 @@ fun ClipCard(c: Clip) {
     LaunchedEffect(c.save) { if (c.save == 3) dx.animateTo(0f, keyframes { durationMillis = 300; -5f at 75; 5f at 150; -2f at 225 }) }
 
     Box(Modifier.widthIn(max = 440.dp).fillMaxWidth().onSizeChanged { size = it }) {
-        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(rgba(255, 255, 255, .055f))) {
+        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(veil(.055f))) {
             Cover(c)
             Meta(c)
             if (c.item != null) Picks(c)
@@ -114,7 +114,7 @@ fun ClipCard(c: Clip) {
                     if (c.save == 3) Txt("没成：${c.saveWhy}", ClipBad, 11.5.sp, Modifier.padding(top = 6.dp), maxLines = 2)
                     AnimatedVisibility(c.save == 2, enter = fadeIn(tween(260, 160)) + expandVertically(tween(280, 80, Curves.standard)), exit = fadeOut(tween(120))) {
                         Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Txt(if (c.outMime.startsWith("image") && c.pick == 0) "存在 相册 / 浮光掠影 · ${c.item?.images?.size ?: 0} 张" else "存在 相册 / 浮光掠影", Page.MUTED, 11.5.sp, Modifier.weight(1f), maxLines = 1)
+                            Txt(if (c.outMime.startsWith("image") && c.pick == 0) "存在 相册 / 浮光掠影 · ${c.item?.images?.size ?: 0} 张" else "存在 相册 / 浮光掠影", Page.muted, 11.5.sp, Modifier.weight(1f), maxLines = 1)
                             Small("打开", onLong = { openClip(ctx, c) }) { if (ClipPlay.playable(c) && !c.outMime.startsWith("image")) { ClipPlay.play(ctx, c) } else openClip(ctx, c) }
                             Spacer(Modifier.width(6.dp))
                             Small("发给…") { shareClip(ctx, c) }
@@ -139,7 +139,7 @@ private fun Cover(c: Clip) {
     LaunchedEffect(mine) { if (mine) ClipPlay.bring = { scope.launch { req.bringIntoView() } } }
     androidx.compose.runtime.DisposableEffect(Unit) { onDispose { if (ClipPlay.isMine(c)) { DlPlay.close(); ClipPlay.mini = false } } }
     Box(
-        Modifier.fillMaxWidth().aspectRatio(16 / 10f).background(if (mine) Color.Black else Color.White.copy(alpha = .04f))
+        Modifier.fillMaxWidth().aspectRatio(16 / 10f).background(if (mine) Color.Black else veil(.04f))
             .bringIntoViewRequester(req)
             .onGloballyPositioned { co -> if (mine) { val b = co.boundsInWindow(); ClipPlay.mini = b.height < co.size.height * .35f } }
             .then(if (!mine && i != null && ClipPlay.playable(c)) Modifier.clickable(remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, null) { ClipPlay.play(ctx, c) } else Modifier),
@@ -150,7 +150,7 @@ private fun Cover(c: Clip) {
         when {
             pic != null -> Image(pic, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
             i == null && c.parse == 0 -> Shimmer()
-            i == null -> Txt("封面没拿到", Page.MUTED, 12.sp)
+            i == null -> Txt("封面没拿到", Page.muted, 12.sp)
             else -> LoadRing(ClipWarm.copy(alpha = .7f), 16.dp)
         }
         if (i != null) {
@@ -168,7 +168,7 @@ private fun Cover(c: Clip) {
 private fun Shimmer() {
     val t = rememberInfiniteTransition(label = "clipShimmer")
     val a by t.animateFloat(.03f, .09f, infiniteRepeatable(tween(900), RepeatMode.Reverse), label = "a")
-    Box(Modifier.fillMaxSize().background(Color.White.copy(alpha = a)))
+    Box(Modifier.fillMaxSize().background(veil(a)))
 }
 
 @Composable
@@ -182,13 +182,13 @@ private fun Meta(c: Clip) {
     Column(Modifier.padding(start = 12.dp, end = 12.dp, top = 10.dp)) {
         when {
             i != null -> {
-                Txt(i.title, Page.INK, 15.sp, family = Serif, lineHeight = 22.sp, maxLines = 2)
-                if (i.author.isNotBlank()) Txt("@${i.author}", Page.MUTED, 11.5.sp, Modifier.padding(top = 2.dp), maxLines = 1)
+                Txt(i.title, Page.ink, 15.sp, family = Serif, lineHeight = 22.sp, maxLines = 2)
+                if (i.author.isNotBlank()) Txt("@${i.author}", Page.muted, 11.5.sp, Modifier.padding(top = 2.dp), maxLines = 1)
             }
-            c.parse == 0 -> Txt("正在认这条抖音", Page.MUTED, 13.sp)
-            else -> Txt("认不出这条，文案看不到", Page.MUTED, 13.sp)
+            c.parse == 0 -> Txt("正在认这条抖音", Page.muted, 13.sp)
+            else -> Txt("认不出这条，文案看不到", Page.muted, 13.sp)
         }
-        if (i == null) Txt(c.link.substringAfter("://"), Page.MUTED.copy(alpha = .45f), 11.sp, Modifier.padding(top = 2.dp), maxLines = 1)
+        if (i == null) Txt(c.link.substringAfter("://"), Page.muted.copy(alpha = .45f), 11.sp, Modifier.padding(top = 2.dp), maxLines = 1)
     }
 }
 
@@ -201,8 +201,8 @@ private fun Picks(c: Clip) {
             val on = c.pick == k
             PressSurface(
                 { if (c.save != 1) { if (c.pick != k && c.save == 2) c.save = 0; c.pick = k } }, Modifier.height(26.dp),
-                fill = if (on) ClipWarm.copy(alpha = .18f) else Color.White.copy(alpha = .07f), pressedFill = Color.White.copy(alpha = .12f), pressScale = .95f, label = label,
-            ) { Txt(label, if (on) ClipWarm else Page.MUTED, 11.5.sp, Modifier.padding(horizontal = 10.dp)) }
+                fill = if (on) ClipWarm.copy(alpha = .18f) else veil(.07f), pressedFill = veil(.12f), pressScale = .95f, label = label,
+            ) { Txt(label, if (on) ClipWarm else Page.muted, 11.5.sp, Modifier.padding(horizontal = 10.dp)) }
         }
     }
 }
@@ -212,8 +212,8 @@ private fun Picks(c: Clip) {
 internal fun SaveButton(c: Clip, onSave: () -> Unit) {
     val i = c.item
     val f by animateFloatAsState(c.frac, tween(200), label = "clipFrac")
-    val fill = when (c.save) { 1 -> Color(0xFF3A3430); 2 -> ClipWarm.copy(alpha = .16f); 3 -> ClipBad.copy(alpha = .14f); else -> ClipWarm }
-    val ink = when (c.save) { 1 -> Page.INK; 2 -> ClipWarm; 3 -> ClipBad; else -> OnWarm }
+    val fill = when (c.save) { 1 -> veil(.12f); 2 -> ClipWarm.copy(alpha = .16f); 3 -> ClipBad.copy(alpha = .14f); else -> ClipWarm }
+    val ink = when (c.save) { 1 -> Page.ink; 2 -> ClipWarm; 3 -> ClipBad; else -> OnWarm }
     val idle = when {
         i == null && c.parse == 2 -> "试试存"
         c.pick == 1 -> "存成 m4a"
@@ -245,10 +245,10 @@ private fun Small(text: String, onLong: (() -> Unit)? = null, onClick: () -> Uni
     var down by remember { mutableStateOf(false) }
     val sc by animateFloatAsState(if (down) .95f else 1f, tween(120), label = "small")
     Box(
-        Modifier.height(26.dp).graphicsLayer { scaleX = sc; scaleY = sc }.clip(RoundedCornerShape(8.dp)).background(Color.White.copy(alpha = if (down) .14f else .08f))
+        Modifier.height(26.dp).graphicsLayer { scaleX = sc; scaleY = sc }.clip(RoundedCornerShape(8.dp)).background(veil(if (down) .14f else .08f))
             .pointerInput(onLong) { detectTapGestures(onPress = { down = true; tryAwaitRelease(); down = false }, onLongPress = onLong?.let { f -> { _ -> f() } }, onTap = { onClick() }) },
         contentAlignment = Alignment.Center,
-    ) { Txt(text, Page.INK, 12.sp, Modifier.padding(horizontal = 10.dp)) }
+    ) { Txt(text, Page.ink, 12.sp, Modifier.padding(horizontal = 10.dp)) }
 }
 
 fun openClip(ctx: Context, c: Clip) {

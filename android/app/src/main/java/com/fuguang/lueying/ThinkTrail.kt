@@ -325,7 +325,7 @@ fun ThinkDrawer(open: Boolean, raw: String, steps: List<ToolStep>, live: Boolean
         }
         if (!visible || off.isNaN()) return@BoxWithConstraints
         val scrim = ((sheetPx - off) / (sheetPx - half)).coerceIn(0f, 1f)
-        Box(Modifier.fillMaxSize().graphicsLayer { alpha = scrim }.background(rgba(6, 9, 14, .5f)).pointerInput(Unit) { detectTapGestures { onClose() } })
+        Box(Modifier.fillMaxSize().graphicsLayer { alpha = scrim }.background(Skin.scrim(.5f)).pointerInput(Unit) { detectTapGestures { onClose() } })
         val nested = remember(half) {
             object : NestedScrollConnection {
                 override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {

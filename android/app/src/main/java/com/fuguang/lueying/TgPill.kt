@@ -89,7 +89,7 @@ fun TgPillLayer() {
             val item = it ?: return@AnimatedVisibility
             val seen = remember(item) { item.doneTick }
             LaunchedEffect(item.doneTick) { if (item.doneTick > seen) { kotlinx.coroutines.delay(2860); if (item.save == 2) TgPill.dismiss() } }
-            Column(Modifier.widthIn(max = 460.dp).fillMaxWidth().glass(RoundedCornerShape(16.dp), 22.dp, fill = rgba(30, 33, 42, .86f), border = Color.Transparent)) {
+            Column(Modifier.widthIn(max = 460.dp).fillMaxWidth().glass(RoundedCornerShape(16.dp), 22.dp, fill = Skin.cardFill(.86f), border = Color.Transparent)) {
                 TgBody(item, pill = true)
                 AnimatedVisibility(TgPill.open != null, enter = expandVertically(tween(380, easing = Curves.decel), Alignment.Top) + fadeIn(tween(240, 80)),
                     exit = shrinkVertically(tween(240, easing = Curves.accel), Alignment.Top) + fadeOut(tween(160))) {
@@ -123,8 +123,8 @@ internal fun TgBody(item: TgItem, pill: Boolean) {
             Column(Modifier.weight(1f)) {
                 Kicker(item)
                 Spacer(Modifier.height(3.dp))
-                Txt(item.title.ifBlank { item.link }, Page.INK, 13.5.sp, maxLines = 1)
-                Txt(whoLine(item), Page.MUTED, 11.sp, Modifier.padding(top = 1.dp), maxLines = 1)
+                Txt(item.title.ifBlank { item.link }, Page.ink, 13.5.sp, maxLines = 1)
+                Txt(whoLine(item), Page.muted, 11.sp, Modifier.padding(top = 1.dp), maxLines = 1)
                 Spacer(Modifier.height(8.dp))
                 when (item.save) {
                     1 -> Progress(item)
@@ -145,7 +145,7 @@ internal fun TgBody(item: TgItem, pill: Boolean) {
                 }
             }
             if (pill) Pressable({ TgPill.into = false; TgPill.dismiss() }, Modifier.padding(start = 4.dp), label = "不用") { _ ->
-                SvgIcon(Icons.close, Page.MUTED, 16.dp, modifier = Modifier.padding(4.dp))
+                SvgIcon(Icons.close, Page.muted, 16.dp, modifier = Modifier.padding(4.dp))
             }
         }
         burst?.let { b -> Burst(b, Modifier.matchParentSize()) { burst = null } }
@@ -181,9 +181,9 @@ private fun Kicker(it: TgItem) {
 
 @Composable
 private fun Cover(it: TgItem) {
-    Box(Modifier.size(44.dp, 58.dp).clip(RoundedCornerShape(8.dp)).background(Color.White.copy(alpha = .06f)), contentAlignment = Alignment.Center) {
+    Box(Modifier.size(44.dp, 58.dp).clip(RoundedCornerShape(8.dp)).background(veil(.06f)), contentAlignment = Alignment.Center) {
         it.cover?.let { c -> Image(c, null, Modifier.matchParentSize(), contentScale = ContentScale.Crop) }
-            ?: if (it.stage == 0) LoadRing(ClipWarm.copy(alpha = .8f), 14.dp) else Txt("TG", Page.MUTED, 11.sp)
+            ?: if (it.stage == 0) LoadRing(ClipWarm.copy(alpha = .8f), 14.dp) else Txt("TG", Page.muted, 11.sp)
         it.vids.firstOrNull()?.seconds?.takeIf { s -> s > 0 && it.vids.size == 1 }?.let { s ->
             Txt("%d:%02d".format(s / 60, s % 60), Page.INK, 9.sp, Modifier.align(Alignment.BottomEnd).padding(3.dp).background(Color.Black.copy(alpha = .45f), RoundedCornerShape(4.dp)).padding(horizontal = 4.dp, vertical = 1.dp))
         }
@@ -193,12 +193,12 @@ private fun Cover(it: TgItem) {
 @Composable
 private fun Progress(it: TgItem) {
     val f by animateFloatAsState(it.frac, tween(200), label = "tgFrac")
-    Box(Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 2.dp).height(3.dp).clip(RoundedCornerShape(2.dp)).background(Color.White.copy(alpha = .08f))) {
+    Box(Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 2.dp).height(3.dp).clip(RoundedCornerShape(2.dp)).background(veil(.08f))) {
         Box(Modifier.fillMaxHeight().fillMaxWidth(f.coerceIn(0f, 1f)).background(ClipWarm))
     }
     Row(Modifier.fillMaxWidth().padding(top = 3.dp)) {
-        Txt(if (it.speed > 0) mb(it.speed) + "/s" else "", Page.MUTED, 10.5.sp, Modifier.weight(1f))
-        Pressable({ TgStore.stop(it) }, label = "停下") { _ -> Txt("停下", Page.MUTED, 10.5.sp) }
+        Txt(if (it.speed > 0) mb(it.speed) + "/s" else "", Page.muted, 10.5.sp, Modifier.weight(1f))
+        Pressable({ TgStore.stop(it) }, label = "停下") { _ -> Txt("停下", Page.muted, 10.5.sp) }
     }
 }
 
@@ -208,17 +208,17 @@ private fun TgPick(it: TgItem, onGo: () -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
         it.vids.forEach { v ->
             Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable { v.on = !v.on }.padding(horizontal = 6.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.size(20.dp).clip(RoundedCornerShape(6.dp)).background(if (v.on) ClipWarm else Color.White.copy(alpha = .1f)), contentAlignment = Alignment.Center) {
-                    if (v.on) DrawnCheck(Color(0xFF2A211B), 14.dp)
+                Box(Modifier.size(20.dp).clip(RoundedCornerShape(6.dp)).background(if (v.on) ClipWarm else veil(.1f)), contentAlignment = Alignment.Center) {
+                    if (v.on) DrawnCheck(Skin.onAccent, 14.dp)
                 }
                 Spacer(Modifier.width(10.dp))
-                Txt(v.name.substringBeforeLast('.'), Page.INK, 13.sp, Modifier.weight(1f), maxLines = 1)
-                Txt(listOfNotNull(v.seconds.takeIf { s -> s > 0 }?.let { s -> "%d:%02d".format(s / 60, s % 60) }, v.size.takeIf { s -> s > 0 }?.let { s -> mb(s) }).joinToString(" · "), Page.MUTED, 11.5.sp)
+                Txt(v.name.substringBeforeLast('.'), Page.ink, 13.sp, Modifier.weight(1f), maxLines = 1)
+                Txt(listOfNotNull(v.seconds.takeIf { s -> s > 0 }?.let { s -> "%d:%02d".format(s / 60, s % 60) }, v.size.takeIf { s -> s > 0 }?.let { s -> mb(s) }).joinToString(" · "), Page.muted, 11.5.sp)
             }
         }
         val on = it.vids.count { v -> v.on }
         Row(Modifier.fillMaxWidth().padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-            Txt(if (on == 0) "一个都没选" else "$on 个 · 存进 相册/浮光掠影", Page.MUTED, 11.5.sp, Modifier.weight(1f))
+            Txt(if (on == 0) "一个都没选" else "$on 个 · 存进 相册/浮光掠影", Page.muted, 11.5.sp, Modifier.weight(1f))
             Btn(if (on == 0) "存" else "存这 $on 个", true, enabled = on > 0, onClick = onGo)
         }
     }
@@ -228,13 +228,13 @@ private fun TgPick(it: TgItem, onGo: () -> Unit) {
 private fun Btn(text: String, main: Boolean, enabled: Boolean = true, onClick: () -> Unit) {
     PressSurface(
         onClick, Modifier.height(30.dp), shape = RoundedCornerShape(8.dp), enabled = enabled,
-        fill = if (main) ClipWarm else Color.White.copy(alpha = .08f), pressedFill = if (main) ClipWarm.copy(alpha = .85f) else Color.White.copy(alpha = .14f),
+        fill = if (main) ClipWarm else veil(.08f), pressedFill = if (main) ClipWarm.copy(alpha = .85f) else veil(.14f),
         pressScale = .95f, label = text,
-    ) { Txt(text, if (main) Color(0xFF2A211B) else Page.INK, 12.sp, Modifier.padding(horizontal = 12.dp)) }
+    ) { Txt(text, if (main) Skin.onAccent else Page.ink, 12.sp, Modifier.padding(horizontal = 12.dp)) }
 }
 
 /** 挂在消息下面的 Telegram 卡（和抖音卡、网盘卡同一个位置）。 */
 @Composable
 internal fun TgCard(it: TgItem) {
-    Box(Modifier.widthIn(max = 420.dp).fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(rgba(30, 33, 42, .7f))) { TgBody(it, pill = false) }
+    Box(Modifier.widthIn(max = 420.dp).fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Skin.cardFill(.7f))) { TgBody(it, pill = false) }
 }

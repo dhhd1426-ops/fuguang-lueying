@@ -125,13 +125,13 @@ internal fun YiyanPage() {
             exit = slideOutVertically(tween(180, easing = Curves.accel)) { it / 2 } + fadeOut(tween(180)),
         ) {
             Row(
-                Modifier.fillMaxWidth().background(rgba(47, 49, 54, .97f), RoundedCornerShape(16.dp))
+                Modifier.fillMaxWidth().background(Skin.toast, RoundedCornerShape(16.dp))
                     .padding(start = 16.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Txt("删掉了一句", Page.INK, 13.5.sp, Modifier.weight(1f))
+                Txt("删掉了一句", Skin.toastInk, 13.5.sp, Modifier.weight(1f))
                 Pressable({ undo?.let { (l, i, was) -> Yiyan.restore(l, i, was) }; undo = null }, label = "撤销") { pr ->
-                    Txt("撤销", NoteWarm, 13.5.sp, Modifier.background(if (pr) Color.White.copy(alpha = .06f) else Color.Transparent, RoundedCornerShape(12.dp)).padding(horizontal = 12.dp, vertical = 9.dp))
+                    Txt("撤销", NoteWarm, 13.5.sp, Modifier.background(if (pr) Skin.toastInk.copy(alpha = .1f) else Color.Transparent, RoundedCornerShape(12.dp)).padding(horizontal = 12.dp, vertical = 9.dp))
                 }
             }
         }
@@ -167,7 +167,7 @@ private fun WriteRow(text: String, onChange: (String) -> Unit, onDone: () -> Uni
             onDone, Modifier.size(40.dp), shape = RoundedCornerShape(12.dp),
             fill = NoteWarm.copy(alpha = k), pressedFill = NoteWarm.copy(alpha = .8f * k), enabled = lit, label = "加进一言",
         ) {
-            SvgIcon(checkIc, if (lit) Color(0xFF2A1D14) else Page.muted.copy(alpha = .5f), 18.dp, stroke = 2f)
+            SvgIcon(checkIc, if (lit) Skin.onAccent else Page.muted.copy(alpha = .5f), 18.dp, stroke = 2f)
         }
     }
 }

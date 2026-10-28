@@ -85,14 +85,14 @@ fun ClipPillLayer() {
             }
             Box(Modifier.widthIn(max = 460.dp).fillMaxWidth().onSizeChanged { size = it }.graphicsLayer { translationX = dx.value * density }) {
                 Row(
-                    Modifier.fillMaxWidth().glass(RoundedCornerShape(16.dp), 22.dp, fill = rgba(30, 33, 42, .78f), border = Color.Transparent).padding(10.dp),
+                    Modifier.fillMaxWidth().glass(RoundedCornerShape(16.dp), 22.dp, fill = Skin.cardFill(.78f), border = Color.Transparent).padding(10.dp),
                     verticalAlignment = Alignment.Top,
                 ) {
                     Cover(clip)
                     Spacer(Modifier.width(10.dp))
                     Column(Modifier.weight(1f)) { Body(clip, act) { into = true; ClipLink.handOver() } }
                     Pressable({ into = false; ClipLink.dismiss() }, Modifier.padding(start = 4.dp), label = "不用") { _ ->
-                        SvgIcon(Icons.close, Page.MUTED, 16.dp, modifier = Modifier.padding(4.dp))
+                        SvgIcon(Icons.close, Page.muted, 16.dp, modifier = Modifier.padding(4.dp))
                     }
                 }
                 burst?.let { Burst(it, Modifier.matchParentSize()) { burst = null } }
@@ -104,7 +104,7 @@ fun ClipPillLayer() {
 @Composable
 private fun Cover(c: Clip) {
     val pic = c.cover
-    Box(Modifier.size(44.dp, 58.dp).clip(RoundedCornerShape(8.dp)).background(Color.White.copy(alpha = .06f)), contentAlignment = Alignment.Center) {
+    Box(Modifier.size(44.dp, 58.dp).clip(RoundedCornerShape(8.dp)).background(veil(.06f)), contentAlignment = Alignment.Center) {
         if (pic != null) Image(pic, null, Modifier.matchParentSize(), contentScale = ContentScale.Crop)
         else if (c.parse == 0) LoadRing(Warm.copy(alpha = .8f), 14.dp)
         val n = c.item?.images?.size ?: 0
@@ -130,8 +130,8 @@ private fun Body(c: Clip, act: Activity?, onAsk: () -> Unit) {
         } else Txt(kicker, if (c.save == 3) Bad else Warm, 11.sp, spacing = .3.sp, maxLines = 1)
     }
     Spacer(Modifier.height(3.dp))
-    Txt(i?.title ?: c.link, Page.INK, 13.5.sp, maxLines = 1)
-    i?.author?.takeIf { it.isNotBlank() }?.let { Txt("@$it", Page.MUTED, 11.sp, Modifier.padding(top = 1.dp), maxLines = 1) }
+    Txt(i?.title ?: c.link, Page.ink, 13.5.sp, maxLines = 1)
+    i?.author?.takeIf { it.isNotBlank() }?.let { Txt("@$it", Page.muted, 11.sp, Modifier.padding(top = 1.dp), maxLines = 1) }
     Spacer(Modifier.height(8.dp))
     when (c.save) {
         1 -> Progress(c)
@@ -147,7 +147,7 @@ private fun Body(c: Clip, act: Activity?, onAsk: () -> Unit) {
 @Composable
 private fun Progress(c: Clip) {
     val f by animateFloatAsState(c.frac, tween(200), label = "clipFrac")
-    Box(Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 2.dp).height(3.dp).clip(RoundedCornerShape(2.dp)).background(Color.White.copy(alpha = .08f))) {
+    Box(Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 2.dp).height(3.dp).clip(RoundedCornerShape(2.dp)).background(veil(.08f))) {
         Box(Modifier.fillMaxHeight().fillMaxWidth(f.coerceIn(0f, 1f)).background(Warm))
     }
 }
@@ -156,7 +156,7 @@ private fun Progress(c: Clip) {
 private fun Btn(text: String, main: Boolean, enabled: Boolean = true, onClick: () -> Unit) {
     PressSurface(
         onClick, Modifier.height(30.dp), shape = RoundedCornerShape(8.dp), enabled = enabled,
-        fill = if (main) Warm else Color.White.copy(alpha = .08f), pressedFill = if (main) Warm.copy(alpha = .85f) else Color.White.copy(alpha = .14f),
+        fill = if (main) Warm else veil(.08f), pressedFill = if (main) Warm.copy(alpha = .85f) else veil(.14f),
         pressScale = .95f, label = text,
-    ) { Txt(text, if (main) Color(0xFF2A211B) else Page.INK, 12.sp, Modifier.padding(horizontal = 12.dp)) }
+    ) { Txt(text, if (main) Skin.onAccent else Page.ink, 12.sp, Modifier.padding(horizontal = 12.dp)) }
 }

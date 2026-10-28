@@ -89,6 +89,21 @@ object Skin {
     fun well(a: Float): Color = if (light) Color(0f, 0f, 0f, a * .18f) else Color(0f, 0f, 0f, a)
     /** 卡片里的玻璃块。 */
     fun tint(a: Float): Color = when (id) { DARK -> Color(0xFF262626).copy(alpha = (a + .5f).coerceAtMost(1f)); LIGHT, GRAD -> Color.White.copy(alpha = (a + .45f).coerceAtMost(1f)); else -> rgba(30, 34, 42, a) }
+    /**
+     * 弹层下面的遮罩（第 331 版）：深色主题压黑；白色压一层淡黑；渐变压一层带那套色调的深字色，不发脏发灰。
+     * [a] 照原来深色时的不透明度给。
+     */
+    fun scrim(a: Float): Color = when (id) { LIGHT -> Color.Black.copy(alpha = a * .4f); GRAD -> g.ink.copy(alpha = a * .45f); else -> rgba(6, 9, 14, a) }
+    /** 长按菜单、弹出菜单、小面板的底。 */
+    val pop: Color get() = when (id) { DARK -> Color(0xFF2A2A2C); LIGHT -> Color.White; GRAD -> g.pop; else -> rgba(42, 44, 49, .98f) }
+    /** 底下冒出来的提示条：深色主题是浅一点的灰底；浅色主题反过来，用深字色做底、浅字。 */
+    val toast: Color get() = if (light) ink.copy(alpha = .96f) else rgba(47, 49, 54, .97f)
+    val toastInk: Color get() = if (light) Color(0xFFFAF8F4) else Color(0xFFFAF5EE)
+    /** 点缀色实底按钮上的字：杏色上是深棕；渐变上是那套的深字色。 */
+    val onAccent: Color get() = if (grad) g.ink else Color(0xFF2A211B)
+    /** 聊天里卡片（抖音、网盘、Telegram 长条）的底：深色主题深色玻璃，浅色主题白色玻璃。 */
+    fun cardFill(a: Float): Color = if (light) Color.White.copy(alpha = (a * .7f).coerceAtMost(.9f)) else rgba(30, 33, 42, a)
+
     /** 聊天页压在背景画面上的那层暗：没有背景画面时不要。 */
     fun shade(a: Float): Color = if (frost) rgba(14, 17, 23, a) else Color.Transparent
 }
@@ -113,7 +128,7 @@ object Grad {
         Pal("08", "黄紫迷人眼", 0xFFFFFFD0, "Cream", 0xFFD2CDFF, "Lavender", 0xFF9C98D8),
     )
 
-    class Now(val a: Color, val b: Color, val k: Color, val ink: Color, val muted: Color, val mid: Color, val sheet: Color)
+    class Now(val a: Color, val b: Color, val k: Color, val ink: Color, val muted: Color, val mid: Color, val sheet: Color, val pop: Color)
 
     private class Lab(val l: Float, val a: Float, val b: Float)
     private val labs = all.map { Triple(lab(it.a), lab(it.b), lab(it.k)) }
@@ -132,6 +147,7 @@ object Grad {
             muted = rgb(Lab(.54f, k.a * .7f, k.b * .7f)),
             mid = rgb(mid),
             sheet = rgb(mix(mid, Lab(1f, 0f, 0f), .55f)),
+            pop = rgb(mix(mid, Lab(1f, 0f, 0f), .8f)),
         )
         lastPos = pos; last = n
         return n

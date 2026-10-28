@@ -48,7 +48,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 internal val skillWarm: Color get() = Skin.accent
-internal val skillInk = Color(0xFF2A211B)
+internal val skillInk: Color get() = Skin.onAccent
 internal val skillBad = Color(0xFFD79A94)
 private val tints = listOf(0xFFE9B48E, 0xFFA9B6CC, 0xFF9FB79A, 0xFFC9BC97, 0xFFB3A6D9, 0xFFD98A6A)
 internal val skillIcon = Ic("M6 4.5h9l3 3v12H6ZM15 4.5v3h3M12 10.2l.9 1.9 2 .3-1.45 1.4.35 2-1.8-.95-1.8.95.35-2-1.45-1.4 2-.3Z")
@@ -118,7 +118,7 @@ internal fun SkillsPage(onBack: () -> Unit, onOpen: (String) -> Unit) {
         }
         SkillUndo.last?.let { (s, i, pid) ->
             LaunchedEffect(s) { delay(4500); if (SkillUndo.last?.first == s) SkillUndo.last = null }
-            Row(Modifier.padding(top = 12.dp).fillMaxWidth().background(Color(0xFF3A404C), RoundedCornerShape(14.dp)).padding(start = 14.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.padding(top = 12.dp).fillMaxWidth().background(Skin.pop, RoundedCornerShape(14.dp)).padding(start = 14.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 Txt("移除了「${s.title}」", Page.ink, 13.sp, Modifier.weight(1f), maxLines = 1)
                 PressSurface({ Skills.restore(s, i, pid); SkillUndo.last = null }, fill = Color.Transparent, pressScale = .94f, label = "撤销") {
                     Txt("撤销", skillWarm, 13.sp, Modifier.padding(horizontal = 12.dp, vertical = 11.dp))
@@ -187,7 +187,7 @@ private fun AddSkill(onAdded: () -> Unit) {
 private fun HitRow(c: SkillCand, i: Int, onAdded: () -> Unit) {
     val rise = remember { Animatable(0f) }
     LaunchedEffect(Unit) { delay(50L * i); rise.animateTo(1f, tween(340, easing = Curves.decel)) }
-    Row(Modifier.graphicsLayer { alpha = rise.value; translationY = (1f - rise.value) * 8.dp.toPx() }.fillMaxWidth().background(Color.White.copy(alpha = .035f), RoundedCornerShape(12.dp)).padding(horizontal = 8.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.graphicsLayer { alpha = rise.value; translationY = (1f - rise.value) * 8.dp.toPx() }.fillMaxWidth().background(veil(.035f), RoundedCornerShape(12.dp)).padding(horizontal = 8.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
         SkillTile(c.id, c.name.ifBlank { c.id }, 30.dp)
         Spacer(Modifier.width(10.dp))
         Column(Modifier.weight(1f)) {
