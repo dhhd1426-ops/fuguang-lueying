@@ -42,7 +42,7 @@ internal fun ChatHello(compact: Boolean, store: AssistantStore, chat: ChatState)
         shown.animateTo(1f, tween(520, easing = FastOutSlowInEasing))
     }
     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(horizontal = 8.dp)) {
-        VignetteMark(if (compact) 116.dp else 128.dp, Skin.accent)
+        VignetteMark(if (compact) 116.dp else 128.dp, Skin.accent, toy = remember { Skin.toy })
         Spacer(Modifier.height(6.dp))
         val text = line.orEmpty()
         val base = if (compact) 23f else 26f

@@ -109,7 +109,7 @@ private fun WorkSlot(id: String?, draft: WorkDraft?, onWork: (String) -> Unit) {
     }
 }
 
-/** 正在写的卡：和作品卡一样的块；图标上一道光扫过，名字没出来时是一根灰条，下面写着写到多少字。 */
+/** 正在写的卡：和作品卡一样的块；图标上一道光扫过（主题里选了变形弹跳：小方块里换成弹跳），名字没出来时是一根灰条，下面写着写到多少字。 */
 @Composable
 private fun DraftCard(d: WorkDraft) {
     val t = rememberInfiniteTransition(label = "draft")
@@ -119,7 +119,9 @@ private fun DraftCard(d: WorkDraft) {
             Modifier.widthIn(max = 440.dp).fillMaxWidth().background(veil(.055f), RoundedCornerShape(16.dp)).padding(10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Box(
+            if (Skin.toy) Box(Modifier.size(56.dp).clip(RoundedCornerShape(11.dp)).background(Apricot.copy(alpha = .13f))) {
+                ToyTile(Apricot, Modifier.size(56.dp))
+            } else Box(
                 Modifier.size(56.dp).clip(RoundedCornerShape(11.dp)).background(Apricot.copy(alpha = .13f))
                     .drawWithContent {
                         drawContent()

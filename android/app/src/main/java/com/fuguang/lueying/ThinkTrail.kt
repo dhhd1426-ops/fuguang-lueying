@@ -275,16 +275,20 @@ fun ThinkRow(raw: String, steps: List<ToolStep>, live: Boolean, summary: Boolean
     val head = if (summary) items.lastOrNull { !it.placeholder }?.title.orEmpty().ifEmpty { if (!busy) thinkSummary(raw).ifEmpty { "思考过程" } else "" } else ""
     Pressable(onClick, Modifier.padding(bottom = 10.dp), label = "查看思考过程") { pressed ->
         Row(Modifier.padding(start = 2.dp, top = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+            // 主题里选了变形弹跳：想着的时候左边一格换成弹跳（三点不画），字跟着落地敲亮；想完照旧是时钟
+            val toy = Skin.toy && live
+            if (toy) { ToySlot(); Spacer(Modifier.width(8.dp)) }
             when {
-                summary && head.isEmpty() -> ThinkingDots(Page.muted, 14.sp, Modifier.weight(1f, fill = false))
-                summary && busy -> ThinkingMotion(head, Modifier.weight(1f, fill = false), size = 14.sp, showDots = false)
+                summary && head.isEmpty() -> if (toy) ThinkingMotion("Thinking…", Modifier.weight(1f, fill = false), size = 14.sp, showDots = false, strike = true)
+                    else ThinkingDots(Page.muted, 14.sp, Modifier.weight(1f, fill = false))
+                summary && busy -> ThinkingMotion(head, Modifier.weight(1f, fill = false), size = 14.sp, showDots = false, strike = toy)
                 summary -> {
-                    SvgIcon(Trail.clock, Page.muted, 16.dp, stroke = 1.5f); Spacer(Modifier.width(8.dp))
+                    ThinkClock(Page.muted); Spacer(Modifier.width(8.dp))
                     Txt(head, if (pressed) Page.ink else Page.muted, 14.sp, Modifier.weight(1f, fill = false), maxLines = 1)
                 }
-                live -> ThinkingMotion(latestSentence(raw, 24).ifEmpty { steps.lastOrNull()?.title.orEmpty() }, Modifier.weight(1f, fill = false), size = 14.sp)
+                live -> ThinkingMotion(latestSentence(raw, 24).ifEmpty { steps.lastOrNull()?.title.orEmpty() }, Modifier.weight(1f, fill = false), size = 14.sp, showDots = !toy, strike = toy)
                 else -> {
-                    SvgIcon(Trail.clock, Page.muted, 16.dp, stroke = 1.5f); Spacer(Modifier.width(8.dp))
+                    ThinkClock(Page.muted); Spacer(Modifier.width(8.dp))
                     // 没想、只用了工具（或只想起了上次）：写最后一步的标题
                     val t = if (thinkMs >= 100) "思考了 " + "%.1f".format(thinkMs / 1000f) + " 秒" else if (raw.isBlank()) steps.lastOrNull()?.title.orEmpty().ifEmpty { "思考过程" } else "思考过程"
                     Txt(t, if (pressed) Page.ink else Page.muted, 14.sp, Modifier.weight(1f, fill = false), maxLines = 1)

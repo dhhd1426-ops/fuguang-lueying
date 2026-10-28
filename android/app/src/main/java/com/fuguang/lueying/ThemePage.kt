@@ -19,6 +19,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -28,6 +29,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -67,10 +69,60 @@ internal fun ThemePage(onBack: () -> Unit) {
             exit = androidx.compose.animation.shrinkVertically(androidx.compose.animation.core.tween(240, easing = Curves.accel)) + androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(140)),
         ) { GradPalettes() }
         Txt("侧栏、悬浮卡片和聊天页跟着换。暗黑优雅、白色、渐变不放背景画面；看视频、浏览网页的地方一直是深色。", Page.muted.copy(alpha = .8f), 11.5.sp, Modifier.padding(horizontal = 8.dp, vertical = 8.dp), lineHeight = 19.sp)
+        ThinkSection()
         SwitchSection()
         CardSection()
         IconSection()
         Spacer(Modifier.height(8.dp))
+    }
+}
+
+/** 思考动效（第 338 版）：三点换位（默认）/ 变形弹跳，一行一张会动的小样，点了当场换。 */
+@Composable
+private fun ThinkSection() {
+    val haptic = LocalHapticFeedback.current
+    Txt("思考动效", Page.muted, 12.sp, Modifier.padding(start = 8.dp, top = 14.dp, bottom = 10.dp), spacing = ls(1f, 12f))
+    listOf(false to ("三点换位" to "三个点在正三角、倒三角间换位"), true to ("变形弹跳" to "方块、三角、圆，抛起落下")).forEach { (toy, t) ->
+        val on = Skin.toy == toy
+        PressSurface(
+            { if (!on) { Skin.useToy(toy); haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove) } },
+            Modifier.fillMaxWidth().padding(bottom = 7.dp), shape = RoundedCornerShape(16.dp), pressScale = .985f, label = t.first,
+        ) {
+            Row(Modifier.fillMaxWidth().padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                ThinkMini(toy, on)
+                Spacer(Modifier.width(14.dp))
+                Column(Modifier.weight(1f)) {
+                    Txt(t.first, Page.ink, 15.sp, maxLines = 1)
+                    Spacer(Modifier.height(3.dp))
+                    Txt(t.second, Page.muted, 12.sp, maxLines = 1)
+                }
+                val k by animateFloatAsState(if (on) 1f else 0f, spring(.5f, 500f), label = "tmk")
+                if (k > .01f) Box(Modifier.scale(k)) { DrawnCheck(SideWarm, 18.dp) }
+                Spacer(Modifier.width(6.dp))
+            }
+        }
+    }
+    Txt("思考行、作品卡片「正在写」、新对话 Vignette 的 i 点一起换；想完还是时钟。", Page.muted.copy(alpha = .8f), 11.5.sp, Modifier.padding(horizontal = 8.dp, vertical = 8.dp), lineHeight = 19.sp)
+}
+
+/** 两张会动的小样（深底）：三点照 ThinkingMotion 换位；变形弹跳缩到 0.17 倍，落地点在下面三分之一。 */
+@Composable
+private fun ThinkMini(toy: Boolean, on: Boolean) {
+    val ring by animateFloatAsState(if (on) 1f else 0f, label = "tring")
+    val still = Toy.still()
+    val now = Toy.clock(!still)
+    val path = remember { Path() }
+    Canvas(Modifier.size(60.dp).clip(RoundedCornerShape(13.dp))) {
+        drawRect(Color(0xFF1C1D22))
+        val u = size.width / 60f
+        if (toy) with(Toy) {
+            val f = .17f * u
+            if (still) rest(path, 30 * u, 47 * u, f, Color(0xFFF2EFF8)) else bounce(path, now.value, 30 * u, 47 * u, f, 1f, Color(0xFFF2EFF8))
+        } else for (d in 1..3) {
+            val p = Tk.pos(if (still) 0L else now.value, d)
+            drawCircle(ToyInk, 2.7f * 1.55f * u, Offset(30 * u + p.x * 1.55f * u, 30 * u + p.y * 1.55f * u))
+        }
+        if (ring > 0f) drawRoundRect(SideWarm.copy(alpha = ring), size = size, cornerRadius = CornerRadius(13.dp.toPx()), style = Stroke(2.5.dp.toPx()))
     }
 }
 

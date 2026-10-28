@@ -41,6 +41,7 @@ object Skin {
         prefs = p; id = p.string(KEY)?.takeIf { s -> options.any { it.id == s } } ?: FROST; rail = p.string(RAIL) == "1"
         pal = (p.string(PAL)?.toIntOrNull() ?: 0).coerceIn(0, Grad.all.lastIndex).toFloat()
         wholeCards = p.string(CARDS) != "float"
+        toy = p.string(TOY) == "toy"
     }
 
     /** 渐变的配色位置：0..7，滑动时在两套中间连续变；停稳才存（[savePal]）。 */
@@ -57,6 +58,11 @@ object Skin {
     var wholeCards by mutableStateOf(true)
     private const val CARDS = "card-mode"
     fun useWhole(v: Boolean) { wholeCards = v; prefs?.putString(CARDS, if (v) "full" else "float") }
+
+    /** 思考动效（第 338 版）：false 三点换位（默认，原来的）；true 变形弹跳（ToyMotion.kt）——思考行、作品卡片「正在写」、问候页 i 点一起换。侧栏的小橙点不变。 */
+    var toy by mutableStateOf(false)
+    private const val TOY = "think-motion"
+    fun useToy(v: Boolean) { toy = v; prefs?.putString(TOY, if (v) "toy" else "dots") }
     fun set(v: String) { id = v; prefs?.putString(KEY, v) }
     fun name(v: String = id) = options.firstOrNull { it.id == v }?.name.orEmpty() +
         (if (v == GRAD) " · " + Grad.all[Math.round(pal).coerceIn(0, Grad.all.lastIndex)].title else "")
