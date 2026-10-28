@@ -19,6 +19,8 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
@@ -62,6 +64,7 @@ open class FloatCard {
 
 internal const val RISE_MS = 570f
 private val arrowOut = Ic("M7 17L17 7M9 7h8v8")
+private val backChevron = Ic("M14.5 6l-6 6 6 6")
 
 
 /** 一项按顺序浮出：开卡后 70ms 起，每项晚 40ms，各走 340ms。 */
@@ -76,6 +79,9 @@ internal fun Modifier.mineRise(i: Int, t: Float) = graphicsLayer {
  * 所有悬浮卡片共用的样子：同一个位置（屏幕视觉中心，中心在 47% 高处）、同一个尺寸（宽 min(340, 屏宽−40)，高 min(540, 屏高−120)），
  * 从 from 弹簧长出、原路缩回。卡片里一页页推进（往深处新页从右进，往回从左进）；右上角 ↗ 随时展开成整页，转成 ↙ 再点缩回；
  * 整页时关掉先缩回卡片再收走。返回键：整页先缩回 → onBack 退一层 → 关卡片。
+ * 「主题 → 卡片样式」选整页（默认，[Skin.wholeCards]，原型 7DKVNLVdHQSNjqSBmQ1LMH 第 2 版）：像手机里普通的页面，
+ * 从右边推进来铺满（380ms 减速），往右退出去关掉（260ms 加速）；第 1 级左上角 ‹ 关上，往里的每一级自己的 ‹ 退一级，
+ * 返回键、侧滑返回也是一级一级退，退到头才关。没有 ✕、没有 ↗。
  */
 @Composable
 fun CenterCardLayer(
@@ -91,19 +97,22 @@ fun CenterCardLayer(
     val f = remember { Animatable(0f) }
     val rise = remember { Animatable(0f) }
     val haptic = LocalHapticFeedback.current
+    val whole = Skin.wholeCards
     LaunchedEffect(card.open) {
         if (card.open) {
             haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
             launch { rise.snapTo(0f); rise.animateTo(1f, tween(RISE_MS.toInt(), easing = LinearEasing)) }
-            p.animateTo(1f, spring(dampingRatio = .7f, stiffness = 380f))
+            if (Skin.wholeCards) { f.snapTo(1f); p.snapTo(0f); p.animateTo(1f, tween(380, easing = Curves.decel)) }
+            else { f.snapTo(0f); p.animateTo(1f, spring(dampingRatio = .7f, stiffness = 380f)) }
         } else {
-            if (f.value > 0f) { card.full = false; f.animateTo(0f, tween(440, easing = Curves.standard)) }
-            p.animateTo(0f, tween(200, easing = Curves.accel))
+            if (!Skin.wholeCards && f.value > 0f) { card.full = false; f.animateTo(0f, tween(440, easing = Curves.standard)) }
+            p.animateTo(0f, tween(if (Skin.wholeCards) 260 else 200, easing = Curves.accel))
+            card.full = false
             onClosed()
         }
     }
     LaunchedEffect(card.full) {
-        if (card.open) f.animateTo(if (card.full) 1f else 0f, tween(440, easing = Curves.standard))
+        if (card.open && !Skin.wholeCards) f.animateTo(if (card.full) 1f else 0f, tween(440, easing = Curves.standard))
     }
     BackHandler(enabled = card.open) {
         when {
@@ -122,7 +131,7 @@ fun CenterCardLayer(
         Box(
             Modifier.fillMaxSize()
                 .graphicsLayer { alpha = pv.coerceIn(0f, 1f) }
-                .background(Skin.scrim(.55f))
+                .background(if (whole) Skin.scrim(.3f) else Skin.scrim(.55f))
                 .pointerInput(Unit) { detectTapGestures { card.open = false } },
         )
         val cardW = min(340.dp, maxWidth - 40.dp)
@@ -134,9 +143,14 @@ fun CenterCardLayer(
         Box(
             Modifier.offset(x, y).size(lerp(cardW, maxWidth, fv), lerp(cardH, maxHeight, fv))
                 .graphicsLayer {
+                    if (whole) {
+                        // 整页：从右推进来，往右退出去
+                        translationX = (1f - pv) * size.width
+                    } else {
                     val s = .16f + .84f * pv
                     scaleX = s; scaleY = s
                     alpha = (pv * 1.8f).coerceIn(0f, 1f)
+                    }
                     val from = card.from
                     transformOrigin = if (from.isSpecified && size.width > 0f && size.height > 0f)
                         TransformOrigin((from.x - x.toPx()) / size.width, (from.y - y.toPx()) / size.height)
@@ -165,10 +179,20 @@ fun CenterCardLayer(
                 contentAlignment = Alignment.TopCenter,
                 label = "cardPage",
             ) { s ->
-                Box(pad, contentAlignment = Alignment.TopCenter) { page(s, rise.value) }
+                Box(pad, contentAlignment = Alignment.TopCenter) {
+                    if (whole && depth(s) == 0) {
+                        // 整页的第 1 级：左上角 ‹ 关上，内容往下让出这一行
+                        Column(Modifier.fillMaxSize()) {
+                            PressSurface({ card.open = false }, Modifier.size(44.dp).offset(x = (-8).dp), shape = CircleShape, fill = Color.Transparent, pressScale = .9f, label = "返回") {
+                                SvgIcon(backChevron, Page.ink, 20.dp, stroke = 1.6f, modifier = Modifier.align(Alignment.Center))
+                            }
+                            Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.TopCenter) { page(s, rise.value) }
+                        }
+                    } else page(s, rise.value)
+                }
             }
-            // ↗ 钉在右上角，换页也不动
-            PressSurface(
+            // ↗ 钉在右上角，换页也不动；整页样式下不要
+            if (!whole) PressSurface(
                 { card.full = !card.full },
                 Modifier.align(Alignment.TopEnd).padding(top = lerp(4.dp, statusTop + 8.dp, fv), end = 4.dp).size(44.dp),
                 shape = CircleShape, fill = Color.Transparent, pressScale = .9f,

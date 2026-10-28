@@ -68,6 +68,7 @@ internal fun ThemePage(onBack: () -> Unit) {
         ) { GradPalettes() }
         Txt("侧栏、悬浮卡片和聊天页跟着换。暗黑优雅、白色、渐变不放背景画面；看视频、浏览网页的地方一直是深色。", Page.muted.copy(alpha = .8f), 11.5.sp, Modifier.padding(horizontal = 8.dp, vertical = 8.dp), lineHeight = 19.sp)
         SwitchSection()
+        CardSection()
         IconSection()
         Spacer(Modifier.height(8.dp))
     }
@@ -99,6 +100,53 @@ private fun SwitchSection() {
         }
     }
     Txt("只改侧栏顶上换助理的样子，别的都不变。", Page.muted.copy(alpha = .8f), 11.5.sp, Modifier.padding(horizontal = 8.dp, vertical = 8.dp), lineHeight = 19.sp)
+}
+
+/** 卡片样式（第 331 版）：整页（默认）/ 悬浮卡片，一行一张小样，点了当场换。 */
+@Composable
+private fun CardSection() {
+    val haptic = LocalHapticFeedback.current
+    Txt("卡片样式", Page.muted, 12.sp, Modifier.padding(start = 8.dp, top = 14.dp, bottom = 10.dp), spacing = ls(1f, 12f))
+    listOf(true to ("整页" to "像手机页面，‹ 一级一级往回退"), false to ("悬浮卡片" to "浮在中间，↗ 能临时展开")).forEach { (whole, t) ->
+        val on = Skin.wholeCards == whole
+        PressSurface(
+            { if (!on) { Skin.useWhole(whole); haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove) } },
+            Modifier.fillMaxWidth().padding(bottom = 7.dp), shape = RoundedCornerShape(16.dp), pressScale = .985f, label = t.first,
+        ) {
+            Row(Modifier.fillMaxWidth().padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                CardMini(whole, on)
+                Spacer(Modifier.width(14.dp))
+                Column(Modifier.weight(1f)) {
+                    Txt(t.first, Page.ink, 15.sp, maxLines = 1)
+                    Spacer(Modifier.height(3.dp))
+                    Txt(t.second, Page.muted, 12.sp, maxLines = 1)
+                }
+                val k by animateFloatAsState(if (on) 1f else 0f, spring(.5f, 500f), label = "ck")
+                if (k > .01f) Box(Modifier.scale(k)) { DrawnCheck(SideWarm, 18.dp) }
+                Spacer(Modifier.width(6.dp))
+            }
+        }
+    }
+}
+
+/** 整页：一整块铺满、顶上一道字；悬浮：深底中间一张小卡。 */
+@Composable
+private fun CardMini(whole: Boolean, on: Boolean) {
+    val ring by animateFloatAsState(if (on) 1f else 0f, label = "cring")
+    Canvas(Modifier.size(60.dp).clip(RoundedCornerShape(13.dp))) {
+        val u = size.width / 60f
+        drawRect(Color(0xFF1C1D22))
+        if (whole) {
+            drawRect(Color(0xFF34363E))
+            drawRoundRect(Color(0xFF8A8D97), Offset(8 * u, 10 * u), Size(26 * u, 4 * u), CornerRadius(2 * u))
+            listOf(20f, 30f, 40f).forEach { y -> drawRoundRect(Color(0xFF4A4D57), Offset(8 * u, y * u), Size(44 * u, 6 * u), CornerRadius(3 * u)) }
+        } else {
+            drawRoundRect(Color(0xFF34363E), Offset(9 * u, 11 * u), Size(42 * u, 38 * u), CornerRadius(7 * u))
+            drawRoundRect(Color(0xFF8A8D97), Offset(14 * u, 16 * u), Size(18 * u, 3 * u), CornerRadius(1.5f * u))
+            listOf(24f, 32f, 40f).forEach { y -> drawRoundRect(Color(0xFF4A4D57), Offset(14 * u, y * u), Size(32 * u, 4 * u), CornerRadius(2 * u)) }
+        }
+        if (ring > 0f) drawRoundRect(SideWarm.copy(alpha = ring), size = size, cornerRadius = CornerRadius(13.dp.toPx()), style = Stroke(2.5.dp.toPx()))
+    }
 }
 
 /** 两张小样：连体卡片是一块带三行的色块；竖排是左边三颗头像、右边几道字。 */
