@@ -1,0 +1,55 @@
+[1s] Tracker 列表 80 个
+[19s] DHT 节点 66
+[20s] 测试种子 ubuntu-24.04.3-live-server-amd64.iso.torrent  a1dfefec1a9dd7fa8a041ebeeea271db55126d2f
+[22s] 磁力拿种子信息：2 秒，1 个文件，3150 MB
+[27s] 状态 DOWNLOADING · 连上 14 人（种子 14）· 知道 596 人 · 可去连 544 | Tracker 列表 80 个（在线 99） | DHT 232 节点 · 外网能连进来：不能 · Tracker 能用 78/80
+[32s] 状态 DOWNLOADING · 连上 27 人（种子 16）· 知道 676 人 · 可去连 589 | Tracker 列表 80 个（在线 99） | DHT 268 节点 · 外网能连进来：不能 · Tracker 能用 74/80
+[37s] 状态 DOWNLOADING · 连上 19 人（种子 17）· 知道 676 人 · 可去连 573 | Tracker 列表 80 个（在线 99） | DHT 266 节点 · 外网能连进来：不能 · Tracker 能用 70/80
+[42s] 状态 DOWNLOADING · 连上 27 人（种子 20）· 知道 677 人 · 可去连 527 | Tracker 列表 80 个（在线 99） | DHT 270 节点 · 外网能连进来：不能 · Tracker 能用 68/80
+[47s] 状态 DOWNLOADING · 连上 37 人（种子 20）· 知道 677 人 · 可去连 513 | Tracker 列表 80 个（在线 99） | DHT 272 节点 · 外网能连进来：不能 · Tracker 能用 67/80
+[52s] 状态 DOWNLOADING · 连上 49 人（种子 20）· 知道 677 人 · 可去连 503 | Tracker 列表 80 个（在线 99） | DHT 273 节点 · 外网能连进来：不能 · Tracker 能用 66/80
+[57s] 状态 DOWNLOADING · 连上 43 人（种子 20）· 知道 677 人 · 可去连 528 | Tracker 列表 80 个（在线 99） | DHT 274 节点 · 外网能连进来：不能 · Tracker 能用 66/80
+[62s] 状态 DOWNLOADING · 连上 35 人（种子 20）· 知道 677 人 · 可去连 531 | Tracker 列表 80 个（在线 99） | DHT 275 节点 · 外网能连进来：不能 · Tracker 能用 65/80
+[67s] 状态 DOWNLOADING · 连上 45 人（种子 20）· 知道 677 人 · 可去连 503 | Tracker 列表 80 个（在线 99） | DHT 275 节点 · 外网能连进来：不能 · Tracker 能用 64/80
+[72s] 状态 DOWNLOADING · 连上 44 人（种子 20）· 知道 677 人 · 可去连 509 | Tracker 列表 80 个（在线 99） | DHT 279 节点 · 外网能连进来：不能 · Tracker 能用 64/80
+[77s] 状态 DOWNLOADING · 连上 37 人（种子 20）· 知道 677 人 · 可去连 519 | Tracker 列表 80 个（在线 99） | DHT 280 节点 · 外网能连进来：不能 · Tracker 能用 64/80
+[82s] 状态 DOWNLOADING · 连上 36 人（种子 36）· 知道 680 人 · 可去连 539 | Tracker 列表 80 个（在线 99） | DHT 283 节点 · 外网能连进来：不能 · Tracker 能用 64/80
+状态 DOWNLOADING · 连上 36 人（种子 36）· 知道 680 人 · 可去连 539
+Tracker 列表 80 个（在线 99）
+DHT 283 节点 · 外网能连进来：不能 · Tracker 能用 64/80
+下 1533 KB/s · 收到 280683 KB · 核对过 278272 KB · 丢弃 0 KB
+  · qBittorrent/5.1.2 STANDARD_BITTORRENT 对方有 100% ↓1115 KB/s 收过 83174 KB
+  · qBittorrent 4.6.7 STANDARD_BITTORRENT 对方有 100% ↓283 KB/s 收过 4224 KB
+  · qBittorrent/5.2.3 STANDARD_BITTORRENT 对方有 100% ↓79 KB/s 收过 2368 KB
+  · qBittorrent/5.3.0 STANDARD_BITTORRENT 对方有 100% ↓52 KB/s 收过 29388 KB
+  · qBittorrent/5.1.0 STANDARD_BITTORRENT 对方有 100% ↓39 KB/s 收过 1248 KB
+  · qBittorrent/5.1.4 STANDARD_BITTORRENT 对方有 100% ↓14 KB/s 收过 36483 KB
+  · qBittorrent/5.1.0 STANDARD_BITTORRENT 对方有 100% ↓10 KB/s 收过 80138 KB
+  · qBittorrent/5.1.2 STANDARD_BITTORRENT 对方有 100% ↓10 KB/s 收过 10860 KB
+  × 1337.abcvg.info:80：失败 2 次
+  × bt1.archive.org:6969：失败 2 次
+  × bt2.archive.org:6969：失败 2 次
+  × nyaa.tracker.wf:7777：失败 2 次
+  × nyaa.tracker.wf:7777：info hash is not authorized with this tracker
+  × tracker.dhitechnical.com:6969：失败 2 次
+第一个字节在第 23 秒到
+[82s] 边下边看 开头 2 MB：HTTP 206，读到 2048 KB，用了 0 秒
+[87s] 边下边看 结尾 1 MB：HTTP 206，读到 1024 KB，用了 4 秒
+状态 DOWNLOADING · 连上 42 人（种子 37）· 知道 685 人 · 可去连 574
+Tracker 列表 80 个（在线 99）
+DHT 285 节点 · 外网能连进来：不能 · Tracker 能用 63/80
+下 6511 KB/s · 收到 322875 KB · 核对过 307620 KB · 丢弃 0 KB
+  · qBittorrent/5.1.0 STANDARD_BITTORRENT 对方有 100% ↓1895 KB/s 收过 91136 KB
+  · qBittorrent 4.6.7 STANDARD_BITTORRENT 对方有 100% ↓794 KB/s 收过 10544 KB
+  · qBittorrent/5.2.3 STANDARD_BITTORRENT 对方有 100% ↓599 KB/s 收过 6990 KB
+  · qBittorrent/5.1.4 STANDARD_BITTORRENT 对方有 100% ↓514 KB/s 收过 25488 KB
+  · qBittorrent/5.1.2 STANDARD_BITTORRENT 对方有 100% ↓503 KB/s 收过 84192 KB
+  · qBittorrent/5.3.0 STANDARD_BITTORRENT 对方有 100% ↓453 KB/s 收过 32464 KB
+  · qBittorrent/5.1.0 STANDARD_BITTORRENT 对方有 100% ↓332 KB/s 收过 3531 KB
+  · qBittorrent/5.1.4 STANDARD_BITTORRENT 对方有 100% ↓225 KB/s 收过 37968 KB
+  × 1337.abcvg.info:80：失败 2 次
+  × bt1.archive.org:6969：失败 2 次
+  × bt2.archive.org:6969：失败 2 次
+  × nyaa.tracker.wf:7777：失败 2 次
+  × nyaa.tracker.wf:7777：info hash is not authorized with this tracker
+  × tracker.dhitechnical.com:6969：失败 2 次
