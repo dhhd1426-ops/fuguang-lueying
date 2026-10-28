@@ -793,8 +793,7 @@ private fun Conversation(
                     val steps = chat.liveSteps.toList()
                     val trailLive = chat.partial.isEmpty() || steps.any { !it.done }
                     if (chat.thinkText.isBlank() && steps.isEmpty()) {
-                        // 没开深度思考也没用工具：只有三点（主题里选了变形弹跳就是弹跳）
-                        if (chat.partial.isEmpty()) { if (Skin.toy) ToySlot(modifier = Modifier.padding(start = 2.dp, top = 6.dp)) else ThinkingMotion("", Modifier.padding(start = 2.dp, top = 6.dp)) }
+                        if (chat.partial.isEmpty()) ThinkingMotion("", Modifier.padding(start = 2.dp, top = 6.dp))   // 没开深度思考也没用工具：只有三点
                     } else ThinkRow(chat.thinkText, steps, trailLive, summary = ThinkTidy.summaryStyle(chat.turnPid.ifEmpty { store.activeProvider }), fetch = true) { onThink(-1) }
                     SkillAskHost(compact)
                     ReplyFlow(chat.partial.take(ceil(chat.shown).toInt()), chat.pendingWorks.toList(), chat.pendingWorkAt.toList(), chat.workDraft, chat.shown < chat.partial.length + 1, onWork) { t, f -> Reply(t, compact, f) }

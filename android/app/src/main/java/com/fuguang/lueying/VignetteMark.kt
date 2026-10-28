@@ -53,7 +53,7 @@ internal object InkPlan {
             Group(g, len, st, dur)
         }
     }
-    /** i 的点那一笔（变形弹跳时不写它，换成掉下来的形状）。 */
+    /** i 的点那一笔（不写它，换成掉下来的变形弹跳，见 VignetteMark）。 */
     val dot: Int by lazy { VignetteInk.STROKES.indexOfFirst { it.d.startsWith("M751 354") } }
     /** 整个词写完要多久（毫秒）。 */
     val total: Float by lazy { groups.last().let { it.start + it.dur } }
@@ -77,13 +77,13 @@ internal object InkPlan {
  * 系统关了动画（动画时长 0）时直接整个出现。
  */
 @Composable
-internal fun VignetteMark(width: Dp, color: Color, modifier: Modifier = Modifier, toy: Boolean = false) {
+internal fun VignetteMark(width: Dp, color: Color, modifier: Modifier = Modifier) {
     val clock = remember { Animatable(0f) }
-    // 变形弹跳（第 338 版）：i 的点不写，写完后从上方掉下一个形状，弹三下变圆、缩成那个点（ToyMotion.kt Toy.drop）
+    // 变形弹跳（第 339 版起）：i 的点不写，写完后从上方掉下一个形状，弹三下变圆、缩成那个点（ToyMotion.kt Toy.drop）
     val fall = remember { Animatable(0f) }
     LaunchedEffect(Unit) {
         clock.animateTo(InkPlan.total, tween(InkPlan.total.toInt(), easing = LinearEasing))
-        if (toy) fall.animateTo(Toy.dropTotal, tween(Toy.dropTotal.toInt(), easing = LinearEasing))
+        fall.animateTo(Toy.dropTotal, tween(Toy.dropTotal.toInt(), easing = LinearEasing))
     }
     val toyPath = remember { Path() }
     val measures = remember { InkPlan.paths.map { p -> PathMeasure().apply { setPath(p, false) } } }
@@ -98,7 +98,7 @@ internal fun VignetteMark(width: Dp, color: Color, modifier: Modifier = Modifier
         drawContext.canvas.saveLayer(Rect(Offset.Zero, size), paint)
         scale(k, k, pivot = Offset.Zero) {
             VignetteInk.STROKES.forEachIndexed { i, s ->
-                if (toy && i == InkPlan.dot) return@forEachIndexed
+                if (i == InkPlan.dot) return@forEachIndexed
                 val u = done[i]
                 if (u <= 0f) return@forEachIndexed
                 val path = if (u >= InkPlan.lens[i]) InkPlan.paths[i] else {
@@ -113,6 +113,6 @@ internal fun VignetteMark(width: Dp, color: Color, modifier: Modifier = Modifier
         drawContext.canvas.restore()
         drawContext.canvas.restore()
         // 字形里 i 的点在 (742..798, 340..395) 格，中心 (770, 367.5)、半径 28 格；形状画在字外面（往上掉），不裁
-        if (toy && clock.value >= InkPlan.total) with(Toy) { drop(toyPath, fall.value, 770f * k, 367.5f * k, 28f * k, density, color) }
+        if (clock.value >= InkPlan.total) with(Toy) { drop(toyPath, fall.value, 770f * k, 367.5f * k, 28f * k, density, color) }
     }
 }
