@@ -75,7 +75,7 @@ import kotlin.math.roundToInt
  * - 侧栏长按一条对话：那一行变灰色块，菜单贴在它下面（下面放不下翻到上面），重命名 / 置顶 / 删除，不压暗。
  * 收藏和置顶是同一个标记（Conv.pinned），收藏的对话在侧栏「已置顶」里。
  * 点菜单外面、按返回都关；进 180ms 减速，出 140ms 加速。选一项先暗一下（90ms）再收起去做。
- * 重命名、删除确认是从底下升起的弹层；删了 4 秒内能撤销。都画在聊天页最上层（[ConvMenuLayer]）。
+ * 重命名、删除确认是中间弹出的卡片；删了 4 秒内能撤销。都画在聊天页最上层（[ConvMenuLayer]）。
  */
 object ConvMenu {
     /** 菜单开着的是哪段、从哪里出来。 */
@@ -231,7 +231,7 @@ internal fun ConvMenuLayer(history: ConvStore) {
                 ConvMenu.renaming = null; ConvMenu.held = null
                 if (changed) note = "改好了"
             }
-            Txt("重命名", Page.ink, 15.sp)
+            Txt("重命名", Page.ink, 16.sp)
             Spacer(Modifier.height(12.dp))
             Row(
                 Modifier.fillMaxWidth().background(Skin.well(.22f), RoundedCornerShape(14.dp)).padding(start = 14.dp, end = 4.dp),
@@ -248,21 +248,21 @@ internal fun ConvMenuLayer(history: ConvStore) {
                     SvgIcon(clearIc, Page.muted, 14.dp, stroke = 2f)
                 }
             }
-            Row(Modifier.fillMaxWidth().padding(top = 14.dp), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
-                SheetButton("取消", false) { ConvMenu.renaming = null; ConvMenu.held = null }
-                SheetButton("保存", true, enabled = v.text.isNotBlank()) { save() }
+            Row(Modifier.fillMaxWidth().padding(top = 14.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                SheetButton("取消", false, Modifier.weight(1f)) { ConvMenu.renaming = null; ConvMenu.held = null }
+                SheetButton("保存", true, Modifier.weight(1f), enabled = v.text.isNotBlank()) { save() }
             }
         }
 
         // ---------- 删除确认 ----------
         Sheet(ConvMenu.deleting != null, onDismiss = { ConvMenu.deleting = null; ConvMenu.held = null }) {
             val d = ConvMenu.deleting
-            Txt("删除这段对话？", Page.ink, 15.sp)
+            Txt("删除这段对话？", Page.ink, 16.sp)
             Spacer(Modifier.height(8.dp))
-            Txt("「${d?.title.orEmpty()}」和里面的聊天记录都会删掉。", Page.muted, 14.sp, lineHeight = 23.sp)
-            Row(Modifier.fillMaxWidth().padding(top = 14.dp), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
-                SheetButton("取消", false) { ConvMenu.deleting = null; ConvMenu.held = null }
-                SheetButton("删除", true, red = true) {
+            Txt("「${d?.title.orEmpty()}」和里面的聊天记录都会删掉。", Page.muted, 13.5.sp, lineHeight = 22.sp, align = androidx.compose.ui.text.style.TextAlign.Center)
+            Row(Modifier.fillMaxWidth().padding(top = 14.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                SheetButton("取消", false, Modifier.weight(1f)) { ConvMenu.deleting = null; ConvMenu.held = null }
+                SheetButton("删除", true, Modifier.weight(1f), red = true) {
                     val x = d ?: return@SheetButton
                     wasCurrent = Chats.current?.convId == x.id
                     history.get(x.id)?.let { undo = it }
@@ -330,34 +330,41 @@ private fun MenuItem(ic: Ic, label: String, red: Boolean, filled: Boolean, onCli
     }
 }
 
-/** 从底下升起的弹层：进 320ms 减速，出 220ms 加速；点外面、按返回都关。 */
+/**
+ * 弹出卡片（第 331 版，原型 XzZHhDoKrNXhGwYGF4hSNg 第 2 版）：重命名、删除确认在视觉中心弹出（偏上一点），键盘弹起来时停在键盘上面那块的视觉中心。
+ * 进：缩放 .94 → 1、淡入 260ms 减速；出：160ms 加速收回。点卡片外面、按返回都等于取消。
+ */
 @Composable
 private fun Sheet(open: Boolean, onDismiss: () -> Unit, content: @Composable () -> Unit) {
     val t = remember { Animatable(0f) }
-    LaunchedEffect(open) { t.animateTo(if (open) 1f else 0f, if (open) tween(320, easing = Curves.decel) else tween(220, easing = Curves.accel)) }
+    LaunchedEffect(open) { t.animateTo(if (open) 1f else 0f, if (open) tween(260, easing = Curves.decel) else tween(160, easing = Curves.accel)) }
     BackHandler(open) { onDismiss() }
     if (t.value <= 0f && !open) return
     Box(Modifier.fillMaxSize()) {
         Box(Modifier.fillMaxSize().background(Skin.scrim(.4f * t.value)).pointerInput(Unit) { detectTapGestures { onDismiss() } })
-        Column(
-            Modifier.align(Alignment.BottomCenter).fillMaxWidth().widthIn(max = 600.dp).imePadding()
-                .graphicsLayer { translationY = (1f - t.value) * size.height }
-                .background(Skin.sheet.copy(alpha = 1f), RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp))
-                .pointerInput(Unit) { detectTapGestures { } }
-                .navigationBarsPadding()
-                .padding(start = 18.dp, end = 18.dp, top = 18.dp, bottom = 18.dp),
-        ) { content() }
+        // 视觉中心：比几何正中偏上一点（卡片中心在可用高度的 42% 处），正中放会显得往下坠
+        Box(Modifier.fillMaxSize().imePadding().navigationBarsPadding().padding(horizontal = 22.dp), contentAlignment = androidx.compose.ui.BiasAlignment(0f, -.16f)) {
+            Column(
+                Modifier.widthIn(max = 340.dp).fillMaxWidth()
+                    .graphicsLayer { alpha = t.value.coerceIn(0f, 1f); val k = .94f + .06f * t.value; scaleX = k; scaleY = k }
+                    .shadow(24.dp, RoundedCornerShape(22.dp), ambientColor = Color.Black.copy(alpha = .25f), spotColor = Color.Black.copy(alpha = .25f))
+                    .background(Skin.pop, RoundedCornerShape(22.dp))
+                    .pointerInput(Unit) { detectTapGestures { } }
+                    .padding(start = 18.dp, end = 18.dp, top = 20.dp, bottom = 14.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) { content() }
+        }
     }
 }
 
 @Composable
-private fun SheetButton(text: String, main: Boolean, enabled: Boolean = true, red: Boolean = false, onClick: () -> Unit) {
+private fun SheetButton(text: String, main: Boolean, modifier: Modifier = Modifier, enabled: Boolean = true, red: Boolean = false, onClick: () -> Unit) {
     PressSurface(
-        onClick, Modifier.height(44.dp).graphicsLayer { alpha = if (enabled) 1f else .4f }, shape = RoundedCornerShape(22.dp),
-        fill = if (!main) Color.Transparent else if (red) danger else Skin.accent,
-        pressedFill = if (!main) veil(.08f) else (if (red) danger else Skin.accent).copy(alpha = .8f),
+        onClick, modifier.height(44.dp).graphicsLayer { alpha = if (enabled) 1f else .4f }, shape = RoundedCornerShape(14.dp),
+        fill = if (!main) Skin.well(.22f) else if (red) danger else Skin.accent,
+        pressedFill = if (!main) veil(.1f) else (if (red) danger else Skin.accent).copy(alpha = .8f),
         enabled = enabled, label = text,
     ) {
-        Txt(text, if (!main) Page.muted else if (Skin.light) Color.White else Skin.onAccent, 14.5.sp, Modifier.padding(horizontal = 18.dp))
+        Txt(text, if (!main) Page.ink else if (red) Color.White else Skin.onAccent, 14.5.sp)
     }
 }
