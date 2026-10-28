@@ -50,7 +50,7 @@ object Identity {
 }
 
 private val warm: Color get() = Skin.accent
-private val rose = css("#e39a8f")
+private val rose: Color get() = Skin.danger
 
 @Composable
 fun IdentityHint(draft: String, onApply: (String) -> Unit) {
@@ -59,7 +59,7 @@ fun IdentityHint(draft: String, onApply: (String) -> Unit) {
     AnimatedVisibility(hits.isNotEmpty(), enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
         Column(
             Modifier.fillMaxWidth().padding(top = 12.dp)
-                .background(rgba(227, 154, 143, .08f), RoundedCornerShape(18.dp)).padding(16.dp),
+                .background(Skin.danger.copy(alpha = .08f), RoundedCornerShape(18.dp)).padding(16.dp),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.size(6.dp).background(rose, CircleShape))

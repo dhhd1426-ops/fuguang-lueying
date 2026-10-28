@@ -99,6 +99,8 @@ object Skin {
     /** 底下冒出来的提示条：深色主题是浅一点的灰底；浅色主题反过来，用深字色做底、浅字。 */
     val toast: Color get() = if (light) ink.copy(alpha = .96f) else rgba(47, 49, 54, .97f)
     val toastInk: Color get() = if (light) Color(0xFFFAF8F4) else Color(0xFFFAF5EE)
+    /** 出错、删除这类红：深色主题是浅一点的粉红，浅色主题压深，保证看得清。 */
+    val danger: Color get() = if (light) Color(0xFFC0504A) else Color(0xFFD79A94)
     /** 点缀色实底按钮上的字：杏色上是深棕；渐变上是那套的深字色。 */
     val onAccent: Color get() = if (grad) g.ink else Color(0xFF2A211B)
     /** 聊天里卡片（抖音、网盘、Telegram 长条）的底：深色主题深色玻璃，浅色主题白色玻璃。 */

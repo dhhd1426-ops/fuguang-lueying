@@ -235,7 +235,7 @@ internal fun SearchSourcePage(id: String, onBack: () -> Unit) {
                 Modifier.size(44.dp), shape = CircleShape, fill = warm, pressedFill = warm.copy(alpha = .85f), pressScale = .92f, label = "试搜",
             ) { if (busy) LoadRing(Skin.onAccent, 18.dp) else SvgIcon(play, Skin.onAccent, 16.dp, stroke = 1.6f) }
         }
-        if (err.isNotEmpty()) Txt(err, Color(0xFFD79A94), 12.sp, Modifier.padding(start = 8.dp, top = 10.dp))
+        if (err.isNotEmpty()) Txt(err, Skin.danger, 12.sp, Modifier.padding(start = 8.dp, top = 10.dp))
         hits?.forEach { h ->
             Column(Modifier.padding(top = 6.dp).fillMaxWidth().background(CardBlock, RoundedCornerShape(14.dp)).padding(horizontal = 12.dp, vertical = 10.dp)) {
                 Txt(h.title, Page.ink, 13.5.sp, maxLines = 2)
@@ -244,7 +244,7 @@ internal fun SearchSourcePage(id: String, onBack: () -> Unit) {
             }
         }
         Pressable({ WebSearch.remove(id); onBack() }, label = "移除这一家") { pr ->
-            Txt("移除这一家", Color(0xFFD79A94).copy(alpha = if (pr) .6f else 1f), 13.sp, Modifier.padding(start = 8.dp, top = 18.dp, bottom = 8.dp))
+            Txt("移除这一家", Skin.danger.copy(alpha = if (pr) .6f else 1f), 13.sp, Modifier.padding(start = 8.dp, top = 18.dp, bottom = 8.dp))
         }
     }
 }

@@ -101,7 +101,7 @@ private val starIc = Ic(STAR)
 private val pinIc = Ic("M14.5 4l5.5 5.5-2.5.8-3.3 3.3-.6 3.9L7.5 11.4l3.9-.6 3.3-3.3zM9.5 14.5L4.5 19.5")
 private val trashIc = Ic("M4.5 7h15M9.5 7V5h5v2M6.5 7l1 12.5h9l1-12.5M10 11v5M14 11v5")
 private val clearIc = Ic("M7 7l10 10M17 7L7 17")
-private val danger get() = if (Skin.light) Color(0xFFD0564F) else Color(0xFFE8807A)
+private val danger get() = Skin.danger
 
 /** 右上角 ⋮：这段对话里有话了才出现，从新对话按钮右边让出位置；菜单开着时保持按下的底色。 */
 @Composable

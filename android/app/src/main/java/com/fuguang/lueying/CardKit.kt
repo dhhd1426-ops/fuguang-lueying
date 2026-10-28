@@ -76,7 +76,7 @@ object Curves {
 val CardWell get() = Skin.well(.26f)
 val CardBlock get() = veil(.045f)
 val CardBlockPress get() = veil(.09f)
-val CardRose = css("#e8a1a1")
+val CardRose: Color get() = Skin.danger
 private val warm: Color get() = Skin.accent
 private val warmInk: Color get() = Skin.onAccent
 

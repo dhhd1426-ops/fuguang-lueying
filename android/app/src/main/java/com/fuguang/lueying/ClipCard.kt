@@ -64,7 +64,7 @@ import kotlinx.coroutines.launch
 import androidx.compose.ui.unit.sp
 
 internal val ClipWarm: Color get() = Skin.accent
-internal val ClipBad = Color(0xFFE07A6E)
+internal val ClipBad: Color get() = Skin.danger
 private val OnWarm: Color get() = Skin.onAccent
 
 /** 挂在消息下面的抖音卡（和作品卡同一个位置）。 */

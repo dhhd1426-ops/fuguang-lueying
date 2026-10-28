@@ -278,7 +278,7 @@ private fun SideFoot(modifier: Modifier, onMine: () -> Unit, onNew: () -> Unit) 
 internal fun MenuAction(text: String, danger: Boolean = false, onClick: () -> Unit) {
     Pressable(onClick, label = text) { pressed ->
         Txt(
-            text, if (danger) Color(0xFFD79A94) else Page.ink, 12.sp,
+            text, if (danger) Skin.danger else Page.ink, 12.sp,
             Modifier.background(veil(if (pressed) .12f else .06f), RoundedCornerShape(50)).padding(horizontal = 12.dp, vertical = 6.dp),
         )
     }

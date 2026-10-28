@@ -180,7 +180,7 @@ private fun ProviderRow(store: AssistantStore, p: Provider, lift: Float, onClick
     val c = store.config(p.id)
     PressSurface(
         onClick, Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp),
-        fill = lerp(CardBlock, rgba(60, 64, 74, .97f), lift), pressedFill = CardBlockPress, pressScale = .985f, label = c.name,
+        fill = lerp(CardBlock, liftFill, lift), pressedFill = CardBlockPress, pressScale = .985f, label = c.name,
     ) {
         Row(Modifier.fillMaxWidth().padding(start = 14.dp, end = 10.dp, top = 12.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.width(36.dp)) { Txt(p.letter, Page.ink, 20.sp, family = Serif) }
@@ -202,3 +202,6 @@ private fun ProviderRow(store: AssistantStore, p: Provider, lift: Float, onClick
         }
     }
 }
+
+/** 拖起来的那一张：浅色主题是白色面板，深色主题是浅一点的灰。 */
+private val liftFill: androidx.compose.ui.graphics.Color get() = if (Skin.light) Skin.pop else androidx.compose.ui.graphics.Color(60, 64, 74).copy(alpha = .97f)
