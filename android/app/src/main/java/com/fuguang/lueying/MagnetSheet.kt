@@ -58,7 +58,7 @@ object Magnet {
     var ask by mutableStateOf<Ask?>(null)
 }
 
-private val Warm = Color(0xFFE9B48E)
+private val Warm: Color get() = Skin.accent
 private val Sheet = Color(0xFF1F232A)
 private val Rose = Color(0xFFD79A94)
 private val magnetIc = Ic("M6 4h4v8a2 2 0 0 0 4 0V4h4v8a6 6 0 0 1-12 0Z M6 8h4 M14 8h4")

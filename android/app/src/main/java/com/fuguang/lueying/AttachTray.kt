@@ -55,7 +55,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-private val Warm = css("#e9b48e")
+private val Warm: Color get() = Skin.accent
 private val FileIc = Ic("M7 3.5h7l4 4V20.5H7zM14 3.5v4h4")
 
 /** 加号三颗球接到系统：0 照片（系统相册，不要权限）、1 拍照（系统相机）、2 文件（系统选文件）。选好的存进来排进输入框。 */

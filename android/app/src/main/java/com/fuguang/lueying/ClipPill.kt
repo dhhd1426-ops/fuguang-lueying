@@ -50,7 +50,7 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-private val Warm = ClipWarm
+private val Warm: Color get() = ClipWarm
 private val Bad = ClipBad
 
 /**

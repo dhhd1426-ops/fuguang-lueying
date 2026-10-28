@@ -1,5 +1,6 @@
 package com.fuguang.lueying
 
+import androidx.compose.ui.graphics.Color
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -48,7 +49,7 @@ object Identity {
     }
 }
 
-private val warm = css("#e9b48e")
+private val warm: Color get() = Skin.accent
 private val rose = css("#e39a8f")
 
 @Composable

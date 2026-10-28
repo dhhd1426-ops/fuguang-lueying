@@ -65,7 +65,7 @@ import androidx.compose.ui.window.PopupProperties
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-private val warm = Color(0xFFE9B48E)
+private val warm: Color get() = Skin.accent
 private val bad = Color(0xFFD79A94)
 private val stripFill = Color(0xFF323844)
 private val down = Ic("M12 4v10M8 10.5l4 4 4-4M5 16.5v2.5h14v-2.5")

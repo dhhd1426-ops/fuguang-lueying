@@ -93,6 +93,22 @@ class ConvStore(private val prefs: Prefs) {
         persist()
     }
 
+    /** 改名：空的不改。 */
+    fun rename(id: String, title: String) {
+        val t = title.trim().take(40).ifEmpty { return }
+        val i = all.indexOfFirst { it.id == id }
+        if (i < 0 || all[i].title == t) return
+        all[i] = all[i].copy(title = t)
+        persist()
+    }
+
+    /** 删掉后撤销：原样放回去。 */
+    fun restore(c: Conv) {
+        if (all.any { it.id == c.id }) return
+        all.add(0, c)
+        persist()
+    }
+
     fun delete(id: String) {
         all.removeAll { it.id == id }
         persist()

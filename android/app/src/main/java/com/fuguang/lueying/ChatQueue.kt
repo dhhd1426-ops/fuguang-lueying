@@ -24,7 +24,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-private val QueueApricot = Color(0xFFE9B48E)
+private val QueueApricot: Color get() = Skin.accent
 
 /**
  * 她在做事时你发的话（照 Claude App）：排在聊天末尾，是你自己的气泡，最下面一个杏色「立即发送」。

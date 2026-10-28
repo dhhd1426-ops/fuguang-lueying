@@ -51,7 +51,7 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 
-private val Warm = Color(0xFFE9B48E)
+private val Warm: Color get() = Skin.accent
 private val Ink2 = Color(0xFF2A211B)
 private val Sheet = Color(0xFF1F232A)
 private val down = Ic("M12 4v11M7.5 10.5L12 15l4.5-4.5M5 19h14")

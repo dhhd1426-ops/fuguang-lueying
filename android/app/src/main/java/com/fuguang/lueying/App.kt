@@ -176,7 +176,7 @@ fun FuguangApp(prefs: Prefs, fullscreen: Boolean, setFullscreen: (Boolean) -> Un
                         onFailed = { paused = true },
                     )
                     Shade(dim = dim / 100f, compact = compact, zen = zen)
-                } else Box(Modifier.fillMaxSize().background(Skin.page))
+                } else Box(Modifier.fillMaxSize().background(Skin.pageBrush))
             }
         }
 

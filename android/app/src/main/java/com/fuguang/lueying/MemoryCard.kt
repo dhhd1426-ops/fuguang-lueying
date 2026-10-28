@@ -74,7 +74,7 @@ object MemoryCard {
     }
 }
 
-private val warm = css("#e9b48e")
+private val warm: Color get() = Skin.accent
 private val inEase = CubicBezierEasing(.55f, 0f, .7f, .35f)
 
 @Composable

@@ -164,7 +164,7 @@ fun SelectTextPage(text: String?, onClose: () -> Unit) {
             Row(Modifier.fillMaxWidth().padding(bottom = 18.dp), verticalAlignment = Alignment.CenterVertically) {
                 Txt("选择文字", Page.ink, 20.sp, Modifier.weight(1f), family = Serif)
                 Pressable(onClose, label = "完成") { pr ->
-                    Txt("完成", css("#e9b48e").copy(alpha = if (pr) .7f else 1f), 15.sp, Modifier.padding(8.dp))
+                    Txt("完成", Skin.accent.copy(alpha = if (pr) .7f else 1f), 15.sp, Modifier.padding(8.dp))
                 }
             }
             SelectionContainer(Modifier.weight(1f).verticalScroll(rememberScrollState())) {

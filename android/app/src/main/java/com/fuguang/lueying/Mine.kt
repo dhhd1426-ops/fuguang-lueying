@@ -181,7 +181,7 @@ private fun Switch(on: Boolean, label: String, onChange: (Boolean) -> Unit) {
     Pressable({ onChange(!on) }, label = label) { _ ->
         Box(
             Modifier.width(48.dp).height(28.dp)
-                .background(if (on) rgba(233, 180, 142, .85f) else veil(.12f), RoundedCornerShape(50))
+                .background(if (on) Skin.accent.copy(alpha = .85f) else veil(.12f), RoundedCornerShape(50))
                 .padding(3.dp),
             contentAlignment = if (on) Alignment.CenterEnd else Alignment.CenterStart,
         ) { Box(Modifier.size(22.dp).background(if (on) css("#2a211b") else Page.ink.copy(alpha = .7f), CircleShape)) }
@@ -193,7 +193,7 @@ private fun PillButton(text: String, icon: Ic?, primary: Boolean, enabled: Boole
     Pressable(onClick, modifier, enabled = enabled, label = text) { pressed ->
         val fill = when {
             !enabled -> veil(.05f)
-            primary -> rgba(233, 180, 142, if (pressed) .7f else .9f)
+            primary -> Skin.accent.copy(alpha = if (pressed) .7f else .9f)
             else -> veil(if (pressed) .12f else .06f)
         }
         val ink = when { !enabled -> Page.muted.copy(alpha = .5f); primary -> css("#2a211b"); else -> Page.ink }
@@ -214,12 +214,12 @@ private fun Divider() { Box(Modifier.fillMaxWidth().height(1.dp).background(veil
 
 /* ---------- 助理（方案 4：先选人，再进她的标签页） ---------- */
 
-private val warm = css("#e9b48e")
+private val warm: Color get() = Skin.accent
 
 /** 头像：宋体首字，杏色。 */
 @Composable
 private fun Initial(name: String, size: Dp) {
-    Box(Modifier.size(size).background(rgba(233, 180, 142, .14f), CircleShape), contentAlignment = Alignment.Center) {
+    Box(Modifier.size(size).background(Skin.accent.copy(alpha = .14f), CircleShape), contentAlignment = Alignment.Center) {
         Txt(name.trim().take(1).ifEmpty { "?" }, warm, (size.value * .42f).sp, family = Serif)
     }
 }
@@ -228,7 +228,7 @@ private fun Initial(name: String, size: Dp) {
 private fun ColumnScope.AssistantScreen(compact: Boolean, blur: Dp, nav: MineNav) {
     Title("助理", compact, onBack = { nav.back() }) {
         Pressable({ val n = Memory.create(); nav.open(n.id, 0) }, label = "新建助理") { p ->
-            Box(Modifier.size(36.dp).background(rgba(233, 180, 142, if (p) .28f else .14f), CircleShape), contentAlignment = Alignment.Center) {
+            Box(Modifier.size(36.dp).background(Skin.accent.copy(alpha = if (p) .28f else .14f), CircleShape), contentAlignment = Alignment.Center) {
                 SvgIcon(Ic("M12 6v12M6 12h12"), warm, 18.dp, stroke = 1.7f)
             }
         }
@@ -559,7 +559,7 @@ internal fun ChoiceChip(text: String, on: Boolean, onClick: () -> Unit) {
     Pressable(onClick, label = text) { pr ->
         Txt(
             text, if (on) warm else Page.muted, 12.sp,
-            Modifier.background(if (on) rgba(233, 180, 142, .16f) else veil(if (pr) .1f else .06f), RoundedCornerShape(50)).padding(horizontal = 11.dp, vertical = 6.dp),
+            Modifier.background(if (on) Skin.accent.copy(alpha = .16f) else veil(if (pr) .1f else .06f), RoundedCornerShape(50)).padding(horizontal = 11.dp, vertical = 6.dp),
             maxLines = 1,
         )
     }
@@ -657,7 +657,7 @@ private fun SaveButton(dirty: Boolean, onSave: () -> Unit) {
         when { phase == 1 -> 34.dp; phase == 2 -> 96.dp; else -> 80.dp }, tween(300, easing = ease), label = "saveW",
     )
     val bg by androidx.compose.animation.animateColorAsState(
-        when { phase == 1 -> warm.copy(alpha = .92f); phase == 2 -> warm.copy(alpha = .18f); dirty -> warm.copy(alpha = .92f); else -> rgba(233, 180, 142, .1f) },
+        when { phase == 1 -> warm.copy(alpha = .92f); phase == 2 -> warm.copy(alpha = .18f); dirty -> warm.copy(alpha = .92f); else -> Skin.accent.copy(alpha = .1f) },
         tween(300), label = "saveBg",
     )
     val tick by androidx.compose.animation.core.animateFloatAsState(if (phase == 2) 1f else 0f, tween(if (phase == 2) 380 else 0, delayMillis = if (phase == 2) 120 else 0), label = "tick")
@@ -887,7 +887,7 @@ private fun BookPage(p: Persona, b: Book, blur: Dp, onDeleted: (Mem, Int) -> Uni
                 "＋ 添加", warm, 13.sp,
                 Modifier.onGloballyPositioned { at = it.boundsInWindow().center }
                     .graphicsLayer { val k = bump.value * if (hidden) .85f else 1f; scaleX = k; scaleY = k; alpha = if (hidden) .4f else 1f }
-                    .background(rgba(233, 180, 142, if (pr) .26f else .14f), RoundedCornerShape(14.dp)).padding(horizontal = 16.dp, vertical = 11.dp),
+                    .background(Skin.accent.copy(alpha = if (pr) .26f else .14f), RoundedCornerShape(14.dp)).padding(horizontal = 16.dp, vertical = 11.dp),
                 maxLines = 1,
             )
         }
@@ -1242,7 +1242,7 @@ private fun ColumnScope.McpMarketTab(blur: Dp, nav: MineNav) {
                             Txt(if (have.enabled) "已连接" else "已关", Page.muted, 12.sp)
                         } else Chip(
                             when (item.auth) { "key" -> "填 key"; "paste" -> "贴地址"; "bearer" -> "填 token"; else -> "连接" },
-                            fill = rgba(233, 180, 142, .92f), ink = css("#2a211b"),
+                            fill = Skin.accent.copy(alpha = .92f), ink = css("#2a211b"),
                         )
                     }
                 }
@@ -1397,7 +1397,7 @@ private fun ColumnScope.McpServerScreen(key: String, compact: Boolean, blur: Dp,
                     Pressable({ off = if (on) off + t.name else off - t.name; existing?.let { it.off = off; Mcp.save() } }, Modifier.fillMaxWidth(), label = t.name) { pressed ->
                         Row(Modifier.fillMaxWidth().background(if (pressed) veil(.05f) else Color.Transparent).padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                             Box(
-                                Modifier.size(20.dp).background(if (on) rgba(233, 180, 142, .9f) else veil(.1f), RoundedCornerShape(6.dp)),
+                                Modifier.size(20.dp).background(if (on) Skin.accent.copy(alpha = .9f) else veil(.1f), RoundedCornerShape(6.dp)),
                                 contentAlignment = Alignment.Center,
                             ) { if (on) SvgIcon(Ic("M6 12.5l4 4 8-9"), css("#2a211b"), 14.dp, stroke = 2.2f) }
                             Spacer(Modifier.width(12.dp))

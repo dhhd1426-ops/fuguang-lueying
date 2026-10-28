@@ -34,7 +34,7 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-/** 「我的 → 主题」：三行，每行一张小样；点了当场换，返回后那一行写着新名字。 */
+/** 「我的 → 主题」：四行，每行一张小样；点了当场换，返回后那一行写着新名字。选了渐变，下面展开八套配色（ThemeGrad.kt）。 */
 @Composable
 internal fun ThemePage(onBack: () -> Unit) {
     val haptic = LocalHapticFeedback.current
@@ -61,7 +61,12 @@ internal fun ThemePage(onBack: () -> Unit) {
                 }
             }
         }
-        Txt("侧栏、悬浮卡片和聊天页跟着换。暗黑优雅、白色不放背景画面；看视频、浏览网页的地方一直是深色。", Page.muted.copy(alpha = .8f), 11.5.sp, Modifier.padding(horizontal = 8.dp, vertical = 8.dp), lineHeight = 19.sp)
+        androidx.compose.animation.AnimatedVisibility(
+            Skin.grad,
+            enter = androidx.compose.animation.expandVertically(androidx.compose.animation.core.tween(320, easing = Curves.decel)) + androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(240, 80)),
+            exit = androidx.compose.animation.shrinkVertically(androidx.compose.animation.core.tween(240, easing = Curves.accel)) + androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(140)),
+        ) { GradPalettes() }
+        Txt("侧栏、悬浮卡片和聊天页跟着换。暗黑优雅、白色、渐变不放背景画面；看视频、浏览网页的地方一直是深色。", Page.muted.copy(alpha = .8f), 11.5.sp, Modifier.padding(horizontal = 8.dp, vertical = 8.dp), lineHeight = 19.sp)
         SwitchSection()
         IconSection()
         Spacer(Modifier.height(8.dp))
@@ -129,6 +134,7 @@ private fun ThemeMini(id: String, on: Boolean) {
     val (ground, side, line, pill) = when (id) {
         Skin.DARK -> listOf(Brush.linearGradient(listOf(Color(0xFF1C1C1C), Color(0xFF1C1C1C))), Color(0xFF131313), Color(0xFF4A4A4A), Color(0xFFF5F4EF))
         Skin.LIGHT -> listOf(Brush.linearGradient(listOf(Color(0xFFD9D8D2), Color(0xFFD9D8D2))), Color(0xFFF4F3EE), Color(0xFFB9B8B0), Color(0xFF151513))
+        Skin.GRAD -> Grad.at(Skin.pal).let { g -> listOf(Brush.verticalGradient(listOf(g.a, g.b)), Color.White.copy(alpha = .55f), g.ink.copy(alpha = .35f), g.k) }
         else -> listOf(Brush.linearGradient(listOf(Color(0xFF6C4F5C), Color(0xFF2A3050), Color(0xFF5A4A40))), rgba(40, 40, 52, .55f), rgba(255, 255, 255, .35f), Color(0xFFF4F1EA))
     }
     Canvas(Modifier.size(60.dp).clip(RoundedCornerShape(13.dp))) {

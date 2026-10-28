@@ -69,7 +69,7 @@ import kotlinx.coroutines.launch
 import kotlin.math.exp
 import kotlin.math.roundToInt
 
-private val warm = Color(0xFFE9B48E)
+private val warm: Color get() = Skin.accent
 private val ink = Color(0xFFFAF5EE)
 private val camera = Ic("M4 8h3l2-2.5h6L17 8h3v11H4Z", circles = listOf(floatArrayOf(12f, 13f, 3.4f)))
 private val photo = Ic("M4 5h16v14H4ZM4 16l4.5-4.5 4 4 2.5-2.5L20 18")

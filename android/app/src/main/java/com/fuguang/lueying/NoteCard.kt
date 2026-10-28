@@ -73,7 +73,7 @@ private fun depth(s: String) = when (s) {
     else -> 2
 }
 
-internal val NoteWarm = Color(0xFFE9B48E)
+internal val NoteWarm: Color get() = Skin.accent
 internal val NoteEyebrow = Color(0xFFC9A385)
 private val chevron = Ic("M9.5 6l6 6-6 6")
 private val backIc = Ic("M14.5 6l-6 6 6 6")

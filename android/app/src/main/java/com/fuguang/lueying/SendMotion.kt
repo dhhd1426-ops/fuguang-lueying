@@ -40,7 +40,7 @@ import kotlin.math.hypot
 import kotlin.math.sin
 
 /** 杏色发送球的颜色。 */
-val SendWarm = Color(0xFFE9B48E)
+val SendWarm: Color get() = Skin.accent
 private val SendWarmPressed = Color(0xFFD9A47F)
 
 /**

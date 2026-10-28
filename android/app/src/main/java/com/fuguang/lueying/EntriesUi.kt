@@ -44,7 +44,7 @@ import androidx.compose.ui.unit.sp
  * 改动停手 0.4 秒自动存。
  */
 
-private val warm = css("#e9b48e")
+private val warm: Color get() = Skin.accent
 private val cardFill get() = Skin.tint(.42f)
 private val field get() = Skin.well(.22f)
 
@@ -53,7 +53,7 @@ fun EntriesSection(p: Persona, blur: Dp) {
     var open by remember(p.id) { mutableStateOf<String?>(null) }
     SectionLabel("设 定 条 目") {
         Pressable({ open = Entries.create(p).id }, label = "添加条目") { pr ->
-            Txt("＋ 添加", warm, 12.5.sp, Modifier.background(rgba(233, 180, 142, if (pr) .2f else .1f), RoundedCornerShape(50)).padding(horizontal = 12.dp, vertical = 7.dp))
+            Txt("＋ 添加", warm, 12.5.sp, Modifier.background(Skin.accent.copy(alpha = if (pr) .2f else .1f), RoundedCornerShape(50)).padding(horizontal = 12.dp, vertical = 7.dp))
         }
     }
     if (p.entries.isEmpty()) {
@@ -161,7 +161,7 @@ private fun DepthStrip(depth: Int, self: Boolean) {
     Column(Modifier.fillMaxWidth().padding(top = 10.dp).animateContentSize(spring(.85f, 600f)), verticalArrangement = Arrangement.spacedBy(5.dp)) {
         @Composable fun hit() = Txt(
             if (self) "她心里想的" else "旁白", warm, 11.sp,
-            Modifier.fillMaxWidth().background(rgba(233, 180, 142, .14f), RoundedCornerShape(8.dp)).padding(horizontal = 10.dp, vertical = 4.dp),
+            Modifier.fillMaxWidth().background(Skin.accent.copy(alpha = .14f), RoundedCornerShape(8.dp)).padding(horizontal = 10.dp, vertical = 4.dp),
         )
         roles.forEachIndexed { i, r ->
             if (depth == roles.size - i) hit()
