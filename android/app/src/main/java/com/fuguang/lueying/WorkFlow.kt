@@ -2,11 +2,6 @@ package com.fuguang.lueying
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -25,15 +20,11 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.dp
@@ -109,27 +100,17 @@ private fun WorkSlot(id: String?, draft: WorkDraft?, onWork: (String) -> Unit) {
     }
 }
 
-/** 正在写的卡：和作品卡一样的块；图标上一道光扫过（主题里选了变形弹跳：小方块里换成弹跳），名字没出来时是一根灰条，下面写着写到多少字。 */
+/** 正在写的卡：和作品卡一样的块；左边小方块里是变形弹跳（第 339 版起，ToyMotion.kt，原来是页面图标加一道扫光），名字没出来时是一根灰条，下面写着写到多少字。 */
 @Composable
 private fun DraftCard(d: WorkDraft) {
-    val t = rememberInfiniteTransition(label = "draft")
-    val sweep by t.animateFloat(-1f, 1f, infiniteRepeatable(tween(1400, easing = LinearEasing), RepeatMode.Restart), label = "sweep")
     Column(Modifier.padding(top = 10.dp, bottom = 12.dp)) {
         Row(
             Modifier.widthIn(max = 440.dp).fillMaxWidth().background(veil(.055f), RoundedCornerShape(16.dp)).padding(10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            if (Skin.toy) Box(Modifier.size(56.dp).clip(RoundedCornerShape(11.dp)).background(Apricot.copy(alpha = .13f))) {
+            Box(Modifier.size(56.dp).clip(RoundedCornerShape(11.dp)).background(Apricot.copy(alpha = .13f))) {
                 ToyTile(Apricot, Modifier.size(56.dp))
-            } else Box(
-                Modifier.size(56.dp).clip(RoundedCornerShape(11.dp)).background(Apricot.copy(alpha = .13f))
-                    .drawWithContent {
-                        drawContent()
-                        val x = size.width * sweep
-                        drawRect(Brush.linearGradient(listOf(Color.Transparent, Color(0x38FFECDC), Color.Transparent), Offset(x, 0f), Offset(x + size.width * .7f, size.height)))
-                    },
-                contentAlignment = Alignment.Center,
-            ) { SvgIcon(WorkIcons.page, Apricot, 24.dp, stroke = 1.5f) }
+            }
             Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
                 AnimatedContent(d.title, transitionSpec = { fadeIn(tween(220)) togetherWith fadeOut(tween(140)) }, label = "draftTitle") { title ->

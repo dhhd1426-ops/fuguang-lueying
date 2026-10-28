@@ -1,26 +1,19 @@
 package com.fuguang.lueying
 
 import android.provider.Settings
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.withFrameMillis
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.withTransform
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import kotlin.math.PI
@@ -29,16 +22,14 @@ import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.math.sqrt
 
-/** 和三点换位同一个杏色（ThinkingMotion 的点、ThinkTrail 的 TrailLive）。 */
-internal val ToyInk = Color(0xFFD97757)
-
 /**
- * 变形弹跳（第 338 版，原型 CtyJC3P1wDvf6ePoTPeC8t 第 3 版、2NN8H5p9eH7EEKCw89gShS）：
+ * 变形弹跳（第 339 版加，第 340 版定下只用在两处；原型 27H9hsGmHqHqqD4QkSRkcY 第 2 版、2NN8H5p9eH7EEKCw89gShS）：
  * 雨滴皮肤 Real'sToy 的优化版动作，原封不动，只等比缩小——
  * 一拍 1200ms，从高处（原图 220px）抛下、低处落地；边跳边转，一拍转一整圈；
  * 落地前后 72ms 平滑换形（凸形混合，方块开场，之后三角 → 方块 → 圆 循环），落地前后 84ms 挤压回弹（横 +16%、竖 −20%）。
  * 尺寸按原图像素算：方块 30、三角边长 33、圆直径 31；f = 每个原图像素画多少 dp。
- * 主题里「思考动效」选了变形弹跳（Skin.toy）才用：思考行、作品卡片、问候页 i 点。
+ * 用在两处，一直开着（主题里没有开关）：新对话问候页 Vignette 的 i 点（Toy.drop）、作品卡片「正在写」的小方块（ToyTile）。
+ * 思考行还是原来的三点换位（ThinkingMotion）。
  */
 internal object Toy {
     const val PERIOD = 1200L
@@ -105,20 +96,6 @@ internal object Toy {
     fun DrawScope.rest(path: Path, gx: Float, gy: Float, f: Float, color: Color, which: Int = 2) =
         shape(path, gx, gy, f, which, which, 1f, 0f, 1f, 1f, color)
 
-    /** 落地「敲亮」：每次落地后一道亮从左往右扫过整句，第 k 个字的透明度 .42 ↔ 1（和 bounce 读同一个帧时钟）。 */
-    fun strike(ms: Long, k: Int): Float {
-        val since = Math.floorMod(ms - PERIOD / 2, PERIOD)
-        val dt = since - k * 22L
-        val hit = if (dt in 1L..419L) sin(dt / 420f * PI.toFloat()) else 0f
-        return .42f + .58f * hit
-    }
-
-    /** 思考行收尾：弹跳离场的时刻（毫秒，nanoTime）和最后的形状；时钟半秒内出来就接一下。 */
-    @Volatile var endAt = 0L
-    @Volatile var endShape = 2
-
-    fun nowMs() = System.nanoTime() / 1_000_000
-
     /** 系统关了动画（开发者选项动画时长 0、省电的「减少动态效果」）：不跳，停在落地点。 */
     @Composable
     fun still(): Boolean {
@@ -126,7 +103,7 @@ internal object Toy {
         return remember { runCatching { Settings.Global.getFloat(ctx.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f }.getOrDefault(false) }
     }
 
-    /** 帧时钟（毫秒，绝对时间）：思考行的弹跳和旁边字的敲亮读同一个钟，所以对得上拍。只在绘制里读，不触发重组。 */
+    /** 帧时钟（毫秒）：只在绘制里读，不触发重组。 */
     @Composable
     fun clock(run: Boolean = true): State<Long> {
         val s = remember { mutableLongStateOf(0L) }
@@ -175,45 +152,6 @@ internal object Toy {
         val imp = if (near < 1f) cos(near * PI.toFloat() / 2).let { it * it } else 0f
         val sx = 1 + .16f * imp; val sy = 1 - .2f * imp
         shape(path, gx, gy - up + (1 - sy) * 16f * f, f, pv, nx, m, el / PERIOD * 360f, sx, sy, color)
-    }
-}
-
-/**
- * 思考行左边那一格（16dp）：变形弹跳，落地点在格子正中，往上抛——画到格子外面，不占地方。
- * 0.30 倍（方块约 9dp），跳的高度再压到 0.8（约 53dp），照原型第 3 版。
- */
-@Composable
-internal fun ToySlot(color: Color = ToyInk, modifier: Modifier = Modifier) {
-    val still = Toy.still()
-    val now = Toy.clock(!still)
-    val path = remember { Path() }
-    DisposableEffect(Unit) { onDispose { Toy.endAt = Toy.nowMs(); Toy.endShape = Toy.beat(now.value).next } }
-    Canvas(modifier.size(16.dp)) {
-        with(Toy) {
-            val f = .30f * density
-            if (still) rest(path, center.x, center.y, f, color) else bounce(path, now.value, center.x, center.y, f, .8f, color)
-        }
-    }
-}
-
-/**
- * 「思考了 N 秒」前面的时钟。刚从变形弹跳换过来（半秒内）时接一下：
- * 最后那个形状在原地缩小淡出，时钟从 0.6 放大淡入（280ms）。
- */
-@Composable
-internal fun ThinkClock(color: Color) {
-    val fresh = remember { Skin.toy && Toy.nowMs() - Toy.endAt < 500 }
-    val q = remember { Animatable(if (fresh) 0f else 1f) }
-    if (fresh) LaunchedEffect(Unit) { q.animateTo(1f, tween(280, easing = Curves.standard)) }
-    val path = remember { Path() }
-    val last = remember { Toy.endShape }
-    Box(Modifier.size(16.dp), contentAlignment = Alignment.Center) {
-        if (q.value < 1f) Canvas(Modifier.size(16.dp)) {
-            with(Toy) { shape(path, center.x, center.y, .30f * density, last, last, 1f, 0f, 1f, 1f, ToyInk, 1 - .6f * q.value, 1 - q.value) }
-        }
-        Box(Modifier.graphicsLayer { val s = .6f + .4f * q.value; scaleX = s; scaleY = s; alpha = q.value }) {
-            SvgIcon(Trail.clock, color, 16.dp, stroke = 1.5f)
-        }
     }
 }
 
