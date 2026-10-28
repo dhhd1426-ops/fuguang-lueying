@@ -737,7 +737,19 @@ private fun Conversation(
     // 最后一条你的消息下面留足空白，让它能滑到屏幕上方；回答越长空白越少，屏幕位置不变
     val spacerPx = if (lastUser < 0) 0f else max(0f, viewport - (endY - lastUserTop) - with(density) { 22.dp.toPx() })
 
-    Box(Modifier.fillMaxSize().onSizeChanged { viewport = it.height }) {
+    // 顶栏下面渐隐：字滑上去慢慢淡掉，不被一刀切开；淡的高度跟着滑动距离长到 40dp，还在最顶上时第一行不淡（原型 XYDpQVepjD8DweQeihE8EX）
+    Box(
+        Modifier.fillMaxSize().onSizeChanged { viewport = it.height }
+            .graphicsLayer { compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.Offscreen }
+            .drawWithContent {
+                drawContent()
+                val f = min(scroll.value.toFloat(), 40.dp.toPx())
+                if (f > .5f) drawRect(
+                    androidx.compose.ui.graphics.Brush.verticalGradient(0f to Color.Transparent, 1f to Color.Black, startY = 0f, endY = f),
+                    blendMode = androidx.compose.ui.graphics.BlendMode.DstIn,
+                )
+            },
+    ) {
         Column(Modifier.fillMaxSize().verticalScroll(scroll).padding(top = 6.dp)) {
             Column(Modifier.widthIn(max = 720.dp).fillMaxWidth().align(Alignment.CenterHorizontally)) {
                 chat.messages.forEachIndexed { i, m ->
