@@ -41,6 +41,7 @@ internal fun ThemePage(onBack: () -> Unit) {
     Column(Modifier.widthIn(max = 560.dp).fillMaxSize().verticalScroll(rememberScrollState())) {
         CardPageHead("主题", onBack = onBack)
         Spacer(Modifier.height(4.dp))
+        Column(Modifier.spot("skin")) {
         Skin.options.forEach { o ->
             val on = Skin.id == o.id
             PressSurface(
@@ -66,10 +67,11 @@ internal fun ThemePage(onBack: () -> Unit) {
             enter = androidx.compose.animation.expandVertically(androidx.compose.animation.core.tween(320, easing = Curves.decel)) + androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(240, 80)),
             exit = androidx.compose.animation.shrinkVertically(androidx.compose.animation.core.tween(240, easing = Curves.accel)) + androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(140)),
         ) { GradPalettes() }
+        }
         Txt("侧栏、悬浮卡片和聊天页跟着换。暗黑优雅、白色、渐变不放背景画面；看视频、浏览网页的地方一直是深色。", Page.muted.copy(alpha = .8f), 11.5.sp, Modifier.padding(horizontal = 8.dp, vertical = 8.dp), lineHeight = 19.sp)
-        SwitchSection()
-        CardSection()
-        IconSection()
+        Column(Modifier.spot("rail")) { SwitchSection() }
+        Column(Modifier.spot("card")) { CardSection() }
+        Column(Modifier.spot("icon")) { IconSection() }
         Spacer(Modifier.height(8.dp))
     }
 }

@@ -95,6 +95,7 @@ class MineNav {
             screen.startsWith("gallery/") -> "gallery"
             screen == "search" || screen == "skills" || screen == "gallery" -> "features"
             screen.startsWith("skills/") -> "skills"
+            screen.startsWith("letter/") -> "persona"
             screen == "features" -> "mine"
             screen == "theme" -> "mine"
             screen.startsWith("mcp/") -> "mcp"
@@ -117,6 +118,11 @@ internal fun ColumnScope.MineSub(store: AssistantStore, screen: String, compact:
         screen.startsWith("provider/") -> ProviderScreen(store, provider(screen.removePrefix("provider/")), compact, blur, nav)
         screen == "mcp" -> McpScreen(compact, blur, nav)
         screen.startsWith("mcp/") -> McpServerScreen(screen.removePrefix("mcp/"), compact, blur, nav)
+        screen.startsWith("letter/") -> {
+            val p = Memory.get(nav.persona)
+            val m = p?.items?.firstOrNull { it.id == screen.removePrefix("letter/") }
+            if (p != null && m != null) LetterScreen(p, m) { nav.back() } else LaunchedEffect(screen) { nav.back() }
+        }
         else -> AssistantScreen(compact, blur, nav)
     }
 }
@@ -379,7 +385,7 @@ private fun ColumnScope.PersonaScreen(store: AssistantStore, p: Persona, compact
     val pager = androidx.compose.foundation.pager.rememberPagerState(initialPage = nav.tab) { 3 }
     val scope = rememberCoroutineScope()
     LaunchedEffect(pager.currentPage) { nav.tab = pager.currentPage }
-    SegTabs(listOf("基础", "提示词", "记忆"), pager, blur) { scope.launch { pager.animateScrollToPage(it) } }
+    SegTabs(listOf("基础", "系统提示词", "记忆"), pager, blur) { scope.launch { pager.animateScrollToPage(it) } }
     var undo by remember { mutableStateOf<Pair<Mem, Int>?>(null) }
     LaunchedEffect(undo) { if (undo != null) { kotlinx.coroutines.delay(4000); undo = null } }
     Box(Modifier.weight(1f).fillMaxWidth()) {
@@ -393,7 +399,7 @@ private fun ColumnScope.PersonaScreen(store: AssistantStore, p: Persona, compact
                 when (page) {
                     0 -> BasicTab(store, p, blur, nav)
                     1 -> PromptTab(p, blur)
-                    else -> MemoryTab(p, blur, onDeleted = { m, i -> undo = m to i })
+                    else -> MemoryTab(p, blur) { m -> nav.screen = "letter/${m.id}" }
                 }
             }
         }
@@ -409,21 +415,22 @@ private fun ColumnScope.PersonaScreen(store: AssistantStore, p: Persona, compact
                     .padding(start = 16.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Txt("已删除", Skin.toastInk, 13.5.sp, Modifier.weight(1f))
+                Txt("忘掉了", Skin.toastInk, 13.5.sp, Modifier.weight(1f))
                 Pressable({ undo?.let { (m, i) -> Memory.restore(p, m, i) }; undo = null }, label = "撤销") { pr ->
                     Txt("撤销", warm, 13.5.sp, Modifier.background(if (pr) Skin.toastInk.copy(alpha = .1f) else Color.Transparent, RoundedCornerShape(12.dp)).padding(horizontal = 12.dp, vertical = 9.dp))
                 }
             }
         }
+        MemMenuLayer(p) { m, i -> undo = m to i }
     }
 }
 
 /* 基础（方案一）：名片（助理名称 / 用户名称，自动保存）、模型、回答的手感 */
 @Composable
 private fun ColumnScope.BasicTab(store: AssistantStore, p: Persona, blur: Dp, nav: MineNav) {
-    NameCard(p, blur)
+    Column(Modifier.spot("name")) { NameCard(p, blur) }
     Spacer(Modifier.height(10.dp))
-    Box(Modifier.fillMaxWidth().glass(RoundedCornerShape(20.dp), blur, fill = glassFill)) {
+    Box(Modifier.fillMaxWidth().spot("model").glass(RoundedCornerShape(20.dp), blur, fill = glassFill)) {
         Pressable({ nav.screen = "providers" }, Modifier.fillMaxWidth(), label = "模型与供应商") { pressed ->
             Row(
                 Modifier.fillMaxWidth().background(if (pressed) veil(.04f) else Color.Transparent).padding(horizontal = 18.dp, vertical = 18.dp),
@@ -439,7 +446,7 @@ private fun ColumnScope.BasicTab(store: AssistantStore, p: Persona, blur: Dp, na
     Txt("回 答 的 手 感", Page.muted, 11.sp, Modifier.padding(start = 4.dp, top = 24.dp, bottom = 10.dp), spacing = ls(1f, 11f))
     Column(Modifier.fillMaxWidth().glass(RoundedCornerShape(20.dp), blur, fill = glassFill)) {
         // 温度
-        Column(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 16.dp)) {
+        Column(Modifier.fillMaxWidth().spot("temp").padding(horizontal = 18.dp, vertical = 16.dp)) {
             Row(verticalAlignment = Alignment.Bottom) {
                 Txt("温度", Page.ink, 15.sp, Modifier.weight(1f))
                 Txt(String.format(java.util.Locale.US, "%.2f", p.temp), warm, 18.sp, family = Serif)
@@ -450,7 +457,7 @@ private fun ColumnScope.BasicTab(store: AssistantStore, p: Persona, blur: Dp, na
         }
         Divider()
         // Top P
-        Column(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 16.dp).animateContentSize()) {
+        Column(Modifier.fillMaxWidth().spot("topp").padding(horizontal = 18.dp, vertical = 16.dp).animateContentSize()) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Txt("Top P", Page.ink, 15.sp, Modifier.weight(1f))
                 ChoiceChip("用供应商默认", !p.topOn) { p.topOn = false; Memory.save() }
@@ -469,7 +476,7 @@ private fun ColumnScope.BasicTab(store: AssistantStore, p: Persona, blur: Dp, na
         }
         Divider()
         // 上下文消息限制：10–200 条，最右边是「不限」
-        Column(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 16.dp)) {
+        Column(Modifier.fillMaxWidth().spot("limit").padding(horizontal = 18.dp, vertical = 16.dp)) {
             val v = if (p.limit <= 0) 210f else p.limit.toFloat()
             Row(verticalAlignment = Alignment.Bottom) {
                 Txt("上下文消息限制", Page.ink, 15.sp, Modifier.weight(1f))
@@ -624,7 +631,7 @@ private fun ColumnScope.PromptTab(p: Persona, blur: Dp) {
         cursorBrush = SolidColor(Page.accent),
         modifier = Modifier.fillMaxWidth(),
         decorationBox = { inner ->
-            Box(Modifier.fillMaxWidth().heightIn(min = 280.dp).glass(RoundedCornerShape(20.dp), blur, fill = glassFill).padding(18.dp)) {
+            Box(Modifier.fillMaxWidth().spot("sys").heightIn(min = 280.dp).glass(RoundedCornerShape(20.dp), blur, fill = glassFill).padding(18.dp)) {
                 if (draft.isEmpty()) Txt("用「你是…」写下 ${p.name} 本来的样子、怎么说话。留空就用默认的样子。", Page.muted.copy(alpha = .6f), 14.5.sp, lineHeight = 24.sp)
                 inner()
             }
@@ -640,7 +647,7 @@ private fun ColumnScope.PromptTab(p: Persona, blur: Dp) {
         SaveButton(dirty = draft != p.sys) { p.sys = draft; Memory.save() }
     }
     IdentityHint(draft) { draft = it }
-    EntriesSection(p, blur)
+    Column(Modifier.spot("entries")) { EntriesSection(p, blur) }
 }
 
 /**
@@ -723,58 +730,19 @@ private fun ago(t: Long): String {
 }
 
 /* 记忆：相识摘要 + 全局记忆（关着只剩一行） */
-/* ---------- 记忆（方案 2）：相识摘要里放「跨聊天回忆」，下面三本记录用分段条切换 ---------- */
+/* ---------- 记忆：相识摘要里放「跨聊天回忆」，下面一个框装下她记得的全部（不再分本） ---------- */
 
-private class Book(val key: String, val zh: String, val empty: String, val hint: String)
-
-private val BOOKS = listOf(
-    Book("diary", "我记得的", "我们聊过的、我答应你的，我会记在这儿。", "例如：答应周末陪他看完那部片"),
-    Book("about", "关于你", "你跟我说起你自己的时候，我会记在这儿。", "例如：我在济南，是工程师"),
-    Book("pref", "你喜欢的", "你喜欢我怎么陪你、怎么说话，我会记在这儿。", "例如：回答简短一点，别用太多表情"),
-    Book(Lessons.KIND, "我学会的", "你纠正过我的地方，我会记在这儿，下次不再犯。", "例如：报价格时说清是哪天查的"),
-)
-
-/** 记忆页里的分段条：和顶部「基础 / 提示词 / 记忆」同款，底下的色块弹着滑过去。 */
-@Composable
-private fun SegPicker(labels: List<String>, counts: List<Int>, selected: Int, blur: Dp, onPick: (Int) -> Unit) {
-    var w by remember { mutableStateOf(0f) }
-    val pos by androidx.compose.animation.core.animateFloatAsState(
-        selected.toFloat(), androidx.compose.animation.core.spring(dampingRatio = .72f, stiffness = 420f), label = "segPos",
-    )
-    Box(
-        Modifier.fillMaxWidth().glass(RoundedCornerShape(16.dp), blur, fill = glassFill).padding(4.dp)
-            .onSizeChanged { w = it.width.toFloat() },
-    ) {
-        val d = LocalDensity.current
-        val tw = w / labels.size
-        Box(
-            Modifier.graphicsLayer { translationX = pos * tw }
-                .width(with(d) { tw.toDp() }).height(36.dp)
-                .background(veil(.10f), RoundedCornerShape(12.dp)),
-        )
-        Row(Modifier.fillMaxWidth()) {
-            labels.forEachIndexed { i, t ->
-                val near = (1f - kotlin.math.abs(pos - i)).coerceIn(0f, 1f)
-                Pressable({ onPick(i) }, Modifier.weight(1f), label = t) { _ ->
-                    Row(Modifier.fillMaxWidth().height(36.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-                        Txt(t, androidx.compose.ui.graphics.lerp(Page.muted, Page.ink, near), if (labels.size > 3) 12.5.sp else 13.5.sp, maxLines = 1)
-                        Spacer(Modifier.width(if (labels.size > 3) 3.dp else 4.dp))
-                        Txt("${counts[i]}", Page.muted.copy(alpha = .8f), if (labels.size > 3) 10.sp else 11.sp, maxLines = 1)
-                    }
-                }
-            }
-        }
-    }
-}
+/** 每条记忆底下那行小字的开头：这是哪一类。 */
+internal fun kindZh(k: String) = when (k) { "about" -> "关于你"; "pref" -> "你喜欢的"; "promise" -> "答应你的"; Lessons.KIND -> "做事经验"; "self" -> "她自己"; else -> "聊过的" }
 
 @Composable
-private fun ColumnScope.MemoryTab(p: Persona, blur: Dp, onDeleted: (Mem, Int) -> Unit) {
+private fun ColumnScope.MemoryTab(p: Persona, blur: Dp, onOpen: (Mem) -> Unit) {
     val days = if (p.firstAt <= 0) 0 else ((System.currentTimeMillis() - p.firstAt) / 86_400_000L).toInt() + 1
     Txt(if (days == 0) "${p.name} 还在认识你" else "${p.name} 认识你 $days 天了", Page.ink, 19.sp, Modifier.padding(start = 4.dp, top = 2.dp), family = Serif, lineHeight = 30.sp)
     // 摘要这一行的右边：跨聊天回忆（不管记录，只管她能不能翻以前的聊天）
-    Row(Modifier.fillMaxWidth().padding(start = 4.dp, top = 6.dp, bottom = 18.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.fillMaxWidth().spot("cross").padding(start = 4.dp, top = 6.dp, bottom = 18.dp), verticalAlignment = Alignment.CenterVertically) {
         Txt(
-            listOfNotNull("聊过 ${p.chats} 次", ago(p.lastAt).takeIf { it.isNotEmpty() }?.let { "上次是$it" }).joinToString(" · "),
+            listOfNotNull("聊过 ${p.chats} 次", "记得 ${p.items.size} 件".takeIf { p.items.isNotEmpty() }, ago(p.lastAt).takeIf { it.isNotEmpty() }?.let { "上次是$it" }).joinToString(" · "),
             Page.muted, 12.5.sp, Modifier.weight(1f), maxLines = 1,
         )
         Txt("跨聊天回忆", if (p.memOn) Page.ink.copy(alpha = .85f) else Page.muted, 12.5.sp, maxLines = 1)
@@ -783,47 +751,17 @@ private fun ColumnScope.MemoryTab(p: Persona, blur: Dp, onDeleted: (Mem, Int) ->
             Switch(p.memOn, "跨聊天回忆") { p.memOn = it; Memory.save() }
         }
     }
-    var book by remember(p.id) { mutableStateOf(0) }
     // 还没写成她自己那段话的，一条条补写（Diary.kt）
     LaunchedEffect(p.id) { Diary.backfill(p) }
-    val counts = BOOKS.map { b -> p.items.count { it.book == b.key } }
-    SegPicker(BOOKS.map { it.zh }, counts, book, blur) { book = it }
-    Spacer(Modifier.height(16.dp))
-    // 换一本：新的从点的方向滑进来，旧的往反方向淡出
-    androidx.compose.animation.AnimatedContent(
-        book,
-        transitionSpec = {
-            val dir = if (targetState > initialState) 1 else -1
-            (androidx.compose.animation.slideInHorizontally(tween(320, easing = androidx.compose.animation.core.CubicBezierEasing(.2f, .8f, .2f, 1f))) { it / 6 * dir } +
-                androidx.compose.animation.fadeIn(tween(260, delayMillis = 60)))
-                .togetherWith(
-                    androidx.compose.animation.slideOutHorizontally(tween(220)) { -it / 8 * dir } + androidx.compose.animation.fadeOut(tween(160)),
-                )
-                .using(androidx.compose.animation.SizeTransform(clip = false) { _, _ -> androidx.compose.animation.core.spring(dampingRatio = .9f, stiffness = 380f) })
-        },
-        label = "book",
-    ) { bi ->
-        Column { BookPage(p, BOOKS[bi], blur, onDeleted) }
-    }
+    BookPage(p, blur, onOpen)
 }
 
 @Composable
-private fun BookPage(p: Persona, b: Book, blur: Dp, onDeleted: (Mem, Int) -> Unit) {
-    val list = p.items.filter { it.book == b.key }
-    var all by remember(b.key) { mutableStateOf(false) }
-    var open by remember { mutableStateOf<String?>(null) }
-    Column(Modifier.fillMaxWidth().glass(RoundedCornerShape(20.dp), blur, fill = glassFill).animateContentSize().padding(start = 18.dp, end = 10.dp, top = 6.dp, bottom = 14.dp)) {
-        // 她记的：顶上一个开关，关了就不记也不想起（记过的留着）
-        if (b.key == Lessons.KIND) Row(Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 4.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Txt("记做事经验", Page.ink, 14.5.sp)
-                Spacer(Modifier.height(2.dp))
-                Txt(if (p.lessonsOn) "出了岔子她自己记一句，下次想起来" else "关着：不记，也不想起", Page.muted, 12.sp, maxLines = 1)
-            }
-            Spacer(Modifier.width(8.dp))
-            Box(Modifier.graphicsLayer { scaleX = .82f; scaleY = .82f }) { Switch(p.lessonsOn, "记做事经验") { p.lessonsOn = it; Memory.save() } }
-        }
-        if (list.isEmpty()) Txt(b.empty, Page.ink.copy(alpha = .7f), 14.sp, Modifier.fillMaxWidth().padding(top = 22.dp, bottom = 12.dp, end = 8.dp), lineHeight = 24.sp, align = androidx.compose.ui.text.style.TextAlign.Center)
+private fun BookPage(p: Persona, blur: Dp, onOpen: (Mem) -> Unit) {
+    val list = p.items.sortedByDescending { it.at }
+    var all by remember(p.id) { mutableStateOf(false) }
+    Column(Modifier.fillMaxWidth().spot("memory").glass(RoundedCornerShape(20.dp), blur, fill = glassFill).animateContentSize().padding(horizontal = 10.dp, vertical = 6.dp)) {
+        if (list.isEmpty()) Txt("我们聊过的、你说起你自己的、你喜欢我怎么陪你的，我都会记在这儿。", Page.ink.copy(alpha = .7f), 14.sp, Modifier.fillMaxWidth().padding(top = 22.dp, bottom = 12.dp, end = 8.dp), lineHeight = 24.sp, align = androidx.compose.ui.text.style.TextAlign.Center)
         val shown = if (all) list else list.take(6)
         shown.forEachIndexed { k, m ->
             // 刚添加的那条：从上面轻轻落下来
@@ -837,32 +775,8 @@ private fun BookPage(p: Persona, b: Book, blur: Dp, onDeleted: (Mem, Int) -> Uni
             }
             Box(Modifier.graphicsLayer { alpha = drop.value.coerceIn(0f, 1f); translationY = (1f - drop.value) * -14.dp.toPx() }) {
                 Column {
-                    if (k > 0) Box(Modifier.fillMaxWidth().padding(end = 8.dp).height(1.dp).background(veil(.07f)))
-                    val isOpen = open == m.id
-                    Row(Modifier.fillMaxWidth().padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Pressable({ open = if (isOpen) null else m.id }, Modifier.weight(1f), label = m.text) { _ ->
-                            Column(Modifier.fillMaxWidth()) {
-                                MemText(m, m.kind == Lessons.KIND && m.failed >= 2, isOpen)
-                                if (isOpen && m.detail.isNotBlank() && m.diary.isBlank()) {
-                                    Spacer(Modifier.height(6.dp))
-                                    Txt(m.detail, Page.ink.copy(alpha = .78f), 13.5.sp, lineHeight = 22.sp)
-                                }
-                                Spacer(Modifier.height(3.dp))
-                                val dim = m.kind == Lessons.KIND && m.failed >= 2
-                                Txt(
-                                    (if (m.by == "you") "你让我记的" else if (m.kind == Lessons.KIND) Lessons.state(m) else "我自己记下的") + " · " + ago(m.at) + (if (m.moment) " · ✦ 想留着的" else "") +
-                                        (if (isOpen && m.convTitle.isNotBlank()) " · 来自「${m.convTitle}」" else ""),
-                                    if ((m.by == "you" || m.moment || (m.kind == Lessons.KIND && (m.habit || m.used > 0))) && !dim) warm.copy(alpha = .9f) else Page.muted, 12.sp, maxLines = 1,
-                                )
-                            }
-                        }
-                        Pressable({
-                            val idx = p.items.indexOf(m)
-                            Memory.remove(p, m); onDeleted(m, idx)
-                        }, label = "删除") { pr ->
-                            Box(Modifier.size(40.dp), contentAlignment = Alignment.Center) { SvgIcon(Icons.close, if (pr) Page.ink else Page.muted, 16.dp) }
-                        }
-                    }
+                    if (k > 0) Box(Modifier.fillMaxWidth().padding(horizontal = 8.dp).height(1.dp).background(veil(.07f)))
+                    MemLine(m) { onOpen(m) }
                 }
             }
         }
@@ -873,23 +787,6 @@ private fun BookPage(p: Persona, b: Book, blur: Dp, onDeleted: (Mem, Int) -> Uni
                     Modifier.padding(top = 6.dp, bottom = 4.dp).background(veil(if (pr) .1f else .05f), RoundedCornerShape(50)).padding(horizontal = 16.dp, vertical = 9.dp),
                 )
             }
-        }
-        // 添加：卡片从这颗「＋ 添加」里长出来，记住后再缩回来，「＋」轻轻一跳
-        var at by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
-        val bump = remember { androidx.compose.animation.core.Animatable(1f) }
-        LaunchedEffect(MemoryCard.landed) {
-            if (MemoryCard.landed > 0 && MemoryCard.book == b.key) { bump.snapTo(1.2f); bump.animateTo(1f, androidx.compose.animation.core.spring(dampingRatio = .45f, stiffness = 500f)) }
-        }
-        val hidden = MemoryCard.open && MemoryCard.persona?.id == p.id && MemoryCard.book == b.key
-        Spacer(Modifier.height(10.dp))
-        Pressable({ MemoryCard.show(p, b.key, at) }, Modifier.align(Alignment.End).padding(end = 8.dp), label = "添加") { pr ->
-            Txt(
-                "＋ 添加", warm, 13.sp,
-                Modifier.onGloballyPositioned { at = it.boundsInWindow().center }
-                    .graphicsLayer { val k = bump.value * if (hidden) .85f else 1f; scaleX = k; scaleY = k; alpha = if (hidden) .4f else 1f }
-                    .background(Skin.accent.copy(alpha = if (pr) .26f else .14f), RoundedCornerShape(14.dp)).padding(horizontal = 16.dp, vertical = 11.dp),
-                maxLines = 1,
-            )
         }
     }
 }

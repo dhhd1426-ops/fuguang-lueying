@@ -100,7 +100,13 @@ fun MineCardLayer(store: AssistantStore, nav: MineNav) {
     ) { screen, rise ->
         when (screen) {
             "mine" -> Column(Modifier.widthIn(max = 560.dp).fillMaxSize().verticalScroll(rememberScrollState())) {
-                MineCardBody(rise) { nav.screen = it }
+                MineCardBody(rise, { nav.screen = it }) { x ->
+                    SpotFlash.set(x.key)
+                    when {
+                        x.tab >= 0 -> nav.open(Memory.activeId, x.tab)
+                        x.screen != "mine" -> { nav.screen = x.screen }
+                    }
+                }
             }
             "about" -> AboutPage { nav.screen = "mine" }
             "theme" -> ThemePage { nav.screen = "mine" }
@@ -117,17 +123,37 @@ fun MineCardLayer(store: AssistantStore, nav: MineNav) {
 }
 
 @Composable
-private fun MineCardBody(t: Float, onGo: (String) -> Unit) {
+private fun MineCardBody(t: Float, onGo: (String) -> Unit, onSpot: (SettingSpot) -> Unit) {
     val me = Memory.userName.trim()
-    Row(Modifier.fillMaxWidth().padding(start = 6.dp, end = 40.dp, bottom = 14.dp).mineRise(0, t), verticalAlignment = Alignment.CenterVertically) {
-        AvatarFace(Avatars.ME, me.takeLast(1).ifEmpty { "你" }, Brush.linearGradient(listOf(warm, Color(0xFFB97F62))), 38.dp)
-        Spacer(Modifier.width(12.dp))
-        Column(Modifier.weight(1f)) {
-            Txt("我的", Page.ink, 19.sp, spacing = ls(2.6f, 19f), family = Serif)
-            Spacer(Modifier.height(2.dp))
-            Txt("${me.ifEmpty { "你" }} · 在这台手机上", Page.muted.copy(alpha = .62f), 11.5.sp, maxLines = 1)
+    var searching by remember { mutableStateOf(false) }
+    var query by remember { mutableStateOf("") }
+    Box(Modifier.fillMaxWidth().padding(start = 6.dp, end = if (Skin.wholeCards) 0.dp else 40.dp, bottom = 14.dp).mineRise(0, t)) {
+        SearchHead(searching, query, { query = it }, { searching = true }, { searching = false; query = "" }) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                AvatarFace(Avatars.ME, me.takeLast(1).ifEmpty { "你" }, Brush.linearGradient(listOf(warm, Color(0xFFB97F62))), 38.dp)
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Txt("我的", Page.ink, 19.sp, spacing = ls(2.6f, 19f), family = Serif)
+                    Spacer(Modifier.height(2.dp))
+                    Txt("${me.ifEmpty { "你" }} · 在这台手机上", Page.muted.copy(alpha = .62f), 11.5.sp, maxLines = 1)
+                }
+            }
         }
     }
+    androidx.compose.animation.AnimatedContent(
+        searching,
+        transitionSpec = { androidx.compose.animation.fadeIn(tween(220, 80)) togetherWith androidx.compose.animation.fadeOut(tween(150)) },
+        label = "mineSearch",
+    ) { on ->
+        if (on) SearchResults(query, { query = it }) { x ->
+            searching = false; query = ""
+            if (x.screen == "mine") SpotFlash.set(x.key) else onSpot(x)
+        } else Column { MineCardList(t, onGo) }
+    }
+}
+
+@Composable
+private fun MineCardList(t: Float, onGo: (String) -> Unit) {
     MineRow(1, t, "助理", "名字、提示词、记忆", { onGo("assistant") }, glyph = { SvgIcon(person, warm, 19.dp) }) {
         PersonaDot(Memory.active, 20.dp)
         Spacer(Modifier.width(6.dp))
@@ -140,9 +166,9 @@ private fun MineCardBody(t: Float, onGo: (String) -> Unit) {
         SvgIcon(chevron, Page.muted.copy(alpha = .6f), 15.dp, stroke = 1.8f)
     }
     Txt("连接器", Page.muted, 11.sp, Modifier.padding(start = 8.dp, top = 14.dp, bottom = 8.dp).mineRise(2, t), spacing = ls(2.75f, 11f))
-    MineYuRow(3, t)
+    Column(Modifier.spot("yu")) { MineYuRow(3, t) }
     Spacer(Modifier.height(6.dp))
-    MineTgRow(3, t)
+    Column(Modifier.spot("tg")) { MineTgRow(3, t) }
     Spacer(Modifier.height(6.dp))
     val n = Mcp.servers.size
     val on = Mcp.enabled().size
@@ -165,7 +191,7 @@ private fun MineCardBody(t: Float, onGo: (String) -> Unit) {
         SvgIcon(chevron, Page.muted.copy(alpha = .6f), 15.dp, stroke = 1.8f)
     }
     Txt("其他", Page.muted, 11.sp, Modifier.padding(start = 8.dp, top = 14.dp, bottom = 8.dp).mineRise(5, t), spacing = ls(2.75f, 11f))
-    BackupRow(6, t)
+    Column(Modifier.spot("backup")) { BackupRow(6, t) }
     Spacer(Modifier.height(6.dp))
     MineRow(7, t, "关于 Vignette", "背景作品 · 版权", { onGo("about") }, glyph = { SvgIcon(Icons.spark, warm, 18.dp, stroke = 1.1f) }) {
         SvgIcon(chevron, Page.muted.copy(alpha = .6f), 15.dp, stroke = 1.8f)
