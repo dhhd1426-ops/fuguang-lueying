@@ -303,7 +303,7 @@ internal fun ConvMenuLayer(history: ConvStore) {
 
 /** 菜单里一项：44dp 高，图标 + 字；按下当帧暗一下。 */
 @Composable
-private fun MenuItem(ic: Ic, label: String, red: Boolean, filled: Boolean, onClick: () -> Unit) {
+internal fun MenuItem(ic: Ic, label: String, red: Boolean, filled: Boolean, onClick: () -> Unit) {
     val src = remember { MutableInteractionSource() }
     val pressed by src.collectIsPressedAsState()
     val bg by animateFloatAsState(if (pressed) 1f else 0f, tween(if (pressed) 60 else 180), label = "mi")
@@ -335,7 +335,7 @@ private fun MenuItem(ic: Ic, label: String, red: Boolean, filled: Boolean, onCli
  * 进：缩放 .94 → 1、淡入 260ms 减速；出：160ms 加速收回。点卡片外面、按返回都等于取消。
  */
 @Composable
-private fun Sheet(open: Boolean, onDismiss: () -> Unit, content: @Composable () -> Unit) {
+internal fun Sheet(open: Boolean, onDismiss: () -> Unit, content: @Composable () -> Unit) {
     val t = remember { Animatable(0f) }
     LaunchedEffect(open) { t.animateTo(if (open) 1f else 0f, if (open) tween(260, easing = Curves.decel) else tween(160, easing = Curves.accel)) }
     BackHandler(open) { onDismiss() }
@@ -358,7 +358,7 @@ private fun Sheet(open: Boolean, onDismiss: () -> Unit, content: @Composable () 
 }
 
 @Composable
-private fun SheetButton(text: String, main: Boolean, modifier: Modifier = Modifier, enabled: Boolean = true, red: Boolean = false, onClick: () -> Unit) {
+internal fun SheetButton(text: String, main: Boolean, modifier: Modifier = Modifier, enabled: Boolean = true, red: Boolean = false, onClick: () -> Unit) {
     PressSurface(
         onClick, modifier.height(44.dp).graphicsLayer { alpha = if (enabled) 1f else .4f }, shape = RoundedCornerShape(14.dp),
         fill = if (!main) Skin.well(.22f) else if (red) danger else Skin.accent,
