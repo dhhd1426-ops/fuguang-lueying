@@ -16,15 +16,16 @@ object Recall {
     val spec = ToolSpec(
         TOOL,
         "翻看你和他以前的聊天记录（不含这一段）。他提到以前聊过的事、问你还记不记得、或者你想接上前情时使用。" +
-            "关键词可以有多个，用空格分开；空字符串返回最近的几段对话。",
+            "每段带着小结（gist，那段聊了什么、细节都在里面）和原话里命中的句子；先看小结找到是哪段，原话核对细节。" +
+            "关键词可以有多个，用空格分开，宁可短（「蓝色 衣服」比「蓝色衣服品牌」好找）；空字符串返回最近的几段对话。",
         JSONObject().put("type", "object")
             .put("properties", JSONObject().put("query", JSONObject().put("type", "string").put("description", "关键词")))
             .put("required", JSONArray().put("query")),
     )
 
     fun system(): String =
-        "你们以前的聊天也在手边，用 $TOOL 能翻。要不要翻由你判断：他提起以前的事、问你还记不记得、或者你自己想接上前情时再翻；" +
-            "平常聊天不用翻。想起来了就像自己记得一样自然地说。"
+        "你们以前的聊天也在手边，用 $TOOL 能翻，每段都有小结。要不要翻由你判断：他提起以前的事、问你还记不记得、或者你自己想接上前情时再翻；" +
+            "平常聊天不用翻。想起来了就像自己记得一样自然地说；翻了也没找到，就照实说记不清，不编。"
 
     private fun day(t: Long) = SimpleDateFormat("M月d日", Locale.CHINA).format(Date(t))
 
@@ -37,18 +38,22 @@ object Recall {
         if (words.isEmpty()) {
             convs.take(6).forEach { c ->
                 out.put(JSONObject().put("date", day(c.updated)).put("title", c.title)
+                    .apply { if (c.gist.isNotBlank()) put("gist", c.gist) }
                     .put("last", c.msgs.takeLast(2).joinToString(" / ") { (if (it.role == "user") "他：" else "你：") + it.text.take(120) }))
             }
         } else {
             for (c in convs) {
                 val hits = c.msgs.indices.filter { i -> words.any { w -> c.msgs[i].text.contains(w, ignoreCase = true) } }
-                if (hits.isEmpty()) continue
+                // 小结、标题里有也算：原话里的说法和他现在问的不一样时，小结常常能接上
+                val inGist = words.any { w -> c.gist.contains(w, ignoreCase = true) || c.title.contains(w, ignoreCase = true) }
+                if (hits.isEmpty() && !inGist) continue
                 val lines = hits.take(3).joinToString(" … ") { i ->
                     (maxOf(0, i - 1)..minOf(c.msgs.lastIndex, i + 1)).joinToString(" / ") { k ->
                         (if (c.msgs[k].role == "user") "他：" else "你：") + c.msgs[k].text.replace("\n", " ").take(160)
                     }
                 }
-                out.put(JSONObject().put("date", day(c.updated)).put("title", c.title).put("found", lines))
+                out.put(JSONObject().put("date", day(c.updated)).put("title", c.title)
+                    .apply { if (c.gist.isNotBlank()) put("gist", c.gist); if (lines.isNotEmpty()) put("found", lines) })
                 if (out.length() >= 6) break
             }
             if (out.length() == 0) return ToolOut("以前的聊天里没找到「${query.trim()}」。")
