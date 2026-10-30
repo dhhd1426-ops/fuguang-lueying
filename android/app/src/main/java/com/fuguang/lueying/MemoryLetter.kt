@@ -299,24 +299,9 @@ internal fun NoteCard(m: Mem, kids: Int, index: Int, modifier: Modifier, onOpen:
 
 /* ---------- 信纸 ---------- */
 
-// 信纸是一张纸，不跟主题换颜色（像照片看图一直是深色一样）
-private val PaperBg = Color(0xFFF4EDDD)
-private val PaperVine = Color(0xFFA8946C)
-private val PaperInk = Color(0xFF4A3E2C)
-private val PaperMuted = Color(0xFF8F7F62)
-
-private val CN = listOf("", "一", "二", "三", "四", "五", "六", "七", "八", "九", "十")
-private fun cn(n: Int) = when { n <= 10 -> CN[n]; n < 20 -> "十" + CN[n - 10]; else -> CN[n / 10] + "十" + CN[n % 10] }
-
-/** 落款：三个字的中文名去掉姓（陆嘉静 → 嘉静），别的照原样。 */
-private fun sign(name: String): String {
-    val n = name.trim()
-    return if (n.length == 3 && n.all { it in '一'..'鿿' }) n.substring(1) else n.ifEmpty { "她" }
-}
-
 /**
- * 点开一条记忆：整页一张米色信纸（推进来时纸再从下面浮上来 500ms 减速），四边玫瑰藤蔓（[vine]，照原型用代码画，不放图片）。
- * 上面中文日期、这条是哪一类、一道小花饰；正文是她写的那段话（[Mem.diary]，还没写好就用记下的那句和细节），按换行分段、首行缩进两字；右下落款。
+ * 点开一条记忆（第 346 版，原型 EzmAr4Lo7ucsmJG6FEV4as 第 11 版）：沉浸式，直接铺在软件主题背景上，不要信纸、不要框。
+ * 上面一行小字「日期 · 类别」，下面标题，再下面正文一段一段排（不缩进）；周、月、年那份下面列着挂在它底下的，点了往下翻。
  */
 @Composable
 internal fun ColumnScope.LetterScreen(p: Persona, m: Mem, onKid: (Mem) -> Unit = {}, onBack: () -> Unit) {
@@ -326,119 +311,35 @@ internal fun ColumnScope.LetterScreen(p: Persona, m: Mem, onKid: (Mem) -> Unit =
         }
     }
     val rise = remember(m.id) { Animatable(0f) }
-    LaunchedEffect(m.id) { delay(120); rise.animateTo(1f, tween(500, easing = Curves.decel)) }
-    val paras = MemTree.body(m)
-        .split('\n').map { it.trim() }.filter { it.isNotEmpty() }
-    val date = if (m.at > 0) Calendar.getInstance().apply { timeInMillis = m.at }.let { c -> cn(c.get(Calendar.MONTH) + 1) + "月" + cn(c.get(Calendar.DAY_OF_MONTH)) + "日" } else ""
-    BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
-        val minH = maxHeight - 12.dp
-        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(bottom = 12.dp)) {
-            Column(
-                Modifier.fillMaxWidth().heightIn(min = minH)
-                    .graphicsLayer { alpha = rise.value; translationY = (1f - rise.value) * 14.dp.toPx() }
-                    .shadow(12.dp, RoundedCornerShape(6.dp), ambientColor = PaperInk.copy(alpha = .35f), spotColor = PaperInk.copy(alpha = .35f))
-                    .background(PaperBg, RoundedCornerShape(6.dp))
-                    .drawBehind { vine(PaperVine) }
-                    .padding(start = 46.dp, end = 46.dp, top = 60.dp, bottom = 62.dp),
-            ) {
-                if (date.isNotEmpty()) Txt(date, PaperMuted, 12.5.sp, Modifier.fillMaxWidth(), spacing = 1.sp, family = FontFamily.Serif, align = TextAlign.Center)
-                Txt(MemTree.kindZh(m.kind) + (if (m.span) " · " + MemTree.date(m) else "") + (if (m.pin) " · 常驻" else ""), PaperMuted.copy(alpha = .8f), 11.5.sp, Modifier.fillMaxWidth().padding(top = 4.dp), family = FontFamily.Serif, align = TextAlign.Center)
-                Txt(Memory.ownWords(m.text), PaperInk, 17.sp, Modifier.fillMaxWidth().padding(top = 12.dp), family = FontFamily.Serif, align = TextAlign.Center, lineHeight = 26.sp)
-                Canvas(Modifier.padding(top = 14.dp, bottom = 18.dp).size(60.dp, 10.dp).align(Alignment.CenterHorizontally)) {
-                    val y = size.height / 2; val w = .8.dp.toPx()
-                    drawLine(PaperVine, Offset(2.dp.toPx(), y), Offset(22.dp.toPx(), y), w)
-                    drawLine(PaperVine, Offset(38.dp.toPx(), y), Offset(58.dp.toPx(), y), w)
-                    drawCircle(PaperVine, 2.4.dp.toPx(), Offset(size.width / 2, y), style = Stroke(w))
-                    drawCircle(PaperVine, .9.dp.toPx(), Offset(size.width / 2, y))
-                }
-                val style = TextStyle(fontFamily = FontFamily.Serif, fontSize = 15.5.sp, lineHeight = 31.sp, color = PaperInk, textIndent = TextIndent(firstLine = 31.sp))
-                paras.forEachIndexed { i, t ->
-                    if (i > 0) Spacer(Modifier.height(8.dp))
-                    BasicText(t, Modifier.fillMaxWidth(), style = style)
-                }
-                Txt("—— " + sign(p.name), PaperMuted, 14.sp, Modifier.fillMaxWidth().padding(top = 24.dp), family = FontFamily.Serif, align = TextAlign.End)
-                // 周、月、年那一份：下面挂着的几份，点开往下翻
-                val kids = MemTree.kids(p, m)
-                if (kids.isNotEmpty()) {
-                    Txt("这" + (when (m.kind) { "week" -> "一周"; "month" -> "个月"; else -> "一年" }) + "里", PaperMuted, 12.5.sp, Modifier.padding(top = 28.dp, bottom = 6.dp), family = FontFamily.Serif)
-                    kids.forEach { k ->
-                        Pressable({ onKid(k) }, Modifier.fillMaxWidth().padding(vertical = 3.dp), label = k.text) { pr ->
-                            Row(
-                                Modifier.fillMaxWidth().background(PaperInk.copy(alpha = if (pr) .1f else .05f), RoundedCornerShape(10.dp)).padding(horizontal = 14.dp, vertical = 11.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Txt(Memory.ownWords(k.text), PaperInk, 14.sp, Modifier.weight(1f), family = FontFamily.Serif, maxLines = 1)
-                                Txt(MemTree.date(k), PaperMuted, 12.sp, Modifier.padding(start = 10.dp), maxLines = 1)
-                            }
-                        }
+    LaunchedEffect(m.id) { delay(80); rise.animateTo(1f, tween(420, easing = Curves.decel)) }
+    val paras = MemTree.body(m).split('\n').map { it.trim() }.filter { it.isNotEmpty() }
+    val kids = MemTree.kids(p, m)
+    Column(
+        Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState())
+            .graphicsLayer { alpha = rise.value; translationY = (1f - rise.value) * 10.dp.toPx() }
+            .padding(start = 4.dp, end = 4.dp, bottom = 32.dp),
+    ) {
+        Txt(
+            listOfNotNull(MemTree.date(m), MemTree.kindZh(m.kind), if (m.pin) "常驻" else null).filter { it.isNotEmpty() }.joinToString(" · "),
+            Page.muted, 13.sp, Modifier.padding(top = 8.dp, bottom = 8.dp), maxLines = 1,
+        )
+        Txt(Memory.ownWords(m.text), Page.ink, 24.sp, Modifier.fillMaxWidth().padding(bottom = 22.dp), weight = FontWeight.SemiBold, lineHeight = 34.sp)
+        paras.forEach { t ->
+            Txt(t, Page.ink, 16.sp, Modifier.fillMaxWidth().padding(bottom = 14.dp), lineHeight = 31.sp)
+        }
+        if (kids.isNotEmpty()) {
+            Txt("这" + (when (m.kind) { "week" -> "一周"; "month" -> "个月"; else -> "一年" }) + "里", Page.muted, 13.sp, Modifier.padding(top = 18.dp, bottom = 6.dp))
+            kids.forEach { k ->
+                Pressable({ onKid(k) }, Modifier.fillMaxWidth().padding(vertical = 4.dp), label = k.text) { pr ->
+                    Row(
+                        Modifier.fillMaxWidth().background(Skin.cardFill(if (pr) .7f else .5f), RoundedCornerShape(14.dp)).padding(horizontal = 16.dp, vertical = 13.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Txt(Memory.ownWords(k.text), Page.ink, 14.5.sp, Modifier.weight(1f), maxLines = 1)
+                        Txt(MemTree.date(k), Page.muted, 12.5.sp, Modifier.padding(start = 10.dp), maxLines = 1)
                     }
                 }
             }
         }
-    }
-}
-
-/** 玫瑰藤蔓边框：离纸边 22dp 沿四边一条起伏的藤，隔一段两片叶子、隔一段一朵小玫瑰（几圈错开的弧），四角各一簇。 */
-private fun DrawScope.vine(c: Color) {
-    val u = 1.dp.toPx()
-    val w = size.width; val h = size.height; val m = 22 * u
-    var seed = 7
-    fun rnd(): Float { seed = (seed * 9301 + 49297) % 233280; return seed / 233280f }
-    fun rose(x: Float, y: Float, r: Float) {
-        val rot = rnd() * 360f
-        for (i in 0 until 5) {
-            val rr = r * (1 - i * .18f)
-            drawArc(c, rot + i * 74.5f, 252f, false, Offset(x - rr, y - rr), Size(2 * rr, 2 * rr), style = Stroke(.9f * u))
-        }
-        drawCircle(c, r * .18f, Offset(x, y))
-    }
-    fun leaf(x: Float, y: Float, a: Float, l: Float) {
-        val path = Path().apply { moveTo(0f, 0f); quadraticTo(l * .5f, -l * .42f, l, 0f); quadraticTo(l * .5f, l * .42f, 0f, 0f); close() }
-        translate(x, y) {
-            rotate((a * 180f / PI).toFloat(), pivot = Offset.Zero) {
-                drawPath(path, c.copy(alpha = c.alpha * .55f))
-                drawLine(c, Offset.Zero, Offset(l * .85f, 0f), .5f * u)
-            }
-        }
-    }
-    fun edge(x0: Float, y0: Float, x1: Float, y1: Float) {
-        val len = hypot(x1 - x0, y1 - y0)
-        val ux = (x1 - x0) / len; val uy = (y1 - y0) / len
-        val nx = -uy; val ny = ux
-        val amp = 4.5f * u; val wl = 46f * u
-        val path = Path()
-        var t = 0f
-        while (t <= len) {
-            val o = sin(t / wl * 2 * PI).toFloat() * amp
-            val px = x0 + ux * t + nx * o; val py = y0 + uy * t + ny * o
-            if (t == 0f) path.moveTo(px, py) else path.lineTo(px, py)
-            t += 2 * u
-        }
-        drawPath(path, c, style = Stroke(u))
-        val base = atan2(uy, ux)
-        t = 34 * u
-        while (t < len - 30 * u) {
-            val o = sin(t / wl * 2 * PI).toFloat() * amp
-            val px = x0 + ux * t + nx * o; val py = y0 + uy * t + ny * o
-            val idx = (t / wl).roundToInt()
-            val side = if (idx % 2 != 0) 1f else -1f
-            leaf(px, py, base + side * 1f, (9 + rnd() * 3) * u)
-            leaf(px, py, base + PI.toFloat() - side * .9f, (7 + rnd() * 3) * u)
-            if (idx % 2 == 0) rose(px + nx * side * 9 * u, py + ny * side * 9 * u, (5.2f + rnd() * 1.4f) * u)
-            t += wl
-        }
-    }
-    edge(m + 16 * u, m, w - m - 16 * u, m)
-    edge(w - m, m + 16 * u, w - m, h - m - 16 * u)
-    edge(w - m - 16 * u, h - m, m + 16 * u, h - m)
-    edge(m, h - m - 16 * u, m, m + 16 * u)
-    listOf(Offset(m, m), Offset(w - m, m), Offset(w - m, h - m), Offset(m, h - m)).forEachIndexed { i, p ->
-        val a = i * PI.toFloat() / 2
-        rose(p.x, p.y, 8 * u)
-        leaf(p.x, p.y, a + .3f, 11 * u)
-        leaf(p.x, p.y, a + 1.27f, 11 * u)
-        val ca = cos(a); val sa = sin(a); val cb = cos(a + PI.toFloat() / 2); val sb = sin(a + PI.toFloat() / 2)
-        rose(p.x + ca * 14 * u + cb * 4 * u, p.y + sa * 14 * u + sb * 4 * u, 4.5f * u)
-        rose(p.x + cb * 14 * u + ca * 4 * u, p.y + sb * 14 * u + sa * 4 * u, 4.5f * u)
     }
 }
