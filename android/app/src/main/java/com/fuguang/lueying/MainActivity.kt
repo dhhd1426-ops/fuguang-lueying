@@ -44,6 +44,7 @@ class MainActivity : ComponentActivity() {
         Pacts.init(this, prefs)
         PactRun.ready = true
         Pacts.catchUp(this)
+        PactKeeper.sync(this)
         ModelFit.init(prefs)
         WebSearch.init(prefs)
         Skin.init(prefs)

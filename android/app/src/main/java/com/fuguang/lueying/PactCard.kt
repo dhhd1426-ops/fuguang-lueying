@@ -97,6 +97,17 @@ object Keep {
         }
         return out
     }
+
+    /** 可选的：常驻通知藏起来（关掉「她在后台等着」那一类）。关掉了、或者点过，就不再列。 */
+    fun extra(ctx: Context): List<Step> {
+        if (Pacts.all.isEmpty() || PactKeeper.hidden(ctx) || Prefs(ctx).string(HIDE) == "1") return emptyList()
+        return listOf(Step("hide", "把常驻通知藏起来", "可选 · 关掉这一类") { c ->
+            Prefs(c).putString(HIDE, "1")
+            open(c, Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, c.packageName).putExtra(Settings.EXTRA_CHANNEL_ID, PactKeeper.CH),
+                Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, c.packageName))
+        })
+    }
+    private const val HIDE = "keep-hide"
 }
 
 /** 回复里的约定卡；下面跟着「让她能按时找你」（还差的时候）。 */
@@ -122,10 +133,10 @@ internal fun PactCard(ref: String) {
 }
 
 @Composable
-private fun KeepCard() {
+internal fun KeepCard() {
     val ctx = LocalContext.current
     var tick by remember { mutableIntStateOf(0) }
-    val steps = remember(Keep.ver, tick) { Keep.needs(ctx) }
+    val steps = remember(Keep.ver, tick, Pacts.all.size) { Keep.needs(ctx) + Keep.extra(ctx) }
     if (steps.isEmpty()) return
     val rise = remember { Animatable(0f) }
     LaunchedEffect(Unit) { rise.animateTo(1f, tween(320, easing = Curves.decel)) }
@@ -152,7 +163,7 @@ private fun KeepCard() {
                 }
             }
         }
-        Txt("已经允许过的不会再问；不开也能用：没叫醒的话，你下次打开时她补一句。", Page.muted, 12.sp, lineHeight = 19.sp)
+        Txt("她有约定时常驻后台，划掉也还在。已经允许过的不会再问；没叫醒的话，你下次打开时她补一句。", Page.muted, 12.sp, lineHeight = 19.sp)
     }
 }
 
