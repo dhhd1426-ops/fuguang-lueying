@@ -7,4 +7,6 @@
     <cache-path name="camera" path="camera/" />
     <!-- 你发给她的照片、文件：点开交给系统看 -->
     <files-path name="attach" path="attach/" />
+    <!-- 她发的文件（Word / PDF / txt / md）：打开、分享时交给别的 App -->
+    <files-path name="sent" path="sent/" />
 </paths>

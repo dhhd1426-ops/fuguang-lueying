@@ -257,7 +257,8 @@ object Docx {
         // numId 1 = 圆点；每组编号列表一个自己的 numId，从 1 重新数
         val numIdOf = numbered.mapIndexed { i, l -> l to (i + 2) }.toMap()
         val body = StringBuilder()
-        body.append(p("Title", listOf(Run(title))))
+        // 标题为空（她直接发的文件）就不加大标题，正文是什么就是什么
+        if (title.isNotBlank()) body.append(p("Title", listOf(Run(title))))
         blocks.forEach { b ->
             body.append(
                 when (b) {
