@@ -111,7 +111,48 @@ $OPS
 """.trim()
             val raw = MemModel.ask(sys(her), ask, 3000) ?: return
             apply(her, raw, conv, convTitle, emptySet())
+            runCatching { digest(her, window, conv, convTitle) }
         }
+    }
+
+    /**
+     * 这段聊了什么（第 359 版）：在原来的小结上把新聊的并进去，整份重写。只给她翻以前的聊天时看（Recall）。
+     * 还没有小结的（以前的对话、头一次回看）：拿整段最近 80 条来写。
+     */
+    private suspend fun digest(her: Persona, window: List<ChatMsg>, conv: String, convTitle: String) {
+        val store = Chats.current?.history ?: return
+        val c = store.get(conv) ?: return
+        val who = Memory.userCall
+        val msgs = if (c.gist.isBlank()) c.msgs.takeLast(80) else window
+        val talk = msgs.filter { it.text.isNotBlank() }.joinToString("\n") { (if (it.role == "user") "$who：" else "${her.name}：") + it.text.take(1500) }.takeLast(16000)
+        if (talk.isBlank()) return
+        val ask = """
+你在给${her.name}和$who 的一段聊天写小结。小结只给${her.name}自己看：以后$who 问起以前聊过的事，她先看小结找到是哪段、聊过什么。
+
+这段聊天的标题：${c.title.ifBlank { convTitle }}
+今天是 ${today()}。
+
+原来的小结：
+${c.gist.ifBlank { "（还没有）" }}
+
+${if (c.gist.isBlank()) "这段聊天（最近的部分）：" else "后来又聊的这些："}
+$talk
+
+把${if (c.gist.isBlank()) "这段聊天" else "后来聊的并进原来的小结，"}写成一份完整的小结：
+- 只写聊天里真的说过、发生过的，不添不猜，不评价，不写感受。
+- 细节写全：人名、地名、店名、品牌、型号、颜色、尺码、价格、数量、日期时间；谁推荐了什么、为什么；$who 选了什么、定下了什么；答应了还没办的事。以后会被问到的，宁可多写。
+- 按话题分段：每个话题先单独一行写「【话题（年月日）】」，下面一段段写细节；时间都写具体日期，不写「今天」「上周」。还没办完的事写在那个话题最后，单独一行，以「还没办完：」开头。
+- 原来小结里的内容都留着；被后来的话改掉的，写成最新的，并注一句原来是什么。
+- 称呼用「$who」和「${her.name}」，不用「我」「你」。寒暄不写。
+- 不超过 900 字。
+输出：{"gist":"…"}，正文分段用换行。
+""".trim()
+        val raw = MemModel.ask(sys(her), ask, 2500) ?: return
+        val o = runCatching { JSONObject("{" + raw.substringAfter('{', "").substringBeforeLast('}', "") + "}") }.getOrNull() ?: return
+        // 证件号、卡号、手机号、密码这类抹掉，其余照留
+        val g = secret.fold(o.optString("gist").trim().take(1500)) { s, r -> r.replace(s, "（略）") }
+        if (g.isEmpty()) return
+        store.setGist(conv, g)
     }
 
     /** 她当场记下的、你手写的、做事上记的一句：交给记忆模型写成标题 + 正文，或者并进说同一件事的那条。 */

@@ -18,6 +18,10 @@ data class Conv(
     val msgs: List<ChatMsg>,
     /** 这段对话属于哪位助理（Persona.id）。开始时定下，之后不换。 */
     val who: String = "",
+    /** 这段聊了什么（第 359 版）：只给她翻以前的聊天时看，聊完回看时记忆模型顺手补（Reflect.digest）。 */
+    val gist: String = "",
+    /** 小结最后一次写好的时间。 */
+    val gistAt: Long = 0,
 ) {
     /** 预览：最后一条回复的第一句。 */
     val preview: String
@@ -51,6 +55,8 @@ class ConvStore(private val prefs: Prefs) {
                             m.optString("pv"), m.optLong("tm"), lesson = m.optString("ls"), pact = m.optString("pc"))
                     },
                     who = o.optString("a"),
+                    gist = o.optString("g"),
+                    gistAt = o.optLong("ga"),
                 )
             }
         }
@@ -79,7 +85,7 @@ class ConvStore(private val prefs: Prefs) {
         val now = System.currentTimeMillis()
         val old = get(id)
         val title = old?.title ?: firstSentence(msgs.first { it.role == "user" }.text, 18)
-        val c = Conv(id ?: now.toString(), title, old?.created ?: now, now, old?.pinned ?: false, msgs.toList(), old?.who?.ifEmpty { null } ?: Memory.activeId)
+        val c = Conv(id ?: now.toString(), title, old?.created ?: now, now, old?.pinned ?: false, msgs.toList(), old?.who?.ifEmpty { null } ?: Memory.activeId, old?.gist.orEmpty(), old?.gistAt ?: 0)
         val i = all.indexOfFirst { it.id == c.id }
         if (i >= 0) all[i] = c else all.add(0, c)
         persist()
@@ -90,11 +96,19 @@ class ConvStore(private val prefs: Prefs) {
     fun append(id: String?, m: ChatMsg, who: String, title: String): String {
         val now = System.currentTimeMillis()
         val old = get(id)
-        val c = Conv(old?.id ?: now.toString(), old?.title ?: title, old?.created ?: now, now, old?.pinned ?: false, (old?.msgs ?: emptyList()) + m, old?.who?.ifEmpty { null } ?: who)
+        val c = Conv(old?.id ?: now.toString(), old?.title ?: title, old?.created ?: now, now, old?.pinned ?: false, (old?.msgs ?: emptyList()) + m, old?.who?.ifEmpty { null } ?: who, old?.gist.orEmpty(), old?.gistAt ?: 0)
         val i = all.indexOfFirst { it.id == c.id }
         if (i >= 0) all[i] = c else all.add(0, c)
         persist()
         return c.id
+    }
+
+    /** 换上新的小结（不动更新时间，不把这段顶到最上面）。 */
+    fun setGist(id: String, gist: String) {
+        val i = all.indexOfFirst { it.id == id }
+        if (i < 0 || all[i].gist == gist) return
+        all[i] = all[i].copy(gist = gist, gistAt = System.currentTimeMillis())
+        persist()
     }
 
     fun togglePin(id: String) {
@@ -130,7 +144,7 @@ class ConvStore(private val prefs: Prefs) {
         all.sortedByDescending { it.updated }.forEach { c ->
             val ms = JSONArray()
             c.msgs.forEach { m -> ms.put(JSONObject().put("r", m.role).put("x", m.text).apply { if (m.think.isNotEmpty()) put("k", m.think); if (m.imgs.isNotEmpty()) put("i", JSONArray(m.imgs)); if (m.works.isNotEmpty()) put("w", JSONArray(m.works)); if (m.workAt.isNotEmpty()) put("wa", JSONArray(m.workAt)); if (m.clips.isNotEmpty()) put("v", JSONArray(m.clips)); if (m.files.isNotEmpty()) put("f", JSONArray(m.files)); if (m.steps.isNotEmpty()) put("s", JSONArray(m.steps.map { s -> JSONObject().put("a", s.at).put("n", s.name).put("t", s.title).put("d", s.detail) })); if (m.at > 0) put("t", m.at); if (m.pid.isNotEmpty()) put("pv", m.pid); if (m.thinkMs > 0) put("tm", m.thinkMs); if (m.lesson.isNotEmpty()) put("ls", m.lesson); if (m.pact.isNotEmpty()) put("pc", m.pact) }) }
-            arr.put(JSONObject().put("id", c.id).put("t", c.title).put("c", c.created).put("u", c.updated).put("p", c.pinned).put("a", c.who).put("m", ms))
+            arr.put(JSONObject().put("id", c.id).put("t", c.title).put("c", c.created).put("u", c.updated).put("p", c.pinned).put("a", c.who).put("m", ms).apply { if (c.gist.isNotEmpty()) put("g", c.gist).put("ga", c.gistAt) })
         }
         prefs.putString(KEY, arr.toString())
     }
