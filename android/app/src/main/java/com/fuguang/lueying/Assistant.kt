@@ -260,7 +260,8 @@ object AssistantApi {
 data class ChatMsg(val role: String, val text: String, val think: String = "", val imgs: List<String> = emptyList(), val at: Long = System.currentTimeMillis(), val works: List<String> = emptyList(), val steps: List<ToolStep> = emptyList(), val clips: List<String> = emptyList(), val files: List<String> = emptyList(), val workAt: List<Int> = emptyList(),
     /** 这条是哪家答的（定思考样式）；旧记录是空的。 */ val pid: String = "",
     /** 想了多久（毫秒）；旧记录是 0。 */ val thinkMs: Long = 0,
-    /** 这一轮之后她记下的做事经验（Mem.id，Lessons.kt）；回复下面多一行「记住了一件事」。 */ val lesson: String = "")
+    /** 这一轮之后她记下的做事经验（Mem.id，Lessons.kt）；回复下面多一行「记住了一件事」。 */ val lesson: String = "",
+    /** 她按约定主动来找你说的这句（Pacts.kt）：约定的名字；回复上面一行小字「早报 · 按约定」。 */ val pact: String = "")
 
 /** 把思考原文切成段：按空行分；只有一段时按句号分成几小段。 */
 fun thinkSegments(raw: String): List<String> {

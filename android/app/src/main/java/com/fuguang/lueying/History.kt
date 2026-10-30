@@ -48,7 +48,7 @@ class ConvStore(private val prefs: Prefs) {
                             m.optJSONArray("v")?.let { a -> List(a.length()) { a.optString(it) } } ?: emptyList(),
                             m.optJSONArray("f")?.let { a -> List(a.length()) { a.optString(it) } } ?: emptyList(),
                             m.optJSONArray("wa")?.let { a -> List(a.length()) { a.optInt(it) } } ?: emptyList(),
-                            m.optString("pv"), m.optLong("tm"), lesson = m.optString("ls"))
+                            m.optString("pv"), m.optLong("tm"), lesson = m.optString("ls"), pact = m.optString("pc"))
                     },
                     who = o.optString("a"),
                 )
@@ -80,6 +80,17 @@ class ConvStore(private val prefs: Prefs) {
         val old = get(id)
         val title = old?.title ?: firstSentence(msgs.first { it.role == "user" }.text, 18)
         val c = Conv(id ?: now.toString(), title, old?.created ?: now, now, old?.pinned ?: false, msgs.toList(), old?.who?.ifEmpty { null } ?: Memory.activeId)
+        val i = all.indexOfFirst { it.id == c.id }
+        if (i >= 0) all[i] = c else all.add(0, c)
+        persist()
+        return c.id
+    }
+
+    /** 她主动来找你：这句接在那段对话后面（没有就新开一段，名字用约定的名字）。返回对话 id。 */
+    fun append(id: String?, m: ChatMsg, who: String, title: String): String {
+        val now = System.currentTimeMillis()
+        val old = get(id)
+        val c = Conv(old?.id ?: now.toString(), old?.title ?: title, old?.created ?: now, now, old?.pinned ?: false, (old?.msgs ?: emptyList()) + m, old?.who?.ifEmpty { null } ?: who)
         val i = all.indexOfFirst { it.id == c.id }
         if (i >= 0) all[i] = c else all.add(0, c)
         persist()
@@ -118,7 +129,7 @@ class ConvStore(private val prefs: Prefs) {
         val arr = JSONArray()
         all.sortedByDescending { it.updated }.forEach { c ->
             val ms = JSONArray()
-            c.msgs.forEach { m -> ms.put(JSONObject().put("r", m.role).put("x", m.text).apply { if (m.think.isNotEmpty()) put("k", m.think); if (m.imgs.isNotEmpty()) put("i", JSONArray(m.imgs)); if (m.works.isNotEmpty()) put("w", JSONArray(m.works)); if (m.workAt.isNotEmpty()) put("wa", JSONArray(m.workAt)); if (m.clips.isNotEmpty()) put("v", JSONArray(m.clips)); if (m.files.isNotEmpty()) put("f", JSONArray(m.files)); if (m.steps.isNotEmpty()) put("s", JSONArray(m.steps.map { s -> JSONObject().put("a", s.at).put("n", s.name).put("t", s.title).put("d", s.detail) })); if (m.at > 0) put("t", m.at); if (m.pid.isNotEmpty()) put("pv", m.pid); if (m.thinkMs > 0) put("tm", m.thinkMs); if (m.lesson.isNotEmpty()) put("ls", m.lesson) }) }
+            c.msgs.forEach { m -> ms.put(JSONObject().put("r", m.role).put("x", m.text).apply { if (m.think.isNotEmpty()) put("k", m.think); if (m.imgs.isNotEmpty()) put("i", JSONArray(m.imgs)); if (m.works.isNotEmpty()) put("w", JSONArray(m.works)); if (m.workAt.isNotEmpty()) put("wa", JSONArray(m.workAt)); if (m.clips.isNotEmpty()) put("v", JSONArray(m.clips)); if (m.files.isNotEmpty()) put("f", JSONArray(m.files)); if (m.steps.isNotEmpty()) put("s", JSONArray(m.steps.map { s -> JSONObject().put("a", s.at).put("n", s.name).put("t", s.title).put("d", s.detail) })); if (m.at > 0) put("t", m.at); if (m.pid.isNotEmpty()) put("pv", m.pid); if (m.thinkMs > 0) put("tm", m.thinkMs); if (m.lesson.isNotEmpty()) put("ls", m.lesson); if (m.pact.isNotEmpty()) put("pc", m.pact) }) }
             arr.put(JSONObject().put("id", c.id).put("t", c.title).put("c", c.created).put("u", c.updated).put("p", c.pinned).put("a", c.who).put("m", ms))
         }
         prefs.putString(KEY, arr.toString())

@@ -40,6 +40,10 @@ class MainActivity : ComponentActivity() {
         MemModel.init(prefs)
         Mcp.init(prefs)
         Backup.init(prefs)
+        // 约定（Pacts.kt）：读进来，闹钟重新定一遍，刚过点的补上
+        Pacts.init(this, prefs)
+        PactRun.ready = true
+        Pacts.catchUp(this)
         ModelFit.init(prefs)
         WebSearch.init(prefs)
         Skin.init(prefs)
@@ -90,6 +94,7 @@ class MainActivity : ComponentActivity() {
     // 有的系统（如 HyperOS）焦点回来那一下还读不到剪贴板：回到前台后稍等再看一次
     override fun onResume() {
         super.onResume()
+        Keep.ver++   // 从系统设置回来：「让她能按时找你」重新看一眼
         window.decorView.postDelayed({ if (hasWindowFocus()) ClipLink.check(this) }, 600)
     }
 

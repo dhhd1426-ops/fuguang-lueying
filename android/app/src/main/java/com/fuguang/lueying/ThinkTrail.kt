@@ -77,7 +77,7 @@ object Trail {
         Materials.OPEN -> "正在打开网页"; Materials.LOOK -> "正在看素材"; VideoParse.TOOL -> "正在解析抖音"; VideoParse.SAVE -> "正在存视频"
         PanTools.OPEN -> "正在打开网盘分享"; PanTools.GET -> "正在下网盘里的文件"
         in ClockTools.names -> ClockTools.liveTitle(n)
-        SentFiles.TOOL -> "正在打包文件"; Works.MAKE -> "正在动手做"; WorkJobs.START -> "正在交代"; Works.EDIT -> "正在改作品"; Works.READ -> "正在看原稿"; "list_todos" -> "正在查看羽的待办"; "read_note" -> "正在读羽的笔记"
+        SentFiles.TOOL -> "正在打包文件"; Pacts.SET -> "正在记约定"; Pacts.DROP -> "正在取消约定"; Works.MAKE -> "正在动手做"; WorkJobs.START -> "正在交代"; Works.EDIT -> "正在改作品"; Works.READ -> "正在看原稿"; "list_todos" -> "正在查看羽的待办"; "read_note" -> "正在读羽的笔记"
         else -> if (Mcp.owns(n)) Mcp.note(n).trimEnd('…') else "正在查阅羽的笔记"
     }
 
@@ -88,6 +88,8 @@ object Trail {
         Skills.LEARN -> if (Skills.has(SkillHub.cand(a.optString("repo"), a.optString("path")))) "学会了「${a.optString("title").trim().take(12)}」" else "没学「${a.optString("title").trim().take(12)}」"
         Works.MAKE -> (if (a.optString("kind") == "board") "搭好了画板" else "做好了作品") + "「${a.optString("title").trim().ifEmpty { "未命名" }.take(20)}」"
         Works.EDIT -> "改好了「${workTitle(a)}」"
+        Pacts.SET -> (if (a.optString("id").isNotBlank()) "改了约定" else "记下了一条约定") + "「${a.optString("title").trim().take(12)}」"
+        Pacts.DROP -> "取消了一条约定"
         SentFiles.TOOL -> a.optJSONArray("files").let { arr -> val n = arr?.length() ?: 0; val first = arr?.optJSONObject(0)?.optString("name")?.trim().orEmpty().take(16); if (n > 1) "发了「$first」等 $n 份文件" else "发了文件「$first」" }
         WorkJobs.START -> (if (a.optString("id").isNotBlank()) "交代了大改" else "交代了作品") + "「${a.optString("title").trim().ifEmpty { "未命名" }.take(20)}」，后台在写"
         Materials.OPEN -> Materials.doneTitle(a.optString("url"))
@@ -125,7 +127,7 @@ object Trail {
         Lessons.STEP -> bulb
         Memory.REMEMBER, Memory.READ -> bookmark; Memory.FORGET -> eraser; Recall.TOOL -> bubble; WebSearch.TOOL, Materials.OPEN -> globe; Materials.LOOK -> picture; VideoParse.TOOL -> Icons.play; VideoParse.SAVE, PanTools.GET -> saveIcon; PanTools.OPEN -> globe
         Skills.OPEN, Skills.FIND, Skills.LEARN -> skillIcon
-        Works.MAKE, Works.EDIT -> shapes; Works.READ, SentFiles.TOOL -> page; "list_todos" -> todo
+        Works.MAKE, Works.EDIT -> shapes; Works.READ, SentFiles.TOOL -> page; Pacts.SET, Pacts.DROP -> alarmIcon; "list_todos" -> todo
         ClockTools.ALARM, ClockTools.NEXT, ClockTools.OFF -> alarmIcon
         in ClockTools.names -> calIcon
         else -> if (Mcp.owns(n)) plug else feather

@@ -173,6 +173,9 @@ class ChatState(val history: ConvStore) {
 
     private fun persist() { convId = history.save(convId, messages) }
 
+    /** 她按约定主动来找你，正好开着这段：接在后面，存好，返回对话 id。 */
+    fun arrive(m: ChatMsg): String? { messages.add(m); persist(); return convId }
+
     /** 换了助理：手上这段对话不是她的，就换成和她的新对话。 */
     fun followPersona() {
         val c = history.get(convId) ?: return
@@ -281,13 +284,14 @@ class ChatState(val history: ConvStore) {
                 val mcp = Mcp.specs
                 val web = WebSearch.usable
                 val skills = Skills.specs()
-                val specs = Memory.toolSpecs + Works.specs.filter { it.name != Works.MAKE } + WorkJobs.spec + SentFiles.spec + Materials.specs + VideoParse.specs + PanTools.specs + ClockTools.specs + skills + (if (web) listOf(WebSearch.spec) else emptyList()) + (if (yu) Yu.tools else emptyList()) + (if (recall) listOf(Recall.spec) else emptyList()) + mcp
+                val specs = Memory.toolSpecs + Works.specs.filter { it.name != Works.MAKE } + WorkJobs.spec + SentFiles.spec + Pacts.specs + Materials.specs + VideoParse.specs + PanTools.specs + ClockTools.specs + skills + (if (web) listOf(WebSearch.spec) else emptyList()) + (if (yu) Yu.tools else emptyList()) + (if (recall) listOf(Recall.spec) else emptyList()) + mcp
                 val convTitle0 = store0.get(cur)?.title ?: firstSentence(question, 18)
                 val extra = buildString {
                     append("\n\n你手边还有这些东西，需要时再用，不需要就不用：")
                     append("\n").append(Memory.toolRule())
                     append("\n").append(Works.system(Memory.userCall, history, who.id))
                     append("\n").append(SentFiles.system(Memory.userCall))
+                    append("\n").append(Pacts.system(who, Memory.userCall))
                     append("\n").append(Materials.system())
                     append("\n").append(VideoParse.system(Memory.userCall))
                     append("\n").append(PanTools.system(Memory.userCall))
@@ -321,6 +325,7 @@ class ChatState(val history: ConvStore) {
                             else if (n in ClockTools.names) ClockTools.run(n, a, who.id) { l -> if (l !in pendingClips) pendingClips.add(l) }
                             else if (n == Materials.OPEN || n == Materials.LOOK) Materials.run(n, a, Yu.vision(p.id))
                             else if (n == Skills.OPEN || n == Skills.FIND || n == Skills.LEARN) Skills.run(n, a)
+                            else if (n == Pacts.SET || n == Pacts.DROP) Pacts.run(n, a, who) { ref -> pendingWorks.add(ref); pendingWorkAt.add(partial.length) }
                             else if (n == SentFiles.TOOL) SentFiles.run(a) { ref -> pendingWorks.add(ref); pendingWorkAt.add(partial.length) }
                             else if (n == WorkJobs.START) WorkJobs.start(a, this@ChatState, store, who.id, history) { ref -> pendingWorks.add(ref); pendingWorkAt.add(partial.length) }
                             else if (n == Works.MAKE || n == Works.READ || n == Works.EDIT) Works.run(n, a, who.id) { id -> made = true; if (id !in pendingWorks) { pendingWorks.add(id); pendingWorkAt.add(workDraft?.at ?: partial.length) } }
@@ -357,6 +362,7 @@ class ChatState(val history: ConvStore) {
                 while (shown < partial.length) { if (!Notify.foreground || !onScreen) shown = partial.length.toFloat(); kotlinx.coroutines.delay(32) }
                 if (partial.isNotBlank() || pendingWorks.isNotEmpty() || pendingClips.isNotEmpty()) {
                     messages.add(replyMsg(partial.trim()))
+                    Pacts.clearMissed(who.id)
                     // 记忆：不是每句都记，等这段聊停了再整段回想（换对话时马上回想上一段）
                     val cid = convId.orEmpty()
                     val title = this@ChatState.history.get(convId)?.title ?: firstSentence(question, 18)
@@ -780,7 +786,7 @@ private fun Conversation(
                             Box(Modifier.fillMaxWidth(.86f), contentAlignment = Alignment.CenterEnd) { ClipCards(m.clips) }
                         }
                     } else {
-                        ThinkRow(m.think, m.steps, live = false, summary = ThinkTidy.summaryStyle(m.pid.ifEmpty { store.activeProvider }), thinkMs = m.thinkMs, fetch = i == chat.landed) { onThink(i) }
+                        if (m.pact.isNotEmpty()) PactTag(m.pact) else ThinkRow(m.think, m.steps, live = false, summary = ThinkTidy.summaryStyle(m.pid.ifEmpty { store.activeProvider }), thinkMs = m.thinkMs, fetch = i == chat.landed) { onThink(i) }
                         Box(Modifier.fillMaxWidth().longPressMsg(i, pressed == i, onLong)) {
                             ReplyFlow(remember(m.text) { ToolText.clean(m.text) }, m.works, m.workAt, null, false, onWork) { t, f -> Reply(t, compact, f) }
                         }
