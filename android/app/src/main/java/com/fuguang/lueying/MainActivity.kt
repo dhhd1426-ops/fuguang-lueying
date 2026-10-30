@@ -36,6 +36,7 @@ class MainActivity : ComponentActivity() {
         Attach.init(this)
         ThinkTidy.dir = java.io.File(filesDir, "tidy")
         Memory.init(prefs)
+        MemModel.init(prefs)
         Mcp.init(prefs)
         Backup.init(prefs)
         ModelFit.init(prefs)

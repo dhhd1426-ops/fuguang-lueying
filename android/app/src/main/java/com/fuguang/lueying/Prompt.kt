@@ -12,29 +12,10 @@ import java.util.Locale
  * 不出现扮演、角色、设定、提示词、系统、AI、助手、模型、用户、根据记忆这类戏外的词。
  *
  * 上半段（system）每一轮都一样，供应商能缓存：
- *   名字 → [条目：她是谁之前] → 你写的她 → [条目：她是谁之后] → 她自己的样子 → 关于他 → 他的偏好 → 她记得的事 → 收尾一句
- * 会变的放在对话里（见 [aside] 和 Entries.weave）：时间旁白、按这句话想起的事、按关键词出现的条目。
+ *   名字 → [条目：她是谁之前] → 你写的她 → [条目：她是谁之后] → 思考指南 → 说话的底子 → 记忆目录（第 345 版，只有标题，常驻带正文）
+ * 会变的放在对话里（见 [aside] 和 Entries.weave）：时间旁白、按关键词出现的条目。
  */
 object Prompt {
-    /** 一条记忆在她心里的样子：一个多月前的，带一句「可能变了」。 */
-    private fun line(m: Mem, now: Long): String {
-        val own = Memory.ownWords(m.text).trimEnd('。')
-        val d = if (m.detail.isNotBlank()) "（" + Memory.ownWords(m.detail).trimEnd('。') + "）" else ""
-        val old = if (m.at > 0 && now - m.at > 30L * 86_400_000) "（一个多月前的事，可能变了）" else ""
-        return "- " + (if (m.kind == "promise") "你答应过：" else "") + own + d + old
-    }
-
-    /** 她记得的事里一直带着的：答应过的，加上最近的几条。其余的按这句话想起来（[aside]）。 */
-    private const val ALWAYS = 12
-
-    private fun diary(p: Persona) = p.items.filter { it.kind == "talk" || it.kind == "promise" || it.kind == "know" }
-    private fun steady(p: Persona): List<Mem> {
-        val d = diary(p)
-        if (d.size <= ALWAYS + 3) return d
-        val promises = d.filter { it.kind == "promise" }
-        return (promises + d.filter { it.kind != "promise" }.take((ALWAYS - promises.size).coerceAtLeast(4))).distinct()
-    }
-
     /**
      * App 自带的，每位助理都有，不在提示词页里。用户 2026-10-27 给的原文，照录不改一个字（用户说「用我的原文来」）。
      */
@@ -47,7 +28,6 @@ object Prompt {
 
     fun system(p: Persona, model: String): String {
         val who = Memory.userCall
-        val now = System.currentTimeMillis()
         val sb = StringBuilder()
         sb.append("你叫").append(p.name).append("。")
         if (Memory.userName.isNotBlank()) sb.append("正在和你说话的是").append(who).append("，").append(who).append("也叫你").append(p.name).append("。")
@@ -59,21 +39,17 @@ object Prompt {
         sb.append("\n\n").append(GUIDE)
         // 说话的底子：句群层次（Voice.kt），每轮不变，跟着上半段一起缓存
         sb.append("\n\n").append(Voice.mine(who))
-        fun block(head: String, ms: List<Mem>, cap: Int) {
-            if (ms.isNotEmpty()) sb.append("\n\n").append(head).append("\n").append(ms.take(cap).joinToString("\n") { line(it, now) })
+        // 第 345 版：只带目录（每条一个标题），常驻的带正文；要细节她自己翻（Memory.READ），只在相关时翻
+        MemTree.catalog(p).takeIf { it.isNotBlank() }?.let { cat ->
+            sb.append("\n\n你记得的事，这里只有目录（方括号里是编号）：\n").append(cat)
+            sb.append("\n\n目录只是让你知道自己记得什么。${who}说的话和某条直接有关时，才用 ${Memory.READ} 翻那条的正文；翻到了，只用和他这句话有关的内容，不要顺带讲别的记忆，也不要主动提起以前的事。常驻的那几句每句话都照着做。")
         }
-        block("你一直是这样的：", p.items.filter { it.kind == "self" }, 20)
-        block("你知道的关于${who}的事：", p.items.filter { it.kind == "about" }, 30)
-        block("${who}喜欢你这样和他相处：", p.items.filter { it.kind == "pref" }, 30)
-        block("你记得：", steady(p), ALWAYS + 3)
-        if (p.items.isNotEmpty())
-            sb.append("\n\n这些都是你自己知道的，像平常一样自然地带出来就好：合适的时候提一句，不用一条条说，也不用说是从哪知道的。答应过的事放在心上，${who}提起或聊到相关的时候再接上。")
         return sb.toString()
     }
 
     /**
-     * 放在最后一句话前面的旁白：现在几点、隔了多久、你们认识多久（新对话的第一句），
-     * 以及按这几句话想起来的旧事（她记得的事太多时，不全放进上半段）。
+     * 放在最后一句话前面的旁白：现在几点、隔了多久、你们认识多久（新对话的第一句）。
+     * 第 345 版起不再按字面替她「想起」旧事，要不要翻记忆由她自己定。
      */
     fun aside(p: Persona, history: List<ChatMsg>, prevAt: Long): String {
         val who = Memory.userCall
@@ -98,20 +74,6 @@ object Prompt {
             else bits += "你们认识第 ${((now - p.firstAt) / 86_400_000L).toInt() + 1} 天了，这是第 ${p.chats} 次聊天"
         }
         val sb = StringBuilder("（").append(bits.joinToString("，")).append("）")
-        recall(p, history).takeIf { it.isNotEmpty() }?.let { ms ->
-            sb.append("\n（你想起：").append(ms.joinToString("；") { Memory.ownWords(it.text).trimEnd('。') }).append("）")
-        }
         return sb.toString()
-    }
-
-    /** 她记得的事太多、没全放进上半段时：按最近几句话的字面重合，挑最多 5 条想起来；拿不准（重合太少）就不挑。 */
-    private fun recall(p: Persona, history: List<ChatMsg>): List<Mem> {
-        val rest = diary(p) - steady(p).toSet()
-        if (rest.isEmpty()) return emptyList()
-        val recent = history.takeLast(4).joinToString(" ") { it.text }
-        val grams = recent.windowed(2).filter { g -> g.all { it.isLetterOrDigit() } }.toSet()
-        if (grams.isEmpty()) return emptyList()
-        return rest.map { m -> m to (m.text + m.detail).windowed(2).count { it in grams } }
-            .filter { it.second >= 2 }.sortedByDescending { it.second }.take(5).map { it.first }
     }
 }

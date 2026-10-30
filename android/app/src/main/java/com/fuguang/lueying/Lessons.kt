@@ -13,6 +13,7 @@ import org.json.JSONObject
  */
 object Lessons {
     const val KIND = "lesson"
+    private const val NO_AUTO = true
     /** 时间线上「想起上次」那一步的名字。 */
     const val STEP = "recall_lesson"
 
@@ -66,7 +67,8 @@ object Lessons {
 
     /** 这一轮想起哪几条：习惯最多 3 条，再按要做的事和字面挑最多 2 条。关着、或这家型号没记过的，什么都不带。 */
     fun pick(p: Persona, history: List<ChatMsg>, pv: String): List<Mem> {
-        if (!p.lessonsOn) return emptyList()
+        // 第 345 版：记忆只按目录、由她自己翻，不再每轮按场景塞进旁白
+        if (!p.lessonsOn || NO_AUTO) return emptyList()
         val now = System.currentTimeMillis()
         val fresh = p.items.filter { it.kind == KIND && it.failed < 2 && (it.habit || it.by == "you" || now - maxOf(it.at, it.usedAt) < 30L * 86_400_000) }
             .filter { it.habit || it.by == "you" || it.pv.isEmpty() || it.pv == pv }
@@ -146,7 +148,7 @@ object Lessons {
      */
     suspend fun learn(p: Persona, store: AssistantStore, window: List<ChatMsg>, slips: Set<String>, pv: String, conv: String, convTitle: String): Mem? {
         if (!p.lessonsOn || slips.isEmpty()) return null
-        val (hid, hmodel) = AttachLook.helper(store) ?: (store.activeProvider to store.activeModel)
+        val (hid, hmodel) = MemModel.pick(store)
         val hc = store.config(hid); if (!hc.configured) return null
         val who = Memory.userCall
         val known = p.items.filter { it.kind == KIND && it.by != "you" }.take(40)
@@ -191,7 +193,7 @@ ${listing(known)}
             Mem("$now-l", t, why, now, conv, convTitle, KIND, "her", pv = mine, scene = sc, usedAt = now).also { p.items.add(0, it) }
         }
         Memory.save()
-        Diary.later(p, m)
+        Reflect.place(p, m)
         return m
     }
 }

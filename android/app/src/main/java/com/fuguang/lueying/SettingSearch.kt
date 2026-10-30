@@ -70,6 +70,8 @@ internal object SettingIndex {
         SettingSpot("entries", "设定条目", "我的 › 助理 › 系统提示词", "设定条目 条目 世界书 关键词", "persona", 1),
         SettingSpot("cross", "跨聊天回忆", "我的 › 助理 › 记忆", "跨聊天回忆 回忆 以前 历史 翻聊天", "persona", 2),
         SettingSpot("memory", "记忆", "我的 › 助理 › 记忆", "记忆 记住 忘掉 删除记忆 她记得", "persona", 2),
+        SettingSpot("memmodel", "记忆模型", "我的 › 助理 › 记忆 › ☰", "记忆模型 处理模型 记忆 思考 推理 整理 收拢", "memmodel"),
+        SettingSpot("memprompt", "记忆系统提示词", "我的 › 助理 › 记忆 › ☰ › 记忆模型", "记忆系统提示词 记忆提示词 记下 整理 写法", "memmodel"),
         SettingSpot("web", "联网搜索", "我的 › 功能", "联网 搜索 网页 上网 exa", "features"),
         SettingSpot("skills", "技能", "我的 › 功能", "技能 skill 本事 工具", "features"),
         SettingSpot("yu", "羽", "我的 › 连接器", "羽 笔记 读取 连接器", "mine"),

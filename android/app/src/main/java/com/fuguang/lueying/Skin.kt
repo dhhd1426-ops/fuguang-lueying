@@ -112,6 +112,11 @@ object Skin {
     /** 聊天里卡片（抖音、网盘、Telegram 长条）的底：深色主题深色玻璃，浅色主题白色玻璃。 */
     fun cardFill(a: Float): Color = if (light) Color.White.copy(alpha = (a * .7f).coerceAtMost(.9f)) else rgba(30, 33, 42, a)
 
+    /** 记忆本的折角卡片（第 345 版）：暗黑是实底深灰，白色是白纸，渐变是白色磨砂，磨砂是深色玻璃。 */
+    val note: Color get() = when (id) { DARK -> Color(0xFF1E1E1E); LIGHT -> Color.White; GRAD -> Color.White.copy(alpha = .55f); else -> rgba(30, 33, 42, .62f) }
+    /** 卡片右上折过来的那一角：比纸深一层。 */
+    val noteFold: Color get() = if (light) Color(0f, 0f, 0f, .07f) else Color(1f, 1f, 1f, .12f)
+
     /** 聊天页压在背景画面上的那层暗：没有背景画面时不要。 */
     fun shade(a: Float): Color = if (frost) rgba(14, 17, 23, a) else Color.Transparent
 }
