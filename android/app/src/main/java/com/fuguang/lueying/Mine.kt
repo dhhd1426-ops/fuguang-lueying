@@ -892,6 +892,7 @@ private fun ColumnScope.MemBookScreen(p: Persona, compact: Boolean, nav: MineNav
                         Spacer(Modifier.width(10.dp))
                         Txt("到点她会主动找你", Page.muted, 12.sp, maxLines = 1)
                     }
+                    Box(Modifier.padding(bottom = 16.dp)) { KeepCard() }
                     pacts.chunked(cols).forEach { row ->
                         Row(Modifier.fillMaxWidth().padding(bottom = 24.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                             row.forEach { k -> PactNote(k, idx++, Modifier.weight(1f)) { dropping = k } }

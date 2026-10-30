@@ -17,6 +17,7 @@
     <uses-permission android:name="android.permission.WRITE_CALENDAR" />
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
     <!-- 连接器：能看到笔记 App「羽」，读取它提供的笔记接口 -->
@@ -134,6 +135,15 @@
             android:name=".PactRun"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
+        <!-- 有约定时她常驻后台（PactKeeper.kt）：划掉界面也还在，到点直接在这里叫她 -->
+        <service
+            android:name=".PactKeeper"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="助理按用户定下的约定到点主动发消息，需要常驻等待定时" />
+        </service>
 
         <!-- 桌面小组件「每日一言」：手记里的一言，每 2 小时换一句（见 Yiyan.kt） -->
         <receiver

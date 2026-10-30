@@ -36,6 +36,8 @@ data class Pact(
     val id: String, val who: String, val title: String, val what: String,
     val time: String = "", val days: List<Int> = emptyList(), val date: String = "", val idle: Int = 0,
     val next: Long = 0L, val missed: Long = 0L,
+    /** 常驻通知里那句：她记约定时自己写的，昵称开头、她的口吻（第 354 版）。 */
+    val line: String = "",
 )
 
 object Pacts {
@@ -60,7 +62,7 @@ object Pacts {
                 val ds = o.optJSONArray("d")
                 all += Pact(
                     o.getString("id"), o.optString("w"), o.optString("t"), o.optString("x"), o.optString("h"),
-                    if (ds == null) emptyList() else List(ds.length()) { ds.optInt(it) }, o.optString("dt"), o.optInt("i"), o.optLong("n"), o.optLong("m"),
+                    if (ds == null) emptyList() else List(ds.length()) { ds.optInt(it) }, o.optString("dt"), o.optInt("i"), o.optLong("n"), o.optLong("m"), o.optString("l"),
                 )
             }
         }
@@ -71,9 +73,10 @@ object Pacts {
         val a = JSONArray()
         all.forEach { p ->
             a.put(JSONObject().put("id", p.id).put("w", p.who).put("t", p.title).put("x", p.what).put("h", p.time).put("d", JSONArray(p.days))
-                .put("dt", p.date).put("i", p.idle).put("n", p.next).put("m", p.missed))
+                .put("dt", p.date).put("i", p.idle).put("n", p.next).put("m", p.missed).put("l", p.line))
         }
         prefs?.putString(KEY, a.toString())
+        app?.let { PactKeeper.sync(it) }
     }
 
     fun of(who: String) = all.filter { it.who == who }
@@ -144,7 +147,7 @@ object Pacts {
         ToolSpec(
             SET,
             "和对方定一条约定：到点手机会把你叫醒，你主动去找他。他说「每天早上 8 点给我发早报」「晚上 11 点半提醒我睡觉」「三天没找你你就来问问我」这类话时用它记下。" +
-                "改已有的约定就带上它的 id 再调一次（整条覆盖）。只记他说了的，不要自己提议一堆约定。",
+                "改已有的约定就带上它的 id 再调一次（整条覆盖）。只记他说了的，不要自己提议一堆约定。要她到点来说话、提醒的用它；要手机响铃的才用 set_alarm。",
             JSONObject().put("type", "object").put(
                 "properties",
                 JSONObject()
@@ -153,7 +156,8 @@ object Pacts {
                     .put("what", JSONObject().put("type", "string").put("description", "到点你要做什么，写给到时候的自己看，具体：要说哪些内容、什么语气、要不要查天气或日程"))
                     .put("time", JSONObject().put("type", "string").put("description", "几点，24 小时制 HH:mm，比如 08:00、23:30"))
                     .put("days", JSONObject().put("type", "array").put("items", JSONObject().put("type", "integer")).put("description", "每周哪几天，1 = 周一 … 7 = 周日；不填就是每天"))
-                    .put("date", JSONObject().put("type", "string").put("description", "只有一次时填哪天，YYYY-MM-DD"))
+                    .put("date", JSONObject().put("type", "string").put("description", "只提醒一次的（几分钟后、明天下午三点）一定填哪天，YYYY-MM-DD，按现在的时间算；不填就是每天"))
+                    .put("line", JSONObject().put("type", "string").put("description", "挂在他通知栏里的一句话，等到点前一直显示：用你平时叫他的昵称开头，你自己的口吻和性格，带上什么时候、做什么，一两句，有感情、自然，不肉麻、不说「约定」"))
                     .put("idle_days", JSONObject().put("type", "integer").put("description", "「多久没聊就来找他」的天数；填了就不看 time / days")),
             ).put("required", JSONArray(listOf("title", "what"))),
         ),
@@ -201,7 +205,7 @@ object Pacts {
         val old = a.optString("id").trim().takeIf { it.isNotEmpty() }?.let { get(it) }
         var p = Pact(old?.id ?: (System.currentTimeMillis().toString(36) + (10..99).random()), who.id, title, what.take(600),
             if (idle > 0) "" else hm(time)!!.let { "%02d:%02d".format(it.hour, it.minute) }, if (idle > 0) emptyList() else days,
-            if (idle > 0) "" else a.optString("date").trim(), idle)
+            if (idle > 0) "" else a.optString("date").trim(), idle, line = a.optString("line").trim().take(80))
         p = p.copy(next = nextOf(p))
         if (p.next == 0L) return ToolOut("这个时间已经过了，换一个以后的时间再记。")
         put(p); schedule(ctx, p)
@@ -243,10 +247,18 @@ object Pacts {
         }
     }
 
-    /** 到点了：开前台服务去想一句话。 */
+    /** 到点了：常驻服务在跑就在它里面想，否则开前台服务；都开不了就先发一句保底的。 */
     fun fire(ctx: Context, id: String) {
+        if (PactKeeper.run(id)) return
         runCatching { ctx.startForegroundService(Intent(ctx, PactRun::class.java).putExtra("id", id)) }
-            .onFailure { android.util.Log.w("Pacts", "约定没叫醒：" + it.message) }
+            .onFailure { android.util.Log.w("Pacts", "约定没叫醒：" + it.message); get(id)?.let { p -> fallback(ctx, p) } }
+    }
+
+    /** 保底的一句：「小屿，喝水的时间到了。」 */
+    fun fallback(ctx: Context, p: Pact) {
+        val her = Memory.get(p.who) ?: return
+        Notify.init(ctx)
+        Notify.herNote(ctx, her.id, her.name, ("pact" + p.id).hashCode().toLong(), p.title, "${Memory.userCall}，${p.title}的时间到了。点开我再跟你细说。")
     }
 
     /** 前台服务里做：看约定、记忆、最近的聊天，想好一句话，接在最近那段聊天后面，发通知；再定下一次。 */
@@ -298,7 +310,12 @@ object Pacts {
             }
         }.onFailure { android.util.Log.w("Pacts", "约定「${p0.title}」没想出来：" + it.message) }
         text = ToolText.clean(text).trim()
-        if (text.isEmpty()) return
+        if (text.isEmpty()) {
+            // 保底：这次想不出话（没网、模型出错），先用她的名义说一句；下次聊天她再接着说
+            fallback(ctx, p0)
+            get(id)?.let { put(it.copy(missed = now)) }
+            return
+        }
         val m = ChatMsg("assistant", text, pid = pv.id, pact = p0.title)
         kotlinx.coroutines.withContext(Dispatchers.Main) {
             val cs = Chats.current
@@ -323,6 +340,7 @@ class PactBoot : BroadcastReceiver() {
     override fun onReceive(ctx: Context, intent: Intent) {
         PactRun.boot(ctx)
         Pacts.catchUp(ctx, direct = false)
+        PactKeeper.sync(ctx)
     }
 }
 
