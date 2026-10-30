@@ -235,6 +235,8 @@ fun FuguangApp(prefs: Prefs, fullscreen: Boolean, setFullscreen: (Boolean) -> Un
         // 聊天里放抖音：小窗、全屏
         ClipPlayLayer()
 
+        // 她发的文件：点开从下面升起的面板
+        SentFileLayer()
         // 看照片、圈画：盖在最上面
         PhotoLayer()
     }

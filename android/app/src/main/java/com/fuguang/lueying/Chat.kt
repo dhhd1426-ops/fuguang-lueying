@@ -281,12 +281,13 @@ class ChatState(val history: ConvStore) {
                 val mcp = Mcp.specs
                 val web = WebSearch.usable
                 val skills = Skills.specs()
-                val specs = Memory.toolSpecs + Works.specs.filter { it.name != Works.MAKE } + WorkJobs.spec + Materials.specs + VideoParse.specs + PanTools.specs + ClockTools.specs + skills + (if (web) listOf(WebSearch.spec) else emptyList()) + (if (yu) Yu.tools else emptyList()) + (if (recall) listOf(Recall.spec) else emptyList()) + mcp
+                val specs = Memory.toolSpecs + Works.specs.filter { it.name != Works.MAKE } + WorkJobs.spec + SentFiles.spec + Materials.specs + VideoParse.specs + PanTools.specs + ClockTools.specs + skills + (if (web) listOf(WebSearch.spec) else emptyList()) + (if (yu) Yu.tools else emptyList()) + (if (recall) listOf(Recall.spec) else emptyList()) + mcp
                 val convTitle0 = store0.get(cur)?.title ?: firstSentence(question, 18)
                 val extra = buildString {
                     append("\n\n你手边还有这些东西，需要时再用，不需要就不用：")
                     append("\n").append(Memory.toolRule())
                     append("\n").append(Works.system(Memory.userCall, history, who.id))
+                    append("\n").append(SentFiles.system(Memory.userCall))
                     append("\n").append(Materials.system())
                     append("\n").append(VideoParse.system(Memory.userCall))
                     append("\n").append(PanTools.system(Memory.userCall))
@@ -310,7 +311,7 @@ class ChatState(val history: ConvStore) {
                             liveSteps.add(ToolStep(thinkText.length, n, Trail.liveTitle(n), Trail.detail(n, a), done = false))
                             var made = n != Works.MAKE && n != Works.EDIT
                             if (!made && workDraft == null) workDraft = WorkDraft(partial.length, n, 0, WorkDraft.title(n, a.toString()))
-                            when (n) { Works.MAKE, Works.EDIT, WorkJobs.START -> happened += "work"; Materials.LOOK -> happened += "photo"; WebSearch.TOOL -> happened += "web" }
+                            when (n) { Works.MAKE, Works.EDIT, WorkJobs.START, SentFiles.TOOL -> happened += "work"; Materials.LOOK -> happened += "photo"; WebSearch.TOOL -> happened += "web" }
                             try {
                             if (n == Memory.REMEMBER || n == Memory.FORGET || n == Memory.READ) Memory.runTool(who, n, a, cur.orEmpty(), convTitle0)
                             else if (n == Recall.TOOL) Recall.run(store0, cur, a.optString("query"))
@@ -320,6 +321,7 @@ class ChatState(val history: ConvStore) {
                             else if (n in ClockTools.names) ClockTools.run(n, a, who.id) { l -> if (l !in pendingClips) pendingClips.add(l) }
                             else if (n == Materials.OPEN || n == Materials.LOOK) Materials.run(n, a, Yu.vision(p.id))
                             else if (n == Skills.OPEN || n == Skills.FIND || n == Skills.LEARN) Skills.run(n, a)
+                            else if (n == SentFiles.TOOL) SentFiles.run(a) { ref -> pendingWorks.add(ref); pendingWorkAt.add(partial.length) }
                             else if (n == WorkJobs.START) WorkJobs.start(a, this@ChatState, store, who.id, history) { ref -> pendingWorks.add(ref); pendingWorkAt.add(partial.length) }
                             else if (n == Works.MAKE || n == Works.READ || n == Works.EDIT) Works.run(n, a, who.id) { id -> made = true; if (id !in pendingWorks) { pendingWorks.add(id); pendingWorkAt.add(workDraft?.at ?: partial.length) } }
                             else if (Mcp.owns(n)) Mcp.run(n, a)

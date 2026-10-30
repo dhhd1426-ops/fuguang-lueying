@@ -1,5 +1,13 @@
 package com.fuguang.lueying
 
+import androidx.compose.ui.graphics.vector.toPath
+import androidx.compose.ui.graphics.asAndroidPath
+import androidx.compose.ui.graphics.asComposePath
+import androidx.compose.ui.graphics.drawscope.translate
+import androidx.compose.ui.graphics.drawscope.scale
+import androidx.compose.ui.graphics.drawscope.withTransform
+import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.background
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.animateContentSize
@@ -396,6 +404,12 @@ private fun ColumnScope.PersonaScreen(store: AssistantStore, p: Persona, compact
     val pager = androidx.compose.foundation.pager.rememberPagerState(initialPage = nav.tab) { 3 }
     val scope = rememberCoroutineScope()
     LaunchedEffect(pager.currentPage) { nav.tab = pager.currentPage }
+    // 停下来时没对齐（第 347 版真机截图：记忆页整页往右偏了几像素，卡片右边被裁掉）就补一下对齐
+    LaunchedEffect(pager) {
+        androidx.compose.runtime.snapshotFlow { pager.isScrollInProgress }.collect { moving ->
+            if (!moving && kotlin.math.abs(pager.currentPageOffsetFraction) > .001f) pager.animateScrollToPage(pager.currentPage)
+        }
+    }
     SegTabs(listOf("基础", "系统提示词", "记忆"), pager, blur) { scope.launch { pager.animateScrollToPage(it) } }
     var undo by remember { mutableStateOf<Pair<Mem, Int>?>(null) }
     LaunchedEffect(undo) { if (undo != null) { kotlinx.coroutines.delay(4000); undo = null } }
@@ -757,14 +771,14 @@ private val infoIc = Ic("M12 11v5.5M12 7.6v.4", circles = listOf(floatArrayOf(12
 private fun ColumnScope.MemoryTab(p: Persona, blur: Dp, onBook: () -> Unit) {
     val days = if (p.firstAt <= 0) 0 else ((System.currentTimeMillis() - p.firstAt) / 86_400_000L).toInt() + 1
     Txt(if (days == 0) "${p.name} 还在认识你" else "${p.name} 认识你 $days 天了", Page.ink, 19.sp, Modifier.padding(start = 4.dp, top = 2.dp, bottom = 16.dp), family = Serif, lineHeight = 30.sp)
-    // 记忆入口：叠着的三张小纸 + 记忆 + 一行小字
+    // 记忆入口：折角纸图标 + 记忆 + 一行小字
     Pressable(onBook, Modifier.fillMaxWidth().spot("memory"), label = "记忆") { pr ->
         Row(
             Modifier.fillMaxWidth().glass(RoundedCornerShape(20.dp), blur, fill = glassFill).background(veil(if (pr) .06f else 0f))
                 .padding(horizontal = 18.dp, vertical = 16.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            NoteStack()
+            MemIcon(pr)
             Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
                 Txt("记忆", Page.ink, 16.sp, maxLines = 1)
@@ -792,22 +806,58 @@ private fun ColumnScope.MemoryTab(p: Persona, blur: Dp, onBook: () -> Unit) {
     }
 }
 
-/** 入口上的小图标：错开叠着的三张折角纸。 */
+/**
+ * 入口上的小图标（第 348 版，原型 XtuZuenNnBsQ6jr6b5krDt 第 5 版）：一张折角纸，放在点缀色的浅底小方块里。
+ * 颜色全从主题取：方块和折角是点缀色（Skin.accent）淡几层，第一行是点缀色，下面两行是次要字色，外框是正文字色淡到 45%（深色主题 40%）、线宽 1.1。
+ * 按下卡片纸微微翘起（往右上 0.6/1.6、转 3°，260ms 减速）。按 32 格画，放大到 40dp。
+ */
 @Composable
-private fun NoteStack() {
-    val fill = Skin.note
-    val line = Page.line
-    androidx.compose.foundation.Canvas(Modifier.size(44.dp, 50.dp)) {
-        val u = 1.dp.toPx()
-        listOf(Triple(10f, 0f, .45f), Triple(5f, 4f, .7f), Triple(0f, 8f, 1f)).forEach { (x, y, a) ->
-            val w = 34 * u; val h = 42 * u; val c = 10 * u; val ox = x * u; val oy = y * u
-            val path = androidx.compose.ui.graphics.Path().apply {
-                moveTo(ox + 6 * u, oy); lineTo(ox + w - c, oy); lineTo(ox + w, oy + c); lineTo(ox + w, oy + h - 6 * u)
-                quadraticTo(ox + w, oy + h, ox + w - 6 * u, oy + h); lineTo(ox + 6 * u, oy + h)
-                quadraticTo(ox, oy + h, ox, oy + h - 6 * u); lineTo(ox, oy + 6 * u); quadraticTo(ox, oy, ox + 6 * u, oy); close()
+private fun MemIcon(pressed: Boolean) {
+    val light = Skin.light
+    val ac = Skin.accent
+    val ink = Page.ink
+    val muted = Page.muted
+    val lift by androidx.compose.animation.core.animateFloatAsState(if (pressed) 1f else 0f, tween(260, easing = Curves.decel), label = "memLift")
+    val page = remember { androidx.compose.ui.graphics.vector.PathParser().parsePathString("M9.5 4.5h10l6 6v15a2.5 2.5 0 0 1-2.5 2.5H9.5A2.5 2.5 0 0 1 7 25.5V7a2.5 2.5 0 0 1 2.5-2.5Z").toPath() }
+    val fold = remember { androidx.compose.ui.graphics.vector.PathParser().parsePathString("M19.5 4.5v4a2 2 0 0 0 2 2h4Z").toPath() }
+    Box(
+        Modifier.size(52.dp).clip(RoundedCornerShape(15.dp))
+            .background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(ac.copy(alpha = if (light) .22f else .2f), ac.copy(alpha = if (light) .34f else .1f)))),
+        contentAlignment = Alignment.Center,
+    ) {
+        androidx.compose.foundation.Canvas(Modifier.fillMaxSize()) {
+            // 顶边一道高光
+            drawLine(Color.White.copy(alpha = if (light) .7f else .08f), androidx.compose.ui.geometry.Offset(15.dp.toPx(), .5.dp.toPx()), androidx.compose.ui.geometry.Offset(size.width - 15.dp.toPx(), .5.dp.toPx()), 1.dp.toPx())
+            val u = 40.dp.toPx() / 32f
+            val ox = (size.width - 40.dp.toPx()) / 2f; val oy = (size.height - 40.dp.toPx()) / 2f
+            val thin = androidx.compose.ui.graphics.drawscope.Stroke(1.1.dp.toPx(), join = androidx.compose.ui.graphics.StrokeJoin.Round)
+            val edge = ink.copy(alpha = ink.alpha * (if (light) .45f else .4f))
+            translate(ox, oy) {
+                // 很淡的投影
+                translate(0f, 1.dp.toPx()) { scale(u, u, androidx.compose.ui.geometry.Offset.Zero) { drawPath(page, Color.Black.copy(alpha = if (light) .06f else .22f)) } }
+                withTransform({
+                    translate(.6f * u * lift, -1.6f * u * lift)
+                    rotate(3f * lift, androidx.compose.ui.geometry.Offset(16f * u, 28f * u))
+                }) {
+                    scale(u, u, androidx.compose.ui.geometry.Offset.Zero) {
+                        drawPath(page, if (light) Color.White else Color.White.copy(alpha = .12f))
+                        drawPath(fold, ac.copy(alpha = if (light) .4f else .5f))
+                    }
+                    // 线在放大之后画，线宽按 dp 算
+                    val pg = android.graphics.Path(); page.asAndroidPath().let { pg.set(it) }
+                    val m = android.graphics.Matrix().apply { setScale(u, u) }
+                    pg.transform(m)
+                    drawPath(pg.asComposePath(), edge, style = thin)
+                    val fd = android.graphics.Path(fold.asAndroidPath()).apply { transform(m) }
+                    drawPath(fd.asComposePath(), edge, style = thin)
+                    fun ln(x1: Float, x2: Float, y: Float, c: Color, w: Float) =
+                        drawLine(c, androidx.compose.ui.geometry.Offset(x1 * u, y * u), androidx.compose.ui.geometry.Offset(x2 * u, y * u), w.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round)
+                    ln(11f, 20f, 15f, ac, 2f)
+                    val lc = muted.copy(alpha = muted.alpha * (if (light) .7f else .5f))
+                    ln(11f, 21.5f, 19.2f, lc, 1.5f)
+                    ln(11f, 17f, 23.2f, lc, 1.5f)
+                }
             }
-            drawPath(path, fill.copy(alpha = fill.alpha * a))
-            drawPath(path, line.copy(alpha = line.alpha * a), style = androidx.compose.ui.graphics.drawscope.Stroke(u))
         }
     }
 }

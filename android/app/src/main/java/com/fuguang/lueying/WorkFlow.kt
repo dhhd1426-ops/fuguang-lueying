@@ -79,6 +79,11 @@ internal fun ReplyFlow(
 private fun WorkSlot(id: String?, draft: WorkDraft?, onWork: (String) -> Unit) {
     val rise = remember { Animatable(if (id != null && draft == null) 1f else 0f) }
     LaunchedEffect(Unit) { rise.animateTo(1f, tween(300, easing = Curves.decel)) }
+    // 她直接发的文件（SentFiles）：文件卡，自己管打包动效
+    if (id != null && SentFiles.isRef(id)) {
+        Box(Modifier.graphicsLayer { alpha = rise.value; translationY = (1f - rise.value) * 8.dp.toPx() }) { SentFileCard(id) }
+        return
+    }
     Box(Modifier.graphicsLayer { alpha = rise.value; translationY = (1f - rise.value) * 8.dp.toPx() }) {
         // 后台在写的（WorkJobs）：写着是占位卡，好了是作品卡，没写成是一张能点了重来的卡
         val job = id?.takeIf { it.startsWith(WorkJobs.PREFIX) }

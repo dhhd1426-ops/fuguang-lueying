@@ -29,6 +29,7 @@ class MainActivity : ComponentActivity() {
         val prefs = Prefs(this)
         Yu.init(this)
         Works.init(this)
+        SentFiles.init(this)
         MaterialStore.init(this)
         PageGrab.init(this)
         Illust.init(this)
