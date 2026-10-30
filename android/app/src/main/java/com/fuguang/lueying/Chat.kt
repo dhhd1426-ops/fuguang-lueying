@@ -207,6 +207,8 @@ class ChatState(val history: ConvStore) {
         messages.add(ChatMsg("user", text, clips = listOfNotNull(VideoStore.offer(text)?.link, PanStore.offer(text)?.link, TgStore.offer(text)?.link), files = atts.toList()))
         atts.clear()
         Memory.touch(newChat = messages.size == 1)
+        // 每天第一次来找她：后台把之前没理过的记忆理一遍、过完的周月年收拢（MemoryLearn.kt）
+        Reflect.daily(Memory.active)
         persist()
         sent++
         ask(scope, store)
@@ -310,7 +312,7 @@ class ChatState(val history: ConvStore) {
                             if (!made && workDraft == null) workDraft = WorkDraft(partial.length, n, 0, WorkDraft.title(n, a.toString()))
                             when (n) { Works.MAKE, Works.EDIT, WorkJobs.START -> happened += "work"; Materials.LOOK -> happened += "photo"; WebSearch.TOOL -> happened += "web" }
                             try {
-                            if (n == Memory.REMEMBER || n == Memory.FORGET) Memory.runTool(who, n, a, cur.orEmpty(), convTitle0)
+                            if (n == Memory.REMEMBER || n == Memory.FORGET || n == Memory.READ) Memory.runTool(who, n, a, cur.orEmpty(), convTitle0)
                             else if (n == Recall.TOOL) Recall.run(store0, cur, a.optString("query"))
                             else if (n == WebSearch.TOOL) WebSearch.run(a.optString("query"))
                             else if (n == VideoParse.TOOL || n == VideoParse.SAVE) VideoParse.run(n, a) { l -> if (messages.none { l in it.clips } && l !in pendingClips) pendingClips.add(l) }
@@ -356,8 +358,7 @@ class ChatState(val history: ConvStore) {
                     // 记忆：不是每句都记，等这段聊停了再整段回想（换对话时马上回想上一段）
                     val cid = convId.orEmpty()
                     val title = this@ChatState.history.get(convId)?.title ?: firstSentence(question, 18)
-                    val model = store.activeModel
-                    Reflect.later(cid, messages.toList()) { w -> Reflect.run(who, p, c, model, w, cid, title); Reflect.tidy(who, p, c, model) }
+                    Reflect.later(cid, messages.toList()) { w -> Reflect.run(who, w, cid, title) }
                     // 做事经验：想起过的这一轮算不算用上；出了岔子就请帮手给她记一句，挂在这条回复下面
                     slips += ChatApi.slips
                     Lessons.settle(who, shownLessons, slips, happened)

@@ -6,7 +6,13 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import org.json.JSONObject
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Date
+import java.util.Locale
 
 /**
  * 回想：对话停下来以后，她把这一段从头看一遍，决定记忆要不要变。
@@ -58,121 +64,198 @@ object Reflect {
 
     fun sensitive(s: String) = secret.any { it.containsMatchIn(s) }
 
-    private val tag = mapOf("talk" to "聊过", "promise" to "答应", "know" to "了解", "about" to "他的情况", "pref" to "他的偏好", "self" to "你自己")
-    private val kinds = setOf("talk", "promise", "about", "pref", "self", "know")
+    /* ---------- 第 345 版：记忆模型写「标题 + 正文」，每天整理，按周月年收拢 ---------- */
 
-    /** 记什么、不记什么。remember 工具的说明和回想用的是同一套标准。 */
-    fun rules(who: String) = """
-存一条之前过三关，都过了才存，拿不准就不存：
-1. 会改变你以后怎么和$who 相处：是$who 自己说的、或者$who 纠正你的；你自己的猜测和发现不算。
-2. 能长期用：“以后都”“每次”“一直”算；“这次”“先这样”“暂时”不算。一个月后再聊，知道它还会让回答更好。
-3. 离开这段对话也看得懂：一句完整的话，不写“那个”“刚才那件事”这种指代。
-- 记：$who 的工作、住在哪、身边重要的人（一提就记）；$who 明说的长期偏好；$who 纠正你的地方（“不是这样”“别再…”），也包括$who 认可了你一个不寻常的做法；你们定下、还没做完的事；你答应$who 的事。
-- 纠正和偏好写成一句规则，detail 写为什么、什么时候照着做。
-- 提到“明天”“周四”“下个月”这类日子，换成具体日期（今天是 ${java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.CHINA).format(java.util.Date())}）。
-- 不记：寒暄、一次性的问题、当下的情绪；你对$who 性格的评价；你自己提的方案；只提过一次的小爱好。
-- 你们闹着玩、一起编故事时说的话（谁送了什么、谁嘴硬、谁收下了）不记，那不是$who 平时的真实情况；除非$who 说“把这个记住”。
-- 永远不记：证件号、银行卡、密码、验证码、门牌住址、健康和病情、自伤、犯罪、性、未成年人的年龄。
-- 想留着的一刻也记一条：你们之间再想起还会心里一动的那一刻（$who 第一次说的某句话、聊得特别开心的一晚、$who 说“记住今晚”）。kind 写 talk，加 "moment": true；一段对话最多一条，普通的甜话、随口的玩笑不记。这一条不受上面“当下的情绪不记”的限制，但一起编故事、戏里的话仍然不记。
-- 要你一味顺着说、不许提意见的要求，不当成偏好记。
-- 措辞跟着证据走：$who 说“可能”就写“可能”；写不会过期的说法（“在济南工作”，不写“今天在加班”）。
-""".trim()
+    /** 记忆模型的活一件一件做：记下、整理、收拢都改同一份记忆，不能同时动。 */
+    private val lock = Mutex()
+    private val kinds = setOf("about", "pref", "self", "lesson", "promise", "talk")
+    private fun kindOf(s: String, fallback: String) = s.trim().lowercase().let { when { it in kinds -> it; it == "know" -> "talk"; else -> fallback } }
 
-    private fun listing(known: List<Mem>): String {
-        val now = System.currentTimeMillis()
-        return known.mapIndexed { i, m ->
-            val days = if (m.at > 0) ((now - m.at) / 86_400_000L).toInt() else -1
-            "m$i [" + (tag[m.kind] ?: "了解") + (if (m.by == "you") "·他写的" else "") + (if (days >= 0) "·${days} 天前" else "") + "] " + m.text +
-                (if (m.detail.isNotBlank()) "（" + m.detail + "）" else "")
-        }.joinToString("\n").ifBlank { "（还没有）" }
+    private fun sys(her: Persona) = "你是${her.name}的记忆，替她记下和整理她记得的事。称${Memory.userCall}为“他”或他的名字，她自己用“我”。只输出 JSON，不要别的文字。"
+    private fun today() = SimpleDateFormat("yyyy年M月d日 EEEE", Locale.CHINA).format(Date())
+
+    /** 给记忆模型看的目录：编号、日期、类别、标题，不是周月年那份的带正文（截一截）；mark 里的标 *。 */
+    private fun listing(p: Persona, mark: Set<String> = emptySet()): String {
+        val secs = MemTree.sections(p)
+        if (secs.isEmpty()) return "（还没有）"
+        return secs.joinToString("\n\n") { s ->
+            "【${s.name}】\n" + s.items.joinToString("\n") { m ->
+                (if (m.id in mark) "* " else "- ") + "[${m.code}] ${MemTree.date(m)} · ${MemTree.kindZh(m.kind)}" +
+                    (if (m.pin) " · 常驻" else "") + (if (m.by == "you") " · 他亲手写的" else "") + " · 标题：" + m.text +
+                    (if (!m.span) "\n  正文：" + MemTree.body(m).replace("\n", " / ").take(if (m.id in mark) 1500 else 240) else "")
+            }
+        }
     }
 
-    private const val OPS = """输出：{"ops":[{"op":"add","kind":"pref","text":"…","why":"…"},{"op":"add","kind":"talk","text":"…","moment":true},{"op":"update","id":"m3","text":"…"},{"op":"delete","id":"m5"}]}"""
+    private const val OPS = """输出：{"ops":[{"op":"add","kind":"pref","title":"…","body":"…","pin":false},{"op":"update","id":"编号","title":"…","body":"…","kind":"…","pin":false},{"op":"delete","id":"编号"}]}
+kind 只能是 about（关于你）/ pref（你喜欢的，也包括他对她的纠正）/ lesson（我学会的，做事上的）/ self（关于我，她自己）/ talk（聊过的、发生的事）/ promise（答应你的）。
+update 只写要改的字段；正文分段用换行。没什么要变就返回 {"ops":[]}。"""
 
-    /** 把这一段交给模型回想，按它给的动作新增、改写、删除。失败就算了，不打扰用户。 */
-    suspend fun run(her: Persona, p: Provider, c: ProviderConfig, model: String, window: List<ChatMsg>, conv: String, convTitle: String) {
-        val who = Memory.userCall
-        // 做事经验（Lessons.kt）另有一套记法和验法，回想不碰它
-        val known = her.items.filter { it.kind != Lessons.KIND }.take(80)
-        val talk = window.joinToString("\n") { (if (it.role == "user") "$who：" else "你：") + it.text.take(800) }.take(8000)
-        val sys = "你是${her.name}，在整理自己的记忆。只输出 JSON，不要别的文字。你的名字和$who 的称呼另有记录，不要记名字相关的事。"
-        val ask = """
-你现在记得的（m 编号是它的 id）：
-${listing(known)}
+    /** 聊完回头看这一段：新开、更新，或者不动。失败就算了，不打扰用户。 */
+    suspend fun run(her: Persona, window: List<ChatMsg>, conv: String, convTitle: String) {
+        lock.withLock {
+            val who = Memory.userCall
+            val talk = window.joinToString("\n") { (if (it.role == "user") "$who：" else "${her.name}：") + it.text.take(800) }.take(8000)
+            val ask = """
+${MemModel.text}
+
+今天是 ${today()}。
+
+她现在的目录（方括号里是编号）：
+${listing(her)}
 
 刚聊完的这一段：
 $talk
 
-${rules(who)}
-
-看完这一段，你的记忆要变吗？大多数时候不用变，返回空数组就好。
-- add：新的一条。kind 只能是 about（$who 的情况）/ pref（$who 的偏好和纠正）/ promise（你答应的）/ talk（一起定下、还没做完的）/ self（你自己说话的样子）/ know（其他了解）。
-- update：这一段让某条过时了或更准确了，就改写它（写 id 和新的 text）。
-- delete：$who 说某条不对、不要了，或者事情已经办完、不再有用，就删（写 id）。“他写的”那些只有$who 明说才改或删。
-用你自己的口吻，称$who 为“他”，你们俩用“我们”；一句话，24 字以内。
 $OPS
 """.trim()
-        val raw = runCatching { ChatApi.complete(p, c, model, sys, ask) }.getOrNull() ?: return
-        apply(her, known, raw, conv, convTitle)
+            val raw = MemModel.ask(sys(her), ask, 3000) ?: return
+            apply(her, raw, conv, convTitle, emptySet())
+        }
+    }
+
+    /** 她当场记下的、你手写的、做事上记的一句：交给记忆模型写成标题 + 正文，或者并进说同一件事的那条。 */
+    fun place(p: Persona, m: Mem) { scope.launch { runCatching { placeNow(p, m) } } }
+
+    private suspend fun placeNow(p: Persona, m: Mem) {
+        lock.withLock {
+            if (p.items.none { it.id == m.id }) return
+            val ask = """
+${MemModel.text}
+
+今天是 ${today()}。
+
+她刚记下一件事：目录里标 * 的那条（编号 ${m.code}），现在只有原话。${if (m.by == "you") "这是他亲手写下的，正文用他的原话，一个字不改，只在前面加一句时间。" else ""}
+
+她的目录：
+${listing(p, setOf(m.id))}
+
+把标 * 的这条写好：是新的事，就 update 它，给标题、正文、类别、要不要常驻；和目录里另一条说的是同一件事，就把内容并进那条（update 那条），再 delete 标 * 的这条。
+
+$OPS
+""".trim()
+            val raw = MemModel.ask(sys(p), ask, 2000) ?: return
+            apply(p, raw, m.conv, m.convTitle, setOf(m.id))
+        }
     }
 
     /**
-     * 定期整理（照 Claude Code 的 dream）：隔一天、又聊了 5 次以上，或者记得的超过 60 条，
-     * 就把全部记忆过一遍：合并重复、删掉过时和被推翻的、相对日期换成具体日期。
+     * 每天第一次来找她（发出第一句时调）：后台把之前还没整理过的理一遍，再把过完的周、月、年收拢。
+     * 按聊过的那天算：今天新记的留到下次来再理。
      */
-    suspend fun tidy(her: Persona, p: Provider, c: ProviderConfig, model: String) {
-        val now = System.currentTimeMillis()
-        val mine = her.items.filter { it.kind != Lessons.KIND }
-        val due = mine.size > 60 || (mine.size >= 8 && now - her.tidyAt > 86_400_000L && her.chats - her.tidyChats >= 5)
-        if (!due) return
-        her.tidyAt = now; her.tidyChats = her.chats; Memory.save()
-        val who = Memory.userCall
-        val known = mine
-        val sys = "你是${her.name}，在把自己的记忆从头理一遍。只输出 JSON，不要别的文字。"
-        val ask = """
-你现在记得的（m 编号是 id，后面是记下了多久）：
-${listing(known)}
-
-${rules(who)}
-
-把它们理一遍：
-- 说的是同一件事的几条，合成一条（update 留下的那条，delete 其余的）。
-- 已经办完、过时了、互相矛盾里错的那条、本来就不该记的（按上面的标准），删掉。
-- 写着“明天”“周四”这类相对日子的，按记下的时间换成具体日期。
-- 剩下的不超过 60 条。“他写的”那些不动。
-大多数条目不用动；没什么要理的就返回空数组。
-$OPS
-""".trim()
-        val raw = runCatching { ChatApi.complete(p, c, model, sys, ask, maxTokens = 3000) }.getOrNull() ?: return
-        apply(her, known, raw, "", "")
+    fun daily(p: Persona) {
+        val today = MemTree.dayKey(System.currentTimeMillis())
+        if (p.tidyDay == today) return
+        p.tidyDay = today; Memory.save()
+        scope.launch { runCatching { tidy(p) }; runCatching { roll(p) } }
     }
 
-    private fun apply(her: Persona, known: List<Mem>, raw: String, conv: String, convTitle: String) {
+    private suspend fun tidy(her: Persona) {
+        val start = MemTree.dayStart(System.currentTimeMillis())
+        repeat(20) {
+            val ok = lock.withLock {
+                val batch = MemTree.top(her).filter { !it.done && !it.span && it.at < start }.sortedBy { it.at }.take(10)
+                if (batch.isEmpty()) return
+                val ids = batch.map { it.id }.toSet()
+                val ask = """
+${MemModel.text}
+
+今天是 ${today()}。现在是每天的整理：目录里标 * 的那几条还没整理过。
+
+${listing(her, ids)}
+
+把标 * 的这几条理一遍，对照整个目录：
+- 和别的条说的是同一件事：并成一条（update 留下的那条，可以改标题、补正文），delete 多余的。
+- 被后来的话推翻了、过时了、事情已经办完不再有用的：改掉或删掉。
+- 标题不够准、类别贴错的改过来；正文不合上面写法的（抒情多、事实少、没有层次），照写法重写。
+- 他亲手写的，原话不改。
+- 大多数条目不用动。
+
+$OPS
+""".trim()
+                val raw = MemModel.ask(sys(her), ask, 4000) ?: return@withLock false
+                apply(her, raw, "", "", emptySet())
+                ids.forEach { id -> val i = her.items.indexOfFirst { it.id == id }; if (i >= 0) her.items[i] = her.items[i].copy(done = true) }
+                Memory.save()
+                true
+            }
+            if (!ok) return
+        }
+    }
+
+    /** 收拢：过完的周归成「这一周」，过完的月把几周归成「这个月」，过完的年把几个月归成「这一年」。 */
+    private suspend fun roll(her: Persona) {
+        val now = System.currentTimeMillis()
+        up(her, "week", "周", MemTree.weekStart(now), { MemTree.weekStart(it) }, { s -> s + 7 * MemTree.DAY - 1 }) { !it.rule && !it.span && it.done }
+        up(her, "month", "个月", MemTree.monthStart(now), { MemTree.monthStart(it) }, { s -> Calendar.getInstance().apply { timeInMillis = s; add(Calendar.MONTH, 1) }.timeInMillis - 1 }) { it.kind == "week" }
+        up(her, "year", "年", MemTree.yearStart(now), { MemTree.yearStart(it) }, { s -> Calendar.getInstance().apply { timeInMillis = s; add(Calendar.YEAR, 1) }.timeInMillis - 1 }) { it.kind == "month" }
+    }
+
+    private suspend fun up(her: Persona, kind: String, unit: String, current: Long, startOf: (Long) -> Long, endOf: (Long) -> Long, pick: (Mem) -> Boolean) {
+        val groups = lock.withLock { MemTree.top(her).filter(pick).groupBy { startOf(it.at) }.filterKeys { it < current }.toSortedMap() }
+        for ((start, ms) in groups) {
+            lock.withLock {
+                val live = ms.mapNotNull { m -> her.items.firstOrNull { it.id == m.id } }
+                if (live.isEmpty()) return@withLock
+                // 这一段已经归过一份（后来又理出几天）：并进那份，重写
+                val old = MemTree.top(her).firstOrNull { it.kind == kind && it.at == start }
+                val all = (old?.let { MemTree.kids(her, it) }.orEmpty() + live).distinctBy { it.id }.sortedBy { it.at }
+                val ask = """
+今天是 ${today()}。把下面这一${unit}里的记忆归成一份「这一$unit」，以后她先看这一份，需要细节再往下翻。
+
+${all.joinToString("\n\n") { "[${it.code}] ${MemTree.date(it)} · ${MemTree.kindZh(it.kind)} · ${it.text}\n" + MemTree.body(it) }}
+
+写一份：
+- title：一句话，说清这一${unit}里最要紧的是什么。
+- body：她的第一人称，他用名字或「他」，照事实，不添不猜。先总说这一${unit}里哪些时候聊过，再分几块说发生了什么、有什么变化；比下面每条概括，答应了还没做的事要写上。分段用换行。
+输出：{"title":"…","body":"…"}
+""".trim()
+                val raw = MemModel.ask(sys(her), ask, 2500) ?: return@withLock
+                val o = runCatching { JSONObject("{" + raw.substringAfter('{', "").substringBeforeLast('}', "") + "}") }.getOrNull() ?: return@withLock
+                val title = o.optString("title").trim().trimEnd('。').take(60)
+                val body = o.optString("body").trim().take(3000)
+                if (title.isEmpty() || body.isEmpty()) return@withLock
+                val span = if (old != null) old.copy(text = title, diary = body).also { n -> her.items[her.items.indexOf(old)] = n }
+                else Mem("${System.currentTimeMillis()}-$kind", title, "", start, "", "", kind, "her", diary = body, done = true, till = endOf(start)).also { her.items.add(it) }
+                live.forEach { m -> val i = her.items.indexOfFirst { it.id == m.id }; if (i >= 0) her.items[i] = her.items[i].copy(under = span.id) }
+                Memory.save()
+            }
+        }
+    }
+
+    private fun apply(her: Persona, raw: String, conv: String, convTitle: String, mark: Set<String>) {
         val json = raw.substringAfter('{', "").substringBeforeLast('}', "").ifEmpty { return }
         val ops = runCatching { JSONObject("{$json}").optJSONArray("ops") }.getOrNull() ?: return
         val now = System.currentTimeMillis()
         var changed = false
         for (i in 0 until ops.length()) {
             val o = ops.optJSONObject(i) ?: continue
-            val t = o.optString("text").trim().take(60)
-            val why = o.optString("why").trim().take(80)
-            val old = o.optString("id").removePrefix("m").toIntOrNull()?.let { known.getOrNull(it) }
+            val title = o.optString("title").trim().trimEnd('。').take(60)
+            val body = o.optString("body").trim().take(3000)
+            val old = o.optString("id").trim().trim('[', ']', '#', '*', ' ').takeIf { it.isNotEmpty() }?.let { c -> her.items.firstOrNull { it.code == c } }
             when (o.optString("op")) {
                 "add" -> {
-                    if (t.isEmpty() || sensitive(t) || sensitive(why) || her.items.any { it.text == t }) continue
-                    val k = o.optString("kind").trim().lowercase().let { if (it in kinds) it else "know" }
-                    val mo = o.optBoolean("moment") && k == "talk"
-                    val m = Mem("$now-$i", t, why, now, conv, convTitle, k, moment = mo)
-                    her.items.add(0, m); Diary.later(her, m); changed = true
+                    if (title.isEmpty() || sensitive(title) || sensitive(body) || her.items.any { it.text == title }) continue
+                    val k = kindOf(o.optString("kind"), "talk")
+                    her.items.add(0, Mem("$now-$i", title, "", now, conv, convTitle, k, "her", diary = body, pin = o.optBoolean("pin"), scene = if (k == Lessons.KIND) Lessons.guessScene(title + body) else ""))
+                    changed = true
                 }
                 "update" -> {
-                    if (old == null || old.by == "you" || t.isEmpty() || sensitive(t)) continue
+                    if (old == null || old.span || sensitive(title) || sensitive(body)) continue
                     val at = her.items.indexOf(old).takeIf { it >= 0 } ?: continue
-                    val m = old.copy(text = t, detail = why.ifEmpty { old.detail }, at = now, diary = "")
-                    her.items[at] = m; Diary.later(her, m); changed = true
+                    val k = if (o.has("kind")) kindOf(o.optString("kind"), old.kind) else old.kind
+                    // 他亲手写的：原话不改（第一次写正文时照原话加时间，由模型照提示词做）
+                    val keep = old.by == "you" && old.diary.isNotBlank()
+                    her.items[at] = old.copy(
+                        text = title.ifEmpty { old.text },
+                        diary = if (keep || body.isEmpty()) old.diary else body,
+                        kind = k, pin = if (o.has("pin")) o.optBoolean("pin") else old.pin,
+                        scene = if (k == Lessons.KIND && old.scene.isEmpty()) Lessons.guessScene(title + body) else old.scene,
+                    )
+                    changed = true
                 }
                 "delete" -> {
-                    if (old == null || old.by == "you") continue
+                    if (old == null || old.span || (old.by == "you" && old.id !in mark)) continue
                     changed = her.items.remove(old) || changed
                 }
             }

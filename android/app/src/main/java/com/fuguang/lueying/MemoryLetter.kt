@@ -41,6 +41,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
@@ -66,6 +67,13 @@ import androidx.compose.ui.text.style.TextIndent
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.ui.graphics.Outline
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.LayoutDirection
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.util.Calendar
@@ -194,6 +202,101 @@ internal fun MemMenuLayer(p: Persona, onDeleted: (Mem, Int) -> Unit) {
     }
 }
 
+/* ---------- 记忆本的折角卡片（第 345 版，原型 EzmAr4Lo7ucsmJG6FEV4as 第 9 版） ---------- */
+
+/** 右上角折掉一角的纸：其余三角是圆角。 */
+private class NoteShape(private val cut: Dp, private val r: Dp) : Shape {
+    override fun createOutline(size: Size, layoutDirection: LayoutDirection, density: Density): Outline {
+        val c = with(density) { cut.toPx() }; val rr = with(density) { r.toPx() }
+        val w = size.width; val h = size.height
+        return Outline.Generic(Path().apply {
+            moveTo(rr, 0f); lineTo(w - c, 0f); lineTo(w, c); lineTo(w, h - rr)
+            quadraticTo(w, h, w - rr, h); lineTo(rr, h)
+            quadraticTo(0f, h, 0f, h - rr); lineTo(0f, rr)
+            quadraticTo(0f, 0f, rr, 0f); close()
+        })
+    }
+}
+
+/** 五角星，中心 (cx, cy)，外半径 r。 */
+private fun star(cx: Float, cy: Float, r: Float) = Path().apply {
+    for (i in 0 until 10) {
+        val a = -PI / 2 + i * PI / 5
+        val rad = if (i % 2 == 0) r else r * .45f
+        val x = cx + (cos(a) * rad).toFloat(); val y = cy + (sin(a) * rad).toFloat()
+        if (i == 0) moveTo(x, y) else lineTo(x, y)
+    }
+    close()
+}
+
+/**
+ * 一张记忆卡：卡里是正文（第一段亮一些），卡下是标题和「类别 · 日期」。人和规矩右上角一颗星。
+ * 进场一张张浮上来（间隔 40ms，420ms 减速）；按下缩一点；长按变暗、出删除菜单（[MemMenu]）。
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+internal fun NoteCard(m: Mem, kids: Int, index: Int, modifier: Modifier, onOpen: () -> Unit) {
+    val src = remember { MutableInteractionSource() }
+    val pressed by src.collectIsPressedAsState()
+    val held = MemMenu.held == m.id
+    var bounds by remember { mutableStateOf(Rect.Zero) }
+    val haptic = LocalHapticFeedback.current
+    val k by animateFloatAsState(if (held) 1f else if (pressed) .5f else 0f, tween(if (pressed || held) 60 else 220), label = "noteHeld")
+    val enter = remember(m.id) { Animatable(0f) }
+    LaunchedEffect(m.id) { delay(40L * index.coerceAtMost(12)); enter.animateTo(1f, tween(420, easing = Curves.decel)) }
+    val shape = remember { NoteShape(30.dp, 18.dp) }
+    val paras = MemTree.body(m).split('\n').map { it.trim() }.filter { it.isNotEmpty() }
+    Column(
+        modifier
+            .graphicsLayer {
+                alpha = enter.value
+                translationY = (1f - enter.value) * 12.dp.toPx()
+                val s = 1f - .03f * k; scaleX = s; scaleY = s
+            }
+            .onGloballyPositioned { bounds = it.boundsInRoot() }
+            .combinedClickable(src, null, onClickLabel = "打开", onLongClickLabel = "删除", onClick = onOpen, onLongClick = {
+                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                MemMenu.open(m, bounds)
+            }),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Box(Modifier.fillMaxWidth().aspectRatio(1f)) {
+            Column(
+                Modifier.fillMaxSize().background(Skin.note, shape)
+                    .drawBehind {
+                        // 折角：右上角那一小块三角，颜色比纸深一层
+                        val c = 30.dp.toPx()
+                        val fold = Path().apply { moveTo(size.width - c, 0f); lineTo(size.width - c, c - 6.dp.toPx()); quadraticTo(size.width - c, c, size.width - c + 6.dp.toPx(), c); lineTo(size.width, c); close() }
+                        drawPath(fold, Skin.noteFold)
+                    }
+                    .drawWithContent { drawContent(); if (k > 0f) drawRect(Skin.scrim(.28f * k)) }
+                    .padding(start = 14.dp, end = 16.dp, top = 16.dp, bottom = 12.dp),
+            ) {
+                val style = TextStyle(fontSize = 13.sp, lineHeight = 21.sp)
+                androidx.compose.foundation.text.BasicText(
+                    androidx.compose.ui.text.buildAnnotatedString {
+                        paras.forEachIndexed { i, t ->
+                            if (i == 0) pushStyle(androidx.compose.ui.text.SpanStyle(color = Page.ink, fontWeight = FontWeight.Medium)) else pushStyle(androidx.compose.ui.text.SpanStyle(color = Page.muted))
+                            append(t); if (i < paras.lastIndex) append(if (i == 0) "\n" else "")
+                            pop()
+                        }
+                    },
+                    Modifier.fillMaxWidth().padding(end = 12.dp),
+                    style = style.copy(fontFamily = Sans), maxLines = 7, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                )
+            }
+            if (m.rule) Canvas(Modifier.align(Alignment.TopEnd).offset(x = 2.dp, y = (-6).dp).size(20.dp)) {
+                drawPath(star(size.width / 2, size.height / 2, size.minDimension / 2), Skin.accent)
+            }
+        }
+        Txt(Memory.ownWords(m.text), Page.ink, 14.sp, Modifier.fillMaxWidth().padding(top = 10.dp), weight = FontWeight.SemiBold, align = TextAlign.Center, lineHeight = 20.sp, maxLines = 2)
+        Txt(
+            listOfNotNull(if (m.pin) "常驻" else null, if (m.span) "$kids 份" else null, MemTree.kindZh(m.kind), MemTree.date(m)).joinToString(" · "),
+            if (m.pin) Skin.accent else Page.muted, 11.5.sp, Modifier.fillMaxWidth().padding(top = 3.dp), align = TextAlign.Center, maxLines = 1,
+        )
+    }
+}
+
 /* ---------- 信纸 ---------- */
 
 // 信纸是一张纸，不跟主题换颜色（像照片看图一直是深色一样）
@@ -216,7 +319,7 @@ private fun sign(name: String): String {
  * 上面中文日期、这条是哪一类、一道小花饰；正文是她写的那段话（[Mem.diary]，还没写好就用记下的那句和细节），按换行分段、首行缩进两字；右下落款。
  */
 @Composable
-internal fun ColumnScope.LetterScreen(p: Persona, m: Mem, onBack: () -> Unit) {
+internal fun ColumnScope.LetterScreen(p: Persona, m: Mem, onKid: (Mem) -> Unit = {}, onBack: () -> Unit) {
     Row(Modifier.fillMaxWidth().padding(bottom = 10.dp, end = LocalTitleEnd.current), verticalAlignment = Alignment.CenterVertically) {
         Pressable(onBack, label = "返回") { pr ->
             SvgIcon(back, if (pr) Page.muted else Page.ink, 24.dp, modifier = Modifier.padding(end = 10.dp, top = 4.dp, bottom = 4.dp))
@@ -224,7 +327,7 @@ internal fun ColumnScope.LetterScreen(p: Persona, m: Mem, onBack: () -> Unit) {
     }
     val rise = remember(m.id) { Animatable(0f) }
     LaunchedEffect(m.id) { delay(120); rise.animateTo(1f, tween(500, easing = Curves.decel)) }
-    val paras = (m.diary.ifBlank { listOf(m.text, m.detail).filter { it.isNotBlank() }.joinToString("\n") })
+    val paras = MemTree.body(m)
         .split('\n').map { it.trim() }.filter { it.isNotEmpty() }
     val date = if (m.at > 0) Calendar.getInstance().apply { timeInMillis = m.at }.let { c -> cn(c.get(Calendar.MONTH) + 1) + "月" + cn(c.get(Calendar.DAY_OF_MONTH)) + "日" } else ""
     BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
@@ -239,7 +342,8 @@ internal fun ColumnScope.LetterScreen(p: Persona, m: Mem, onBack: () -> Unit) {
                     .padding(start = 46.dp, end = 46.dp, top = 60.dp, bottom = 62.dp),
             ) {
                 if (date.isNotEmpty()) Txt(date, PaperMuted, 12.5.sp, Modifier.fillMaxWidth(), spacing = 1.sp, family = FontFamily.Serif, align = TextAlign.Center)
-                Txt(kindZh(m.kind), PaperMuted.copy(alpha = .8f), 11.5.sp, Modifier.fillMaxWidth().padding(top = 4.dp), family = FontFamily.Serif, align = TextAlign.Center)
+                Txt(MemTree.kindZh(m.kind) + (if (m.span) " · " + MemTree.date(m) else "") + (if (m.pin) " · 常驻" else ""), PaperMuted.copy(alpha = .8f), 11.5.sp, Modifier.fillMaxWidth().padding(top = 4.dp), family = FontFamily.Serif, align = TextAlign.Center)
+                Txt(Memory.ownWords(m.text), PaperInk, 17.sp, Modifier.fillMaxWidth().padding(top = 12.dp), family = FontFamily.Serif, align = TextAlign.Center, lineHeight = 26.sp)
                 Canvas(Modifier.padding(top = 14.dp, bottom = 18.dp).size(60.dp, 10.dp).align(Alignment.CenterHorizontally)) {
                     val y = size.height / 2; val w = .8.dp.toPx()
                     drawLine(PaperVine, Offset(2.dp.toPx(), y), Offset(22.dp.toPx(), y), w)
@@ -253,6 +357,22 @@ internal fun ColumnScope.LetterScreen(p: Persona, m: Mem, onBack: () -> Unit) {
                     BasicText(t, Modifier.fillMaxWidth(), style = style)
                 }
                 Txt("—— " + sign(p.name), PaperMuted, 14.sp, Modifier.fillMaxWidth().padding(top = 24.dp), family = FontFamily.Serif, align = TextAlign.End)
+                // 周、月、年那一份：下面挂着的几份，点开往下翻
+                val kids = MemTree.kids(p, m)
+                if (kids.isNotEmpty()) {
+                    Txt("这" + (when (m.kind) { "week" -> "一周"; "month" -> "个月"; else -> "一年" }) + "里", PaperMuted, 12.5.sp, Modifier.padding(top = 28.dp, bottom = 6.dp), family = FontFamily.Serif)
+                    kids.forEach { k ->
+                        Pressable({ onKid(k) }, Modifier.fillMaxWidth().padding(vertical = 3.dp), label = k.text) { pr ->
+                            Row(
+                                Modifier.fillMaxWidth().background(PaperInk.copy(alpha = if (pr) .1f else .05f), RoundedCornerShape(10.dp)).padding(horizontal = 14.dp, vertical = 11.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Txt(Memory.ownWords(k.text), PaperInk, 14.sp, Modifier.weight(1f), family = FontFamily.Serif, maxLines = 1)
+                                Txt(MemTree.date(k), PaperMuted, 12.sp, Modifier.padding(start = 10.dp), maxLines = 1)
+                            }
+                        }
+                    }
+                }
             }
         }
     }

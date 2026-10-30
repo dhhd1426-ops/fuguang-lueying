@@ -63,6 +63,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.shadow
 
 private object MineIcons {
     val back = Ic("M14.5 6l-6 6 6 6")
@@ -87,6 +88,8 @@ class MineNav {
     var tab by mutableStateOf(0)
     /** MCP 页停在哪个标签：0 市场、1 已连接。 */
     var mcpTab by mutableStateOf(0)
+    /** 从周月年那份信纸点进下面一份：返回时回到那份信纸。 */
+    var letterFrom by mutableStateOf("")
     fun open(id: String, t: Int) { persona = id; tab = t; screen = "persona" }
     fun back(): Boolean {
         screen = when {
@@ -95,7 +98,11 @@ class MineNav {
             screen.startsWith("gallery/") -> "gallery"
             screen == "search" || screen == "skills" || screen == "gallery" -> "features"
             screen.startsWith("skills/") -> "skills"
-            screen.startsWith("letter/") -> "persona"
+            screen.startsWith("letter/") -> letterFrom.ifEmpty { "memories" }.also { letterFrom = "" }
+            screen == "memories" -> "persona"
+            screen == "memmodel" -> if (persona.isNotEmpty() && Memory.get(persona) != null) "memories" else "mine"
+            screen == "memprompt" -> "memmodel"
+            screen == "memcatalog" -> "memories"
             screen == "features" -> "mine"
             screen == "theme" -> "mine"
             screen.startsWith("mcp/") -> "mcp"
@@ -121,8 +128,12 @@ internal fun ColumnScope.MineSub(store: AssistantStore, screen: String, compact:
         screen.startsWith("letter/") -> {
             val p = Memory.get(nav.persona)
             val m = p?.items?.firstOrNull { it.id == screen.removePrefix("letter/") }
-            if (p != null && m != null) LetterScreen(p, m) { nav.back() } else LaunchedEffect(screen) { nav.back() }
+            if (p != null && m != null) LetterScreen(p, m, onKid = { k -> nav.letterFrom = screen; nav.screen = "letter/${k.id}" }) { nav.back() } else LaunchedEffect(screen) { nav.back() }
         }
+        screen == "memories" -> { val p = Memory.get(nav.persona); if (p != null) MemBookScreen(p, compact, nav) else LaunchedEffect(screen) { nav.back() } }
+        screen == "memcatalog" -> { val p = Memory.get(nav.persona); if (p != null) MemCatalogScreen(p, compact, blur, nav) else LaunchedEffect(screen) { nav.back() } }
+        screen == "memmodel" -> MemModelScreen(store, compact, blur, nav)
+        screen == "memprompt" -> MemPromptScreen(compact, blur, nav)
         else -> AssistantScreen(compact, blur, nav)
     }
 }
@@ -399,7 +410,7 @@ private fun ColumnScope.PersonaScreen(store: AssistantStore, p: Persona, compact
                 when (page) {
                     0 -> BasicTab(store, p, blur, nav)
                     1 -> PromptTab(p, blur)
-                    else -> MemoryTab(p, blur) { m -> nav.screen = "letter/${m.id}" }
+                    else -> MemoryTab(p, blur) { nav.screen = "memories" }
                 }
             }
         }
@@ -733,59 +744,312 @@ private fun ago(t: Long): String {
 /* ---------- 记忆：相识摘要里放「跨聊天回忆」，下面一个框装下她记得的全部（不再分本） ---------- */
 
 /** 每条记忆底下那行小字的开头：这是哪一类。 */
-internal fun kindZh(k: String) = when (k) { "about" -> "关于你"; "pref" -> "你喜欢的"; "promise" -> "答应你的"; Lessons.KIND -> "做事经验"; "self" -> "她自己"; else -> "聊过的" }
+internal fun kindZh(k: String) = MemTree.kindZh(k)
+
+/* ---------- 记忆（第 345 版，原型 EzmAr4Lo7ucsmJG6FEV4as 第 9 版）：标签页里一个「记忆」入口 + 跨聊天回忆；点进去是折角卡片的记忆本 ---------- */
+
+private val menuIc = Ic("M4 7h16M4 12h16M4 17h16")
+private val modelIc = Ic("M7 5h10a3 3 0 0 1 3 3v8a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3V8a3 3 0 0 1 3-3ZM8.5 10h7M8.5 14h4.5")
+private val listIc = Ic("M5 7h14M5 12h14M5 17h8")
+private val infoIc = Ic("M12 11v5.5M12 7.6v.4", circles = listOf(floatArrayOf(12f, 12f, 9f)))
 
 @Composable
-private fun ColumnScope.MemoryTab(p: Persona, blur: Dp, onOpen: (Mem) -> Unit) {
+private fun ColumnScope.MemoryTab(p: Persona, blur: Dp, onBook: () -> Unit) {
     val days = if (p.firstAt <= 0) 0 else ((System.currentTimeMillis() - p.firstAt) / 86_400_000L).toInt() + 1
-    Txt(if (days == 0) "${p.name} 还在认识你" else "${p.name} 认识你 $days 天了", Page.ink, 19.sp, Modifier.padding(start = 4.dp, top = 2.dp), family = Serif, lineHeight = 30.sp)
-    // 摘要这一行的右边：跨聊天回忆（不管记录，只管她能不能翻以前的聊天）
-    Row(Modifier.fillMaxWidth().spot("cross").padding(start = 4.dp, top = 6.dp, bottom = 18.dp), verticalAlignment = Alignment.CenterVertically) {
-        Txt(
-            listOfNotNull("聊过 ${p.chats} 次", "记得 ${p.items.size} 件".takeIf { p.items.isNotEmpty() }, ago(p.lastAt).takeIf { it.isNotEmpty() }?.let { "上次是$it" }).joinToString(" · "),
-            Page.muted, 12.5.sp, Modifier.weight(1f), maxLines = 1,
-        )
-        Txt("跨聊天回忆", if (p.memOn) Page.ink.copy(alpha = .85f) else Page.muted, 12.5.sp, maxLines = 1)
-        Spacer(Modifier.width(8.dp))
-        Box(Modifier.graphicsLayer { scaleX = .82f; scaleY = .82f }) {
-            Switch(p.memOn, "跨聊天回忆") { p.memOn = it; Memory.save() }
+    Txt(if (days == 0) "${p.name} 还在认识你" else "${p.name} 认识你 $days 天了", Page.ink, 19.sp, Modifier.padding(start = 4.dp, top = 2.dp, bottom = 16.dp), family = Serif, lineHeight = 30.sp)
+    // 记忆入口：叠着的三张小纸 + 记忆 + 一行小字
+    Pressable(onBook, Modifier.fillMaxWidth().spot("memory"), label = "记忆") { pr ->
+        Row(
+            Modifier.fillMaxWidth().glass(RoundedCornerShape(20.dp), blur, fill = glassFill).background(veil(if (pr) .06f else 0f))
+                .padding(horizontal = 18.dp, vertical = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            NoteStack()
+            Spacer(Modifier.width(14.dp))
+            Column(Modifier.weight(1f)) {
+                Txt("记忆", Page.ink, 16.sp, maxLines = 1)
+                Spacer(Modifier.height(3.dp))
+                Txt(
+                    listOfNotNull("聊过 ${p.chats} 次", "记得 ${p.items.size} 件".takeIf { p.items.isNotEmpty() }, ago(p.lastAt).takeIf { it.isNotEmpty() }?.let { "上次是$it" }).joinToString(" · "),
+                    Page.muted, 12.5.sp, maxLines = 1,
+                )
+            }
+            SvgIcon(MineIcons.next, Page.muted, 18.dp)
         }
     }
-    // 还没写成她自己那段话的，一条条补写（Diary.kt）
-    LaunchedEffect(p.id) { Diary.backfill(p) }
-    BookPage(p, blur, onOpen)
+    Spacer(Modifier.height(12.dp))
+    // 跨聊天回忆（不管记录，只管她能不能翻以前的聊天）
+    Row(
+        Modifier.fillMaxWidth().spot("cross").glass(RoundedCornerShape(20.dp), blur, fill = glassFill).padding(horizontal = 18.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Txt("跨聊天回忆", Page.ink, 15.sp, maxLines = 1)
+            Spacer(Modifier.height(2.dp))
+            Txt("她能翻以前的聊天", Page.muted, 12.5.sp, maxLines = 1)
+        }
+        Switch(p.memOn, "跨聊天回忆") { p.memOn = it; Memory.save() }
+    }
+}
+
+/** 入口上的小图标：错开叠着的三张折角纸。 */
+@Composable
+private fun NoteStack() {
+    val fill = Skin.note
+    val line = Page.line
+    androidx.compose.foundation.Canvas(Modifier.size(44.dp, 50.dp)) {
+        val u = 1.dp.toPx()
+        listOf(Triple(10f, 0f, .45f), Triple(5f, 4f, .7f), Triple(0f, 8f, 1f)).forEach { (x, y, a) ->
+            val w = 34 * u; val h = 42 * u; val c = 10 * u; val ox = x * u; val oy = y * u
+            val path = androidx.compose.ui.graphics.Path().apply {
+                moveTo(ox + 6 * u, oy); lineTo(ox + w - c, oy); lineTo(ox + w, oy + c); lineTo(ox + w, oy + h - 6 * u)
+                quadraticTo(ox + w, oy + h, ox + w - 6 * u, oy + h); lineTo(ox + 6 * u, oy + h)
+                quadraticTo(ox, oy + h, ox, oy + h - 6 * u); lineTo(ox, oy + 6 * u); quadraticTo(ox, oy, ox + 6 * u, oy); close()
+            }
+            drawPath(path, fill.copy(alpha = fill.alpha * a))
+            drawPath(path, line.copy(alpha = line.alpha * a), style = androidx.compose.ui.graphics.drawscope.Stroke(u))
+        }
+    }
+}
+
+/** 记忆本：★ 人和规矩在上，下面按天、周、月、年；卡片宽屏四列、手机两列。右上 ☰ 悬浮菜单。 */
+@Composable
+private fun ColumnScope.MemBookScreen(p: Persona, compact: Boolean, nav: MineNav) {
+    var menu by remember { mutableStateOf(false) }
+    var undo by remember { mutableStateOf<Pair<Mem, Int>?>(null) }
+    LaunchedEffect(undo) { if (undo != null) { kotlinx.coroutines.delay(4000); undo = null } }
+    Title("记忆", compact, onBack = { nav.back() }) {
+        Pressable({ menu = !menu }, label = "菜单") { pr ->
+            SvgIcon(menuIc, if (pr) Page.muted else Page.ink, 24.dp, modifier = Modifier.padding(6.dp))
+        }
+    }
+    Box(Modifier.weight(1f).fillMaxWidth()) {
+        androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize()) {
+            val cols = when { maxWidth >= 640.dp -> 4; maxWidth >= 460.dp -> 3; else -> 2 }
+            val secs = MemTree.sections(p)
+            Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(bottom = 32.dp)) {
+                if (secs.isEmpty()) Txt(
+                    "我们聊过的、你说起你自己的、你喜欢我怎么陪你的，我都会记在这儿。", Page.ink.copy(alpha = .7f), 14.sp,
+                    Modifier.fillMaxWidth().padding(top = 40.dp, start = 12.dp, end = 12.dp), lineHeight = 24.sp, align = androidx.compose.ui.text.style.TextAlign.Center,
+                )
+                var idx = 0
+                secs.forEach { s ->
+                    Row(Modifier.padding(start = 2.dp, top = 4.dp, bottom = 14.dp), verticalAlignment = Alignment.Bottom) {
+                        Txt(s.name, Page.ink, 16.sp, weight = FontWeight.SemiBold, maxLines = 1)
+                        Spacer(Modifier.width(10.dp))
+                        Txt(s.sub, Page.muted, 12.sp, maxLines = 1)
+                    }
+                    s.items.chunked(cols).forEach { row ->
+                        Row(Modifier.fillMaxWidth().padding(bottom = 24.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                            row.forEach { m ->
+                                val i = idx++
+                                NoteCard(m, MemTree.kids(p, m).size, i, Modifier.weight(1f)) { nav.letterFrom = ""; nav.screen = "letter/${m.id}" }
+                            }
+                            repeat(cols - row.size) { Spacer(Modifier.weight(1f)) }
+                        }
+                    }
+                }
+            }
+        }
+        // 删除后几秒内可以撤销
+        androidx.compose.animation.AnimatedVisibility(
+            undo != null,
+            Modifier.align(Alignment.BottomCenter).padding(bottom = 8.dp),
+            enter = androidx.compose.animation.slideInVertically { it } + androidx.compose.animation.fadeIn(),
+            exit = androidx.compose.animation.slideOutVertically { it } + androidx.compose.animation.fadeOut(),
+        ) {
+            Row(
+                Modifier.widthIn(max = 520.dp).fillMaxWidth().background(Skin.toast, RoundedCornerShape(16.dp))
+                    .padding(start = 16.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Txt("忘掉了", Skin.toastInk, 13.5.sp, Modifier.weight(1f))
+                Pressable({ undo?.let { (m, i) -> Memory.restore(p, m, i) }; undo = null }, label = "撤销") { pr ->
+                    Txt("撤销", warm, 13.5.sp, Modifier.background(if (pr) Skin.toastInk.copy(alpha = .1f) else Color.Transparent, RoundedCornerShape(12.dp)).padding(horizontal = 12.dp, vertical = 9.dp))
+                }
+            }
+        }
+        MemMenuLayer(p) { m, i -> undo = m to i }
+        FloatMenu(menu, { menu = false }, listOf(
+            Triple(modelIc, "记忆模型") { menu = false; nav.screen = "memmodel" },
+            Triple(listIc, "她带着的目录") { menu = false; nav.screen = "memcatalog" },
+        ))
+    }
+}
+
+/** ☰ 点开的悬浮菜单：从右上角长出来（220ms 减速），点空白处收回（140ms 加速）。样式照 ⋮ 对话菜单。 */
+@Composable
+private fun androidx.compose.foundation.layout.BoxScope.FloatMenu(open: Boolean, onDismiss: () -> Unit, items: List<Triple<Ic, String, () -> Unit>>) {
+    val t by androidx.compose.animation.core.animateFloatAsState(
+        if (open) 1f else 0f, tween(if (open) 220 else 140, easing = if (open) Curves.decel else Curves.accel), label = "floatMenu",
+    )
+    androidx.activity.compose.BackHandler(open) { onDismiss() }
+    if (t <= 0f) return
+    if (open) Box(Modifier.fillMaxSize().pointerInput(Unit) { detectTapGestures { onDismiss() } })
+    Column(
+        Modifier.align(Alignment.TopEnd)
+            .graphicsLayer {
+                alpha = t
+                val s = .9f + .1f * t; scaleX = s; scaleY = s
+                transformOrigin = androidx.compose.ui.graphics.TransformOrigin(1f, 0f)
+            }
+            .widthIn(min = 190.dp, max = 260.dp)
+            .shadow(18.dp, RoundedCornerShape(16.dp), ambientColor = Color.Black.copy(alpha = .35f), spotColor = Color.Black.copy(alpha = .35f))
+            .background(Skin.pop, RoundedCornerShape(16.dp))
+            .pointerInput(Unit) { detectTapGestures { } }
+            .padding(vertical = 6.dp),
+    ) {
+        items.forEach { (ic, label, go) -> MenuItem(ic, label, red = false, filled = false) { if (open) go() } }
+    }
+}
+
+/** 她带着的目录：每次聊天她身上带的就是这些（MemTree.catalog），用来看记忆跑得对不对。 */
+@Composable
+private fun ColumnScope.MemCatalogScreen(p: Persona, compact: Boolean, blur: Dp, nav: MineNav) {
+    Title("她带着的目录", compact, onBack = { nav.back() })
+    Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(bottom = 24.dp)) {
+        Txt("每次聊天她身上只带这些。你问到和某条直接有关的事，她才去翻那条的正文；不相关就不翻，也不主动提起。", Page.muted, 13.sp, Modifier.padding(start = 4.dp, end = 4.dp, bottom = 14.dp), lineHeight = 21.sp)
+        androidx.compose.foundation.text.selection.SelectionContainer {
+            Txt(
+                MemTree.catalog(p).ifBlank { "（还没有记下什么）" }, Page.ink, 13.5.sp,
+                Modifier.fillMaxWidth().glass(RoundedCornerShape(20.dp), blur, fill = glassFill).padding(18.dp), lineHeight = 23.sp,
+            )
+        }
+    }
+}
+
+/** 记忆模型：处理模型、启用思考；下面「记忆系统提示词」点进去改。 */
+@Composable
+private fun ColumnScope.MemModelScreen(store: AssistantStore, compact: Boolean, blur: Dp, nav: MineNav) {
+    var info by remember { mutableStateOf(false) }
+    var pick by remember { mutableStateOf(false) }
+    Title("记忆模型", compact, onBack = { nav.back() })
+    Box(Modifier.weight(1f).fillMaxWidth()) {
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(bottom = 24.dp)) {
+            Row(Modifier.fillMaxWidth().padding(start = 6.dp, end = 2.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                Txt("记忆模型", Page.muted, 14.sp, Modifier.weight(1f))
+                Pressable({ info = true }, label = "说明") { pr -> SvgIcon(infoIc, if (pr) Page.ink else Page.muted, 22.dp, modifier = Modifier.padding(4.dp)) }
+            }
+            Column(Modifier.fillMaxWidth().spot("memmodel").glass(RoundedCornerShape(20.dp), blur, fill = glassFill)) {
+                Pressable({ pick = true }, Modifier.fillMaxWidth(), label = "处理模型") { pr ->
+                    Row(Modifier.fillMaxWidth().background(veil(if (pr) .06f else 0f)).padding(horizontal = 20.dp, vertical = 18.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Txt("处理模型", Page.ink, 16.sp, maxLines = 1)
+                            Spacer(Modifier.height(4.dp))
+                            Txt(MemModel.label(store), Page.muted, 13.sp, maxLines = 1)
+                        }
+                        SvgIcon(MineIcons.next, Page.muted, 18.dp)
+                    }
+                }
+                Box(Modifier.padding(horizontal = 20.dp)) { Divider() }
+                Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 18.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f).padding(end = 12.dp)) {
+                        Txt("启用思考", Page.ink, 16.sp, maxLines = 1)
+                        Spacer(Modifier.height(4.dp))
+                        Txt("在模型支持时允许记忆模型使用推理", Page.muted, 13.sp, lineHeight = 19.sp)
+                    }
+                    Switch(MemModel.think, "启用思考") { MemModel.think = it; MemModel.save() }
+                }
+            }
+            Txt("记忆系统提示词", Page.muted, 14.sp, Modifier.padding(start = 6.dp, top = 26.dp, bottom = 10.dp))
+            Pressable({ nav.screen = "memprompt" }, Modifier.fillMaxWidth().spot("memprompt"), label = "记忆系统提示词") { pr ->
+                Row(
+                    Modifier.fillMaxWidth().glass(RoundedCornerShape(20.dp), blur, fill = glassFill).background(veil(if (pr) .06f else 0f)).padding(horizontal = 20.dp, vertical = 18.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f).padding(end = 10.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Txt("记下和整理", Page.ink, 16.sp, maxLines = 1)
+                            Spacer(Modifier.width(8.dp))
+                            Chip(if (MemModel.custom) "改过" else "默认", if (MemModel.custom) Skin.accent.copy(alpha = .9f) else veil(.08f), if (MemModel.custom) Skin.onAccent else Page.muted)
+                        }
+                        Spacer(Modifier.height(5.dp))
+                        Txt(MemModel.text.replace("\n", " "), Page.muted, 13.sp, lineHeight = 20.sp, maxLines = 2)
+                    }
+                    SvgIcon(MineIcons.next, Page.muted, 18.dp)
+                }
+            }
+        }
+        // 选模型：在视觉中心弹出
+        Sheet(pick, onDismiss = { pick = false }) {
+            Txt("处理模型", Page.ink, 16.sp)
+            Spacer(Modifier.height(10.dp))
+            Column(Modifier.fillMaxWidth().heightIn(max = 380.dp).verticalScroll(rememberScrollState())) {
+                ModelOption("跟着默认", "能看图的帮手，没有就用聊天的模型", MemModel.pid.isEmpty()) { MemModel.use("", ""); pick = false }
+                store.order.filter { store.config(it).configured }.forEach { id ->
+                    val cfg = store.config(id)
+                    cfg.models.ifEmpty { ProviderConfig.DEFAULT_MODELS[id].orEmpty() }.forEach { m ->
+                        ModelOption("${cfg.name} / $m", "", MemModel.pid == id && MemModel.model == m) { MemModel.use(id, m); pick = false }
+                    }
+                }
+            }
+        }
+        Sheet(info, onDismiss = { info = false }) {
+            Txt("记忆模型是做什么的", Page.ink, 16.sp)
+            Spacer(Modifier.height(8.dp))
+            Txt(
+                "你们聊完，它回头看一遍，决定记不记、写成一条（标题 + 她自己的一段话）；每天你第一次来时，它把之前没理过的理一遍，过完的周、月、年收成一份。这些都在后台做，不占聊天那一路。开思考会理得更细，也更慢、更费。",
+                Page.muted, 13.5.sp, lineHeight = 22.sp, align = androidx.compose.ui.text.style.TextAlign.Center,
+            )
+            SheetButton("知道了", false, Modifier.fillMaxWidth().padding(top = 14.dp)) { info = false }
+        }
+    }
 }
 
 @Composable
-private fun BookPage(p: Persona, blur: Dp, onOpen: (Mem) -> Unit) {
-    val list = p.items.sortedByDescending { it.at }
-    var all by remember(p.id) { mutableStateOf(false) }
-    Column(Modifier.fillMaxWidth().spot("memory").glass(RoundedCornerShape(20.dp), blur, fill = glassFill).animateContentSize().padding(horizontal = 10.dp, vertical = 6.dp)) {
-        if (list.isEmpty()) Txt("我们聊过的、你说起你自己的、你喜欢我怎么陪你的，我都会记在这儿。", Page.ink.copy(alpha = .7f), 14.sp, Modifier.fillMaxWidth().padding(top = 22.dp, bottom = 12.dp, end = 8.dp), lineHeight = 24.sp, align = androidx.compose.ui.text.style.TextAlign.Center)
-        val shown = if (all) list else list.take(6)
-        shown.forEachIndexed { k, m ->
-            // 刚添加的那条：从上面轻轻落下来
-            val drop = remember(m.id) { androidx.compose.animation.core.Animatable(if (m.id == MemoryCard.justAdded) 0f else 1f) }
-            LaunchedEffect(m.id) {
-                if (drop.value < 1f) {
-                    kotlinx.coroutines.delay(320)
-                    drop.animateTo(1f, androidx.compose.animation.core.spring(dampingRatio = .55f, stiffness = 420f))
-                    MemoryCard.justAdded = ""
-                }
+private fun ModelOption(name: String, sub: String, on: Boolean, onClick: () -> Unit) {
+    Pressable(onClick, Modifier.fillMaxWidth(), label = name) { pr ->
+        Row(
+            Modifier.fillMaxWidth().background(veil(if (pr) .08f else if (on) .05f else 0f), RoundedCornerShape(12.dp)).padding(horizontal = 12.dp, vertical = 11.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Txt(name, Page.ink, 14.5.sp, maxLines = 1)
+                if (sub.isNotEmpty()) Txt(sub, Page.muted, 12.sp, maxLines = 1)
             }
-            Box(Modifier.graphicsLayer { alpha = drop.value.coerceIn(0f, 1f); translationY = (1f - drop.value) * -14.dp.toPx() }) {
-                Column {
-                    if (k > 0) Box(Modifier.fillMaxWidth().padding(horizontal = 8.dp).height(1.dp).background(veil(.07f)))
-                    MemLine(m) { onOpen(m) }
+            if (on) Txt("✓", Skin.accent, 15.sp)
+        }
+    }
+}
+
+/** 记忆系统提示词：记忆模型记下、整理时读的写法。右上保存；改了没保存就返回，先问一句。 */
+@Composable
+private fun ColumnScope.MemPromptScreen(compact: Boolean, blur: Dp, nav: MineNav) {
+    var draft by remember { mutableStateOf(MemModel.text) }
+    var ask by remember { mutableStateOf(false) }
+    val dirty = draft.trim() != MemModel.text
+    androidx.activity.compose.BackHandler(dirty && !ask) { ask = true }
+    Title("记忆系统提示词", compact, onBack = { if (dirty) ask = true else nav.back() }) {
+        SaveButton(dirty) { val t = draft.trim(); MemModel.prompt = if (t == MemModel.DEFAULT) "" else t; MemModel.save(); draft = t }
+    }
+    Box(Modifier.weight(1f).fillMaxWidth()) {
+        Column(Modifier.fillMaxSize()) {
+            BasicTextField(
+                value = draft,
+                onValueChange = { draft = it },
+                textStyle = TextStyle(fontFamily = Sans, color = Page.ink, fontSize = 14.5.sp, lineHeight = 25.sp),
+                cursorBrush = SolidColor(Page.accent),
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+                decorationBox = { inner ->
+                    Box(Modifier.fillMaxSize().glass(RoundedCornerShape(20.dp), blur, fill = glassFill).padding(18.dp)) { inner() }
+                },
+            )
+            Row(Modifier.fillMaxWidth().padding(start = 6.dp, top = 12.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                Txt("${draft.length} 字 · 记下、每天整理时都按这段写", Page.muted, 12.5.sp, Modifier.weight(1f), maxLines = 1)
+                if (draft.trim() != MemModel.DEFAULT) {
+                    Pressable({ draft = MemModel.DEFAULT }, label = "恢复默认") { pr ->
+                        Txt("恢复默认", Skin.danger, 12.5.sp, Modifier.background(veil(if (pr) .1f else .05f), RoundedCornerShape(50)).padding(horizontal = 12.dp, vertical = 8.dp))
+                    }
                 }
             }
         }
-        if (list.size > 6) {
-            Pressable({ all = !all }, label = "展开全部") { pr ->
-                Txt(
-                    if (all) "收起" else "展开全部 ${list.size} 条", if (pr) Page.ink else Page.ink.copy(alpha = .8f), 13.sp,
-                    Modifier.padding(top = 6.dp, bottom = 4.dp).background(veil(if (pr) .1f else .05f), RoundedCornerShape(50)).padding(horizontal = 16.dp, vertical = 9.dp),
-                )
+        Sheet(ask, onDismiss = { ask = false }) {
+            Txt("改的还没保存", Page.ink, 16.sp)
+            Spacer(Modifier.height(8.dp))
+            Txt("现在返回，这次改的就不要了。", Page.muted, 13.5.sp, lineHeight = 22.sp, align = androidx.compose.ui.text.style.TextAlign.Center)
+            Row(Modifier.fillMaxWidth().padding(top = 14.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                SheetButton("继续改", false, Modifier.weight(1f)) { ask = false }
+                SheetButton("不保存", true, Modifier.weight(1f), red = true) { ask = false; draft = MemModel.text; nav.back() }
             }
         }
     }

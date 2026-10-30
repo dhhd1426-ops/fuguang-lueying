@@ -508,7 +508,7 @@ object ChatApi {
     }
 
     /** 不流式、不思考的一次问答（整理记忆用），返回正文。 */
-    suspend fun complete(p: Provider, c: ProviderConfig, model: String, system: String, user: String, maxTokens: Int = 1024): String = withContext(Dispatchers.IO) {
+    suspend fun complete(p: Provider, c: ProviderConfig, model: String, system: String, user: String, maxTokens: Int = 1024, think: Boolean = false): String = withContext(Dispatchers.IO) {
         val anthropic = p.kind == "anthropic"
         val url = if (anthropic) trim(c.base) + "/messages"
         else trim(c.base) + c.path.trim().let { if (it.startsWith("/")) it else "/$it" }
@@ -516,7 +516,7 @@ object ChatApi {
         try {
             conn.requestMethod = "POST"
             conn.connectTimeout = 15_000
-            conn.readTimeout = 60_000
+            conn.readTimeout = if (think) 180_000 else 90_000
             conn.doOutput = true
             conn.setRequestProperty("Content-Type", "application/json")
             if (anthropic) {
@@ -527,9 +527,13 @@ object ChatApi {
             if (!anthropic) msgs.put(JSONObject().put("role", "system").put("content", system))
             msgs.put(JSONObject().put("role", "user").put("content", user))
             val body = JSONObject().put("model", model).put("messages", msgs).put("stream", false)
-            if (anthropic) body.put("system", system).put("max_tokens", maxTokens)
-            // 整理记忆不用想：DeepSeek 默认会思考，明确关掉
-            if (p.id == "deepseek") body.put("thinking", JSONObject().put("type", "disabled"))
+            if (anthropic) body.put("system", system).put("max_tokens", if (think) maxOf(maxTokens, 16000) else maxTokens)
+            // 记忆模型开了「启用思考」：按这个型号的默认档想（不支持的型号照常不带）；没开就不想，DeepSeek 默认会思考，明确关掉
+            if (think) {
+                val spec = Effort.spec(p.id, model)
+                val lv = spec.levels.getOrNull(spec.def)?.value?.takeIf { it != Effort.OFF } ?: spec.levels.firstOrNull { it.value != Effort.OFF }?.value
+                if (lv != null) Effort.apply(p, model, lv, body)
+            } else if (p.id == "deepseek") body.put("thinking", JSONObject().put("type", "disabled"))
             ModelFit.strip(p.id, model, body)
             conn.outputStream.use { it.write(body.toString().toByteArray()) }
             if (conn.responseCode !in 200..299) throw IllegalStateException("记忆整理失败（${conn.responseCode}）")
@@ -542,7 +546,7 @@ object ChatApi {
     }
 
     /** 能一起并发着做的工具（只读、不问人）。 */
-    private val READ_ONLY = setOf(Skills.OPEN, Skills.FIND, WebSearch.TOOL, Recall.TOOL, Works.READ, Materials.OPEN, Materials.LOOK, VideoParse.TOOL, PanTools.OPEN, ClockTools.NEXT, ClockTools.LIST)
+    private val READ_ONLY = setOf(Memory.READ, Skills.OPEN, Skills.FIND, WebSearch.TOOL, Recall.TOOL, Works.READ, Materials.OPEN, Materials.LOOK, VideoParse.TOOL, PanTools.OPEN, ClockTools.NEXT, ClockTools.LIST)
 
     private fun args(call: Call) = runCatching { JSONObject(call.args.toString().ifBlank { "{}" }) }.getOrDefault(JSONObject())
 
