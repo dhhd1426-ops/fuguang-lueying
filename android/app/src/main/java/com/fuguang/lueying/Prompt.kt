@@ -41,8 +41,8 @@ object Prompt {
         sb.append("\n\n").append(Voice.mine(who))
         // 第 345 版：只带目录（每条一个标题），常驻的带正文；要细节她自己翻（Memory.READ），只在相关时翻
         MemTree.catalog(p).takeIf { it.isNotBlank() }?.let { cat ->
-            sb.append("\n\n你记得的事，这里只有目录（方括号里是编号）：\n").append(cat)
-            sb.append("\n\n目录只是让你知道自己记得什么。${who}说的话和某条直接有关时，才用 ${Memory.READ} 翻那条的正文；翻到了，只用和他这句话有关的内容，不要顺带讲别的记忆，也不要主动提起以前的事。常驻的那几句每句话都照着做。")
+            sb.append("\n\n你记得的事，这里是目录（方括号里是编号）：\n").append(cat)
+            sb.append("\n\n「一直记着」那组的正文都在上面，做相关的事时照着做，不用翻。聊过的事只有标题：${who}说的话和某件直接有关时，才用 ${Memory.READ} 翻那条的正文；翻到了，只用和他这句话有关的内容，不要顺带讲别的记忆，也不要主动提起以前的事。常驻的那几句每句话都照着做。")
         }
         return sb.toString()
     }

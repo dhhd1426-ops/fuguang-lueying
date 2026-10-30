@@ -9,7 +9,7 @@ import java.util.Locale
  * 记忆的样子（第 345 版，设计见项目《记忆重新设计-2026-10-29》）：
  * - ★ 人和规矩（[Mem.rule]）：一直单独挂着，有变化原地更新。
  * - 事：按天记，每天第一次聊天时整理；上一周过完了归成一份「这一周」，月、年同理（[Reflect.roll]）。
- * - 她身上只带目录（[catalog]）：每条「[编号] 日期 · 类别 · 标题」，常驻的带正文；要细节自己用 read_memory 翻（[full]）。
+ * - 她身上带目录（[catalog]）：每条「[编号] 日期 · 类别 · 标题」；人和规矩、常驻的带正文（第 357 版），事要细节自己用 read_memory 翻（[full]）。
  */
 object MemTree {
     /** 记忆本、目录里的分段：名字、小字、哪些。 */
@@ -70,7 +70,12 @@ object MemTree {
         secs.forEach { s ->
             if (sb.isNotEmpty()) sb.append("\n\n")
             sb.append("【").append(s.name).append("】")
-            s.items.forEach { m -> sb.append("\n").append(line(m, p)) }
+            if (s.items.firstOrNull()?.rule == true) sb.append("（正文都在，做相关的事时照着做）")
+            s.items.forEach { m ->
+                sb.append("\n").append(line(m, p))
+                // 人和规矩：正文一直带着，不靠她判断要不要翻（常驻的在下面单独列，这里不重复）
+                if (m.rule && !m.pin) sb.append("\n  ").append(Memory.ownWords(body(m)).replace("\n", " ").let { if (it.length > RULE_MAX) it.take(RULE_MAX) + "…" else it })
+            }
         }
         val pins = p.items.filter { it.pin }
         if (pins.isNotEmpty()) {
@@ -89,6 +94,8 @@ object MemTree {
     }
 
     const val DAY = 86_400_000L
+    /** 人和规矩每条正文带多少字。 */
+    private const val RULE_MAX = 300
 
     fun dayKey(t: Long): String = SimpleDateFormat("yyyy-MM-dd", Locale.CHINA).format(Date(t))
     fun dayStart(t: Long): Long = Calendar.getInstance().apply { timeInMillis = t; set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0) }.timeInMillis

@@ -30,8 +30,8 @@ object Reflect {
     private var pendingConv: String? = null
     private var pendingJob: Job? = null
     private var pendingRun: (suspend () -> Unit)? = null
-    /** 每段对话已经回想到第几条（只在这次打开 App 期间记着，重开后从最近一段看起）。 */
-    private val upTo = mutableMapOf<String, Int>()
+    /** 每段对话已经回想到第几条：存在 [Memory.seen] 里，重开 App 也接着上次往下看（第 357 版）。 */
+    private val upTo get() = Memory.seen
 
     /**
      * 每轮回答完调一次：等对方停手一会儿再回想。期间又说话就重新等；
@@ -42,7 +42,7 @@ object Reflect {
         val from = (upTo[conv] ?: 0).coerceAtMost(msgs.size)
         val window = msgs.subList(maxOf(from, msgs.size - WINDOW), msgs.size).toList()
         if (window.none { it.role == "user" }) return
-        val block: suspend () -> Unit = { upTo[conv] = msgs.size; run(window) }
+        val block: suspend () -> Unit = { upTo[conv] = msgs.size; Memory.save(); run(window) }
         val prev = pendingRun
         pendingJob?.cancel()
         if (pendingConv != null && pendingConv != conv && prev != null) scope.launch { runCatching { prev() } }
@@ -145,17 +145,31 @@ $OPS
      */
     fun daily(p: Persona) {
         val today = MemTree.dayKey(System.currentTimeMillis())
-        if (p.tidyDay == today) return
-        p.tidyDay = today; Memory.save()
-        scope.launch { runCatching { tidy(p) }; runCatching { roll(p) } }
+        if (p.tidyDay == today || p.id in tidying) return
+        // 理完才标「今天理过」；中途失败的，今天之后发消息再试，一天最多 3 次（第 357 版）
+        val key = p.id + today
+        val n = tries[key] ?: 0
+        if (n >= 3) return
+        tries[key] = n + 1
+        tidying += p.id
+        scope.launch {
+            val ok = runCatching { tidy(p) }.getOrDefault(false)
+            runCatching { roll(p) }
+            if (ok) { p.tidyDay = today; Memory.save() }
+            tidying -= p.id
+        }
     }
 
-    private suspend fun tidy(her: Persona) {
+    private val tidying = mutableSetOf<String>()
+    private val tries = mutableMapOf<String, Int>()
+
+    /** 理完（或没有要理的）返回 true；记忆模型没回、回的不是能读的 JSON，返回 false，这批不标「已整理」。 */
+    private suspend fun tidy(her: Persona): Boolean {
         val start = MemTree.dayStart(System.currentTimeMillis())
         repeat(20) {
             val ok = lock.withLock {
                 val batch = MemTree.top(her).filter { !it.done && !it.span && it.at < start }.sortedBy { it.at }.take(10)
-                if (batch.isEmpty()) return
+                if (batch.isEmpty()) return true
                 val ids = batch.map { it.id }.toSet()
                 val ask = """
 ${MemModel.text}
@@ -174,13 +188,14 @@ ${listing(her, ids)}
 $OPS
 """.trim()
                 val raw = MemModel.ask(sys(her), ask, 4000) ?: return@withLock false
-                apply(her, raw, "", "", emptySet())
+                if (!apply(her, raw, "", "", emptySet())) return@withLock false
                 ids.forEach { id -> val i = her.items.indexOfFirst { it.id == id }; if (i >= 0) her.items[i] = her.items[i].copy(done = true) }
                 Memory.save()
                 true
             }
-            if (!ok) return
+            if (!ok) return false
         }
+        return true
     }
 
     /** 收拢：过完的周归成「这一周」，过完的月把几周归成「这个月」，过完的年把几个月归成「这一年」。 */
@@ -223,9 +238,10 @@ ${all.joinToString("\n\n") { "[${it.code}] ${MemTree.date(it)} · ${MemTree.kind
         }
     }
 
-    private fun apply(her: Persona, raw: String, conv: String, convTitle: String, mark: Set<String>) {
-        val json = raw.substringAfter('{', "").substringBeforeLast('}', "").ifEmpty { return }
-        val ops = runCatching { JSONObject("{$json}").optJSONArray("ops") }.getOrNull() ?: return
+    /** 读懂了记忆模型的回答就返回 true（哪怕没什么要改）。 */
+    private fun apply(her: Persona, raw: String, conv: String, convTitle: String, mark: Set<String>): Boolean {
+        val json = raw.substringAfter('{', "").substringBeforeLast('}', "").ifEmpty { return false }
+        val ops = runCatching { JSONObject("{$json}").optJSONArray("ops") }.getOrNull() ?: return false
         val now = System.currentTimeMillis()
         var changed = false
         for (i in 0 until ops.length()) {
@@ -261,5 +277,6 @@ ${all.joinToString("\n\n") { "[${it.code}] ${MemTree.date(it)} · ${MemTree.kind
             }
         }
         if (changed) Memory.save()
+        return true
     }
 }
