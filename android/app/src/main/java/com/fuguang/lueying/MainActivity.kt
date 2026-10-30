@@ -108,5 +108,5 @@ class MainActivity : ComponentActivity() {
 
     // 看得见 App 时不发通知
     override fun onStart() { super.onStart(); Notify.foreground = true }
-    override fun onStop() { Notify.foreground = false; super.onStop() }
+    override fun onStop() { Notify.foreground = false; Reflect.flush(); super.onStop() }
 }
