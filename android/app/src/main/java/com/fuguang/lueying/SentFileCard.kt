@@ -33,7 +33,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.withFrameMillis
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -74,24 +74,27 @@ internal fun SentFileCard(ref: String) {
     val still = Toy.still()
     val anim = remember(ref) { ref in SentFiles.fresh && !still }
     var landed by remember(ref) { mutableStateOf(!anim) }
-    val ms = remember(ref) { mutableLongStateOf(0L) }
-    var final by remember(ref) { mutableIntStateOf(-1) }
+    // 时钟记在文件上（SentFiles.born / last）：卡片被重画（回复收进聊天记录、切走再切回）也接着跳，不从头来
+    val born = remember(ref) { SentFiles.born.getOrPut(ref) { System.nanoTime() } }
+    val ms = remember(ref) { mutableLongStateOf(((System.nanoTime() - born) / 1_000_000L).coerceAtLeast(0L)) }
+    var final by remember(ref) { mutableIntStateOf(SentFiles.last[ref] ?: -1) }
     val bump = remember(ref) { Animatable(1f) }
     val tagIn = remember(ref) { Animatable(if (anim) 0f else 1f) }
-    val rise = remember(ref) { Animatable(if (anim) 0f else 1f) }
+    // 落下来那一下只在刚放上去时做；重画时已经落过了就直接在位
+    val rise = remember(ref) { Animatable(if (anim && ms.longValue < 320L) 0f else 1f) }
     val fail = SentFiles.fail(ref)
     val ok = SentFiles.ok(ref)
 
     LaunchedEffect(ref) {
         if (!anim) { if (ref in SentFiles.fresh) SentFiles.fresh.remove(ref); return@LaunchedEffect }
-        launch { rise.animateTo(1f, tween(320, easing = Curves.decel)) }
-        var last = -1L; var acc = 0L
+        if (rise.value < 1f) launch { rise.animateTo(1f, tween(320, easing = Curves.decel)) }
         while (true) {
-            withFrameMillis { t -> if (last < 0) last = t; acc += (t - last).coerceAtMost(64); last = t; ms.longValue = acc }
+            val acc = withFrameNanos { t -> ((t - born) / 1_000_000L).coerceAtLeast(0L) }
+            ms.longValue = acc
             if (SentFiles.fail(ref) != null) break
             val c = acc / Toy.PERIOD; val land = c * Toy.PERIOD + Toy.PERIOD / 2
             // 换形开始前就定下这一拍是最后一拍：落地落成圆
-            if (final < 0 && acc < land && acc >= land - 90 && land >= MIN_MS && SentFiles.ok(ref)) final = c.toInt()
+            if (final < 0 && acc < land && acc >= land - 90 && land >= MIN_MS && SentFiles.ok(ref)) { final = c.toInt(); SentFiles.last[ref] = final }
             if (final >= 0 && acc >= final * Toy.PERIOD + Toy.PERIOD / 2 + SETTLE + GROW) break
         }
         landed = true
