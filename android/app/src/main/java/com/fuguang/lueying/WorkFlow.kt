@@ -80,6 +80,10 @@ private fun WorkSlot(id: String?, draft: WorkDraft?, onWork: (String) -> Unit) {
     val rise = remember { Animatable(if (id != null && draft == null) 1f else 0f) }
     LaunchedEffect(Unit) { rise.animateTo(1f, tween(300, easing = Curves.decel)) }
     // 她直接发的文件（SentFiles）：文件卡，自己管打包动效
+    if (id != null && id.startsWith(Pacts.PREFIX)) {
+        Box(Modifier.graphicsLayer { alpha = rise.value; translationY = (1f - rise.value) * 8.dp.toPx() }) { PactCard(id) }
+        return
+    }
     if (id != null && SentFiles.isRef(id)) {
         Box(Modifier.graphicsLayer { alpha = rise.value; translationY = (1f - rise.value) * 8.dp.toPx() }) { SentFileCard(id) }
         return

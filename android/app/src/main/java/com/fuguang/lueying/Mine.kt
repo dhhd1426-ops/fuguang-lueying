@@ -867,6 +867,7 @@ private fun MemIcon(pressed: Boolean) {
 private fun ColumnScope.MemBookScreen(p: Persona, compact: Boolean, nav: MineNav) {
     var menu by remember { mutableStateOf(false) }
     var undo by remember { mutableStateOf<Pair<Mem, Int>?>(null) }
+    var dropping by remember { mutableStateOf<Pact?>(null) }
     LaunchedEffect(undo) { if (undo != null) { kotlinx.coroutines.delay(4000); undo = null } }
     Title("记忆", compact, onBack = { nav.back() }) {
         Pressable({ menu = !menu }, label = "菜单") { pr ->
@@ -878,11 +879,26 @@ private fun ColumnScope.MemBookScreen(p: Persona, compact: Boolean, nav: MineNav
             val cols = when { maxWidth >= 640.dp -> 4; maxWidth >= 460.dp -> 3; else -> 2 }
             val secs = MemTree.sections(p)
             Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(bottom = 32.dp)) {
-                if (secs.isEmpty()) Txt(
+                val pacts = Pacts.of(p.id)
+                if (secs.isEmpty() && pacts.isEmpty()) Txt(
                     "我们聊过的、你说起你自己的、你喜欢我怎么陪你的，我都会记在这儿。", Page.ink.copy(alpha = .7f), 14.sp,
                     Modifier.fillMaxWidth().padding(top = 40.dp, start = 12.dp, end = 12.dp), lineHeight = 24.sp, align = androidx.compose.ui.text.style.TextAlign.Center,
                 )
                 var idx = 0
+                // 约定（Pacts.kt）：到点她会主动找你；放在最上面，长按取消
+                if (pacts.isNotEmpty()) {
+                    Row(Modifier.padding(start = 2.dp, top = 4.dp, bottom = 14.dp), verticalAlignment = Alignment.Bottom) {
+                        Txt("约定", Page.ink, 16.sp, weight = FontWeight.SemiBold, maxLines = 1)
+                        Spacer(Modifier.width(10.dp))
+                        Txt("到点她会主动找你", Page.muted, 12.sp, maxLines = 1)
+                    }
+                    pacts.chunked(cols).forEach { row ->
+                        Row(Modifier.fillMaxWidth().padding(bottom = 24.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                            row.forEach { k -> PactNote(k, idx++, Modifier.weight(1f)) { dropping = k } }
+                            repeat(cols - row.size) { Spacer(Modifier.weight(1f)) }
+                        }
+                    }
+                }
                 secs.forEach { s ->
                     Row(Modifier.padding(start = 2.dp, top = 4.dp, bottom = 14.dp), verticalAlignment = Alignment.Bottom) {
                         Txt(s.name, Page.ink, 16.sp, weight = FontWeight.SemiBold, maxLines = 1)
@@ -920,6 +936,20 @@ private fun ColumnScope.MemBookScreen(p: Persona, compact: Boolean, nav: MineNav
             }
         }
         MemMenuLayer(p) { m, i -> undo = m to i }
+        val ctx = androidx.compose.ui.platform.LocalContext.current
+        val shownDrop = remember { mutableStateOf<Pact?>(null) }
+        if (dropping != null) shownDrop.value = dropping
+        Sheet(dropping != null, { dropping = null }) {
+            val k = shownDrop.value
+            Txt("取消这条约定？", Page.ink, 16.sp)
+            Spacer(Modifier.height(6.dp))
+            Txt(k?.let { Pacts.rule(it) + " · " + it.title }.orEmpty() + "，取消后到点她不会再来找你。", Page.muted, 13.sp, align = androidx.compose.ui.text.style.TextAlign.Center, lineHeight = 20.sp)
+            Spacer(Modifier.height(16.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                SheetButton("留着", false, Modifier.weight(1f)) { dropping = null }
+                SheetButton("取消约定", true, Modifier.weight(1f), red = true) { k?.let { Pacts.drop(ctx, it.id) }; dropping = null }
+            }
+        }
         FloatMenu(menu, { menu = false }, listOf(
             Triple(modelIc, "记忆模型") { menu = false; nav.screen = "memmodel" },
             Triple(listIc, "她带着的目录") { menu = false; nav.screen = "memcatalog" },

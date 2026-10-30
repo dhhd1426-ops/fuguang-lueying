@@ -16,6 +16,8 @@
     <uses-permission android:name="android.permission.READ_CALENDAR" />
     <uses-permission android:name="android.permission.WRITE_CALENDAR" />
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
     <!-- 连接器：能看到笔记 App「羽」，读取它提供的笔记接口 -->
     <queries>
@@ -115,6 +117,23 @@
         <receiver
             android:name=".HerNoteReceiver"
             android:exported="false" />
+
+        <!-- 约定（Pacts.kt）：到点叫醒她、开机和更新后把闹钟重新定一遍、她想话时的前台服务 -->
+        <receiver
+            android:name=".PactAlarm"
+            android:exported="false" />
+        <receiver
+            android:name=".PactBoot"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+        <service
+            android:name=".PactRun"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
 
         <!-- 桌面小组件「每日一言」：手记里的一言，每 2 小时换一句（见 Yiyan.kt） -->
         <receiver

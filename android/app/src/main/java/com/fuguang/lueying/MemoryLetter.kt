@@ -205,7 +205,7 @@ internal fun MemMenuLayer(p: Persona, onDeleted: (Mem, Int) -> Unit) {
 /* ---------- 记忆本的折角卡片（第 345 版，原型 EzmAr4Lo7ucsmJG6FEV4as 第 9 版） ---------- */
 
 /** 右上角折掉一角的纸：其余三角是圆角。 */
-private class NoteShape(private val cut: Dp, private val r: Dp) : Shape {
+internal class NoteShape(private val cut: Dp, private val r: Dp) : Shape {
     override fun createOutline(size: Size, layoutDirection: LayoutDirection, density: Density): Outline {
         val c = with(density) { cut.toPx() }; val rr = with(density) { r.toPx() }
         val w = size.width; val h = size.height
