@@ -49,8 +49,17 @@ object SentFiles {
 
     /** 这次打开 App 后发的：null 正在打包，"" 好了，别的是没打包成的原因。以前发的不在这里（文件在就是好的）。 */
     val state = mutableStateMapOf<String, String?>()
-    /** 这次刚发、还没播过打包动效的。 */
+    /** 这次刚发、还没播完打包动效的。 */
     val fresh = HashSet<String>()
+    /**
+     * 打包动效的时钟记在文件上，不记在卡片上（第 350 版）：她说完话，回复收进聊天记录时卡片会重画一张，
+     * 原来进度记在卡片里跟着丢了、从头再跳一遍（用户录屏：1.8 秒的事拖到 4 秒多）。
+     * born：卡片放上去那一刻（System.nanoTime，和画面帧的时钟同一个）；last：落地落成圆的那一拍。
+     */
+    val born = HashMap<String, Long>()
+    val last = HashMap<String, Int>()
+    /** 同一份（格式 + 名字 + 内容）两分钟内又发：请求被退回、整轮重发时她会再调一次，不再多一张卡。 */
+    private val recent = HashMap<String, Pair<String, Long>>()
     /** 底部面板正开着哪一份。 */
     var sheet by mutableStateOf<String?>(null)
 
@@ -112,14 +121,20 @@ object SentFiles {
         val batch = System.currentTimeMillis().toString(36) + (100..999).random()
         val dir = File(d, batch).apply { mkdirs() }
         val taken = HashSet<String>()
-        val jobs = items.take(6).map { o ->
+        val again = ArrayList<String>()
+        val now = System.currentTimeMillis()
+        recent.entries.removeAll { now - it.value.second > 120_000 }
+        val jobs = items.take(6).mapNotNull { o ->
             val f = o.optString("format").lowercase().let { if (it in setOf("docx", "pdf", "txt", "md")) it else "txt" }
             var base = o.optString("name").trim().replace(Regex("[\\\\/:*?\"<>|\\n\\r]"), "_").ifEmpty { "文件" }.take(40)
             if (base.endsWith(".$f", true)) base = base.dropLast(f.length + 1)
             var nm = "$base.$f"; var k = 2
             while (!taken.add(nm)) nm = "$base（${k++}）.$f"
+            val sig = f + "|" + base + "|" + o.optString("content").trim().hashCode()
+            recent[sig]?.let { (old, _) -> if (file(old)?.exists() == true || state.containsKey(old)) { again += name(old); return@mapNotNull null } }
             val ref = "$PREFIX$batch/$nm"
-            withContext(Dispatchers.Main) { state[ref] = null; fresh.add(ref); onCard(ref) }
+            recent[sig] = ref to now
+            withContext(Dispatchers.Main) { state[ref] = null; fresh.add(ref); born[ref] = System.nanoTime(); onCard(ref) }
             Triple(ref, f, o.optString("content"))
         }
         val done = ArrayList<String>(); val bad = ArrayList<String>()
@@ -145,6 +160,7 @@ object SentFiles {
         return ToolOut(
             (if (done.isEmpty()) "" else "发好了：" + done.joinToString("、") + "。文件卡在你这条回复里，不用把内容再贴一遍，说一两句就好。") +
                 (if (bad.isEmpty()) "" else "没打包成：" + bad.joinToString("、") + "。可以改一改再发，或如实告诉对方。") +
+                (if (again.isEmpty()) "" else again.joinToString("、") + " 刚才已经发过了，卡片就在你这条回复里，不用再发。") +
                 (if (items.size > 6) "一次最多 6 份，后面的没发。" else ""),
         )
     }
