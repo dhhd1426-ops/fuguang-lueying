@@ -103,6 +103,9 @@ object Memory {
 
     private var loaded = false
 
+    /** 每段对话回看到第几条（Reflect.later）：存下来，重开 App 不从头再看一遍。 */
+    val seen = LinkedHashMap<String, Int>()
+
     fun init(p: Prefs) {
         prefs = p
         // 换主题、换图标时页面会重建、再走一遍这里（进程还在）：读过就不再读。不能清空重读：正在聊的那位会被换成新对象，她手上记的东西会丢
@@ -120,6 +123,7 @@ object Memory {
             }
             activeId = o.optString("active")
             userName = o.optString("user")
+            o.optJSONObject("seen")?.let { s -> s.keys().forEach { k -> seen[k] = s.optInt(k) } }
         }
         if (all.isEmpty()) migrate(p)
         if (all.none { it.id == activeId }) activeId = all.first().id
@@ -164,7 +168,9 @@ object Memory {
                 .put("first", p.firstAt).put("last", p.lastAt).put("chats", p.chats)
                 .put("temp", p.temp.toDouble()).put("topOn", p.topOn).put("top", p.top.toDouble()).put("limit", p.limit).put("m", m).put("e", Entries.write(p.entries)).put("tidyAt", p.tidyAt).put("tidyChats", p.tidyChats).put("tidyDay", p.tidyDay))
         }
-        prefs?.putString(KEY, JSONObject().put("active", activeId).put("user", userName).put("all", a).toString())
+        while (seen.size > 300) seen.remove(seen.keys.first())
+        val s = JSONObject().apply { seen.forEach { (k, v) -> put(k, v) } }
+        prefs?.putString(KEY, JSONObject().put("active", activeId).put("user", userName).put("all", a).put("seen", s).toString())
     }
 
     fun get(id: String): Persona? = all.firstOrNull { it.id == id }
@@ -263,7 +269,7 @@ object Memory {
     val toolSpecs: List<ToolSpec> get() = listOf(
         ToolSpec(
             READ,
-            "翻你的记忆：按目录里的编号拿到那几条的正文。只在$who 这句话和某条直接有关时才翻；不相关就不翻。周、月、年那几份翻开后还能看到下面挂着的编号，不够细再往下翻。",
+            "翻你记得的事：按目录里的编号拿到那几条的正文。「一直记着」那组的正文已经在你身上，不用翻；聊过的事、周月年那几份只有标题，$who 这句话和某件事直接有关时才翻。周、月、年那几份翻开后还能看到下面挂着的编号，不够细再往下翻。",
             JSONObject().put("type", "object").put("properties", JSONObject()
                 .put("ids", JSONObject().put("type", "array").put("items", JSONObject().put("type", "string")).put("description", "目录里方括号中的编号，一次最多 6 个"))
             ).put("required", JSONArray(listOf("ids"))),
@@ -289,7 +295,7 @@ object Memory {
     )
 
     fun toolRule(): String =
-        "你的记忆只给了你目录（每条一个标题）。$who 这句话和哪条直接有关，就用 $READ 翻那几条的正文再答；不相关就不翻，翻到了也只用和这句话有关的部分，不顺带讲别的，也不主动提起以前的事。" +
+        "「一直记着」那组（关于$who、$who 喜欢的、你学会的、关于你自己）正文都在你身上，做相关的事时照着做，不用翻。聊过的事只有标题：$who 这句话和哪件直接有关，就用 $READ 翻那几条再答；不相关就不翻，翻到了也只用和这句话有关的部分，不顺带讲别的，也不主动提起以前的事。" +
             "$who 明确让你记住什么、或者纠正你的时候，用 $REMEMBER 交给记忆；$who 让你忘掉什么，用 $FORGET 删掉，做完说一声就好（比如“记住了”）。你们闹着玩、一起编故事时说的话不用记；密码、验证码、证件号这类绝不记。"
 
     /** 时间线上「翻了几条记忆」下面那行：翻的是哪几条的标题。 */
