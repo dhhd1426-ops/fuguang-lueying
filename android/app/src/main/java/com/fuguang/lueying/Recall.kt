@@ -58,6 +58,9 @@ object Recall {
             }
             if (out.length() == 0) return ToolOut("以前的聊天里没找到「${query.trim()}」。")
         }
+        // 翻到的几段还没有小结：后台补上，下次就有（第 361 版）
+        (if (words.isEmpty()) convs.take(6) else convs.filter { c -> (0 until out.length()).any { out.optJSONObject(it)?.optString("title") == c.title } })
+            .filter { it.gist.isBlank() }.take(3).forEach { Reflect.digestNow(it.id) }
         return ToolOut(JSONObject().put("chats", out).toString())
     }
 

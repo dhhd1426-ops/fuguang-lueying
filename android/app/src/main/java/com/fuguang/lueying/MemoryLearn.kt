@@ -1,5 +1,6 @@
 package com.fuguang.lueying
 
+import androidx.compose.runtime.mutableStateListOf
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -33,9 +34,12 @@ object Reflect {
     /** 每段对话已经回想到第几条：存在 [Memory.seen] 里，重开 App 也接着上次往下看（第 357 版）。 */
     private val upTo get() = Memory.seen
 
+    /** 攒够几轮就不等停手，马上回看（长聊时小结也跟得上，第 361 版）。 */
+    private const val ROUNDS = 6
+
     /**
      * 每轮回答完调一次：等对方停手一会儿再回想。期间又说话就重新等；
-     * 换到别的对话时，上一段马上回想，不等。
+     * 换到别的对话时，上一段马上回想，不等；上次回看后又聊满 [ROUNDS] 轮，也不等。
      */
     fun later(conv: String, msgs: List<ChatMsg>, run: suspend (List<ChatMsg>) -> Unit) {
         if (conv.isEmpty()) return
@@ -47,10 +51,39 @@ object Reflect {
         pendingJob?.cancel()
         if (pendingConv != null && pendingConv != conv && prev != null) scope.launch { runCatching { prev() } }
         pendingConv = conv; pendingRun = block
+        val wait = if (window.count { it.role == "user" } >= ROUNDS) 0L else QUIET
         pendingJob = scope.launch {
-            delay(QUIET)
+            delay(wait)
             if (pendingRun === block) { pendingRun = null; pendingConv = null }
             runCatching { block() }
+        }
+    }
+
+    /** App 退到后台：等着的那段马上回看，免得划掉 App 就漏了（第 361 版）。 */
+    fun flush() {
+        val b = pendingRun ?: return
+        pendingJob?.cancel(); pendingRun = null; pendingConv = null
+        scope.launch { runCatching { b() } }
+    }
+
+    /** 正在写小结的对话 id：「这段聊了什么」里显示「正在写…」。 */
+    val writing = mutableStateListOf<String>()
+
+    /** 要用小结却还没有（打开「这段聊了什么」、她翻到没小结的旧聊天）：当场读那段原文补一份。 */
+    fun digestNow(id: String) {
+        scope.launch {
+            if (id in writing) return@launch
+            val c0 = Chats.current?.history?.get(id) ?: return@launch
+            if (c0.gist.isNotBlank() || c0.msgs.none { it.role == "user" }) return@launch
+            writing += id
+            try {
+                lock.withLock {
+                    val c = Chats.current?.history?.get(id) ?: return@withLock
+                    if (c.gist.isNotBlank()) return@withLock
+                    val her = Memory.get(c.who) ?: Memory.active
+                    runCatching { digest(her, emptyList(), id, c.title) }
+                }
+            } finally { writing.remove(id) }
         }
     }
 
@@ -109,8 +142,8 @@ $talk
 
 $OPS
 """.trim()
-            val raw = MemModel.ask(sys(her), ask, 3000) ?: return
-            apply(her, raw, conv, convTitle, emptySet())
+            // 记忆那次没回也照样写小结，两件事互不拖累（第 361 版）
+            MemModel.ask(sys(her), ask, 3000)?.let { raw -> apply(her, raw, conv, convTitle, emptySet()) }
             runCatching { digest(her, window, conv, convTitle) }
         }
     }
@@ -122,6 +155,12 @@ $OPS
     private suspend fun digest(her: Persona, window: List<ChatMsg>, conv: String, convTitle: String) {
         val store = Chats.current?.history ?: return
         val c = store.get(conv) ?: return
+        val mine = conv !in writing
+        if (mine) writing += conv
+        try { digestBody(her, window, conv, convTitle, store, c) } finally { if (mine) writing.remove(conv) }
+    }
+
+    private suspend fun digestBody(her: Persona, window: List<ChatMsg>, conv: String, convTitle: String, store: ConvStore, c: Conv) {
         val who = Memory.userCall
         val msgs = if (c.gist.isBlank()) c.msgs.takeLast(80) else window
         val talk = msgs.filter { it.text.isNotBlank() }.joinToString("\n") { (if (it.role == "user") "$who：" else "${her.name}：") + it.text.take(1500) }.takeLast(16000)
@@ -145,12 +184,14 @@ $talk
 - 原来小结里的内容都留着；被后来的话改掉的，写成最新的，并注一句原来是什么。
 - 称呼用「$who」和「${her.name}」，不用「我」「你」。寒暄不写。
 - 不超过 900 字。
-输出：{"gist":"…"}，正文分段用换行。
+直接输出小结正文，不要标题、不要解释、不要 JSON、不要代码块。
 """.trim()
-        val raw = MemModel.ask(sys(her), ask, 2500) ?: return
-        val o = runCatching { JSONObject("{" + raw.substringAfter('{', "").substringBeforeLast('}', "") + "}") }.getOrNull() ?: return
+        val raw = MemModel.ask("你替${her.name}给聊天写小结，只输出小结正文。", ask, 3000) ?: return
+        // 万一还是包了代码块或 JSON：剥掉
+        var text = raw.trim().removePrefix("```json").removePrefix("```").removeSuffix("```").trim()
+        if (text.startsWith("{")) obj(text)?.optString("gist")?.takeIf { it.isNotBlank() }?.let { text = it }
         // 证件号、卡号、手机号、密码这类抹掉，其余照留
-        val g = secret.fold(o.optString("gist").trim().take(1500)) { s, r -> r.replace(s, "（略）") }
+        val g = secret.fold(text.trim().take(1500)) { s, r -> r.replace(s, "（略）") }
         if (g.isEmpty()) return
         store.setGist(conv, g)
     }
@@ -267,7 +308,7 @@ ${all.joinToString("\n\n") { "[${it.code}] ${MemTree.date(it)} · ${MemTree.kind
 输出：{"title":"…","body":"…"}
 """.trim()
                 val raw = MemModel.ask(sys(her), ask, 2500) ?: return@withLock
-                val o = runCatching { JSONObject("{" + raw.substringAfter('{', "").substringBeforeLast('}', "") + "}") }.getOrNull() ?: return@withLock
+                val o = obj(raw) ?: return@withLock
                 val title = o.optString("title").trim().trimEnd('。').take(60)
                 val body = o.optString("body").trim().take(3000)
                 if (title.isEmpty() || body.isEmpty()) return@withLock
@@ -279,10 +320,33 @@ ${all.joinToString("\n\n") { "[${it.code}] ${MemTree.date(it)} · ${MemTree.kind
         }
     }
 
+    /**
+     * 读记忆模型回的 JSON：取第一个 { 到最后一个 }，字符串里夹着的真换行、制表符换成转义再读（org.json 遇到会整份读不懂）。
+     */
+    private fun obj(raw: String): JSONObject? {
+        val s = raw.substringAfter('{', "").substringBeforeLast('}', "").ifEmpty { return null }
+        val b = StringBuilder("{")
+        var inStr = false; var esc = false
+        for (ch in s) {
+            if (inStr) {
+                when {
+                    esc -> { b.append(ch); esc = false }
+                    ch == '\\' -> { b.append(ch); esc = true }
+                    ch == '"' -> { b.append(ch); inStr = false }
+                    ch == '\n' -> b.append("\\n")
+                    ch == '\r' -> {}
+                    ch == '\t' -> b.append("\\t")
+                    else -> b.append(ch)
+                }
+            } else { if (ch == '"') inStr = true; b.append(ch) }
+        }
+        b.append('}')
+        return runCatching { JSONObject(b.toString()) }.getOrNull()
+    }
+
     /** 读懂了记忆模型的回答就返回 true（哪怕没什么要改）。 */
     private fun apply(her: Persona, raw: String, conv: String, convTitle: String, mark: Set<String>): Boolean {
-        val json = raw.substringAfter('{', "").substringBeforeLast('}', "").ifEmpty { return false }
-        val ops = runCatching { JSONObject("{$json}").optJSONArray("ops") }.getOrNull() ?: return false
+        val ops = obj(raw)?.optJSONArray("ops") ?: return false
         val now = System.currentTimeMillis()
         var changed = false
         for (i in 0 until ops.length()) {

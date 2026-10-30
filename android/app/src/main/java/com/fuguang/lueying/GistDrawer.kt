@@ -1,7 +1,11 @@
 package com.fuguang.lueying
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animate
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.Orientation
@@ -101,8 +105,13 @@ internal fun GistDrawer(conv: Conv?, onClose: () -> Unit) {
                 Spacer(Modifier.height(14.dp))
             }
             Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(start = 24.dp, end = 24.dp, top = 2.dp, bottom = 40.dp)) {
+                // 还没有：打开就当场补写（第 361 版）；写的时候是「正在写…」，一口一口地呼吸
+                LaunchedEffect(c.id, conv != null) { if (conv != null && c.gist.isBlank()) Reflect.digestNow(c.id) }
                 if (c.gist.isBlank()) {
-                    Txt("这段还没有小结。聊完停一会儿，她会写上。", Page.muted, 15.sp, Modifier.fillMaxWidth().padding(top = 72.dp, start = 30.dp, end = 30.dp), lineHeight = 27.sp, align = TextAlign.Center)
+                    val busy = c.id in Reflect.writing
+                    val breath by rememberInfiniteTransition(label = "gist").animateFloat(.45f, 1f, infiniteRepeatable(tween(900, easing = Curves.standard), RepeatMode.Reverse), label = "b")
+                    Txt(if (busy) "正在写这段的小结…" else "这段还没有小结。聊完停一会儿，她会写上。", Page.muted, 15.sp,
+                        Modifier.fillMaxWidth().padding(top = 72.dp, start = 30.dp, end = 30.dp).graphicsLayer { alpha = if (busy) breath else 1f }, lineHeight = 27.sp, align = TextAlign.Center)
                 } else {
                     val at = if (c.gistAt > 0) SimpleDateFormat("M月d日 H:mm", Locale.CHINA).format(Date(c.gistAt)) + " 更新 · " else ""
                     Txt(at + "她翻以前的聊天时看这份", Page.muted, 12.5.sp, Modifier.fillMaxWidth().padding(bottom = 18.dp), align = TextAlign.Center)
