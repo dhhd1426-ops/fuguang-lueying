@@ -86,8 +86,6 @@ object ConvMenu {
     var held by mutableStateOf<String?>(null)
     var renaming by mutableStateOf<Conv?>(null)
     var deleting by mutableStateOf<Conv?>(null)
-    /** 「这段聊了什么」开着的是哪段（第 359 版，[GistDrawer]）。 */
-    var gist by mutableStateOf<Conv?>(null)
     /** ⋮ 的位置。 */
     var moreAt = Rect.Zero
 
@@ -101,7 +99,6 @@ private val renameIc = Ic("M14.5 5.5l4 4M5 19l1-4.5L15.5 5a1.4 1.4 0 0 1 2 0l1.5
 private const val STAR = "M12 3.8l2.5 5.1 5.6.8-4 3.9.9 5.6L12 16.6l-5 2.6.9-5.6-4-3.9 5.6-.8z"
 private val starIc = Ic(STAR)
 private val pinIc = Ic("M14.5 4l5.5 5.5-2.5.8-3.3 3.3-.6 3.9L7.5 11.4l3.9-.6 3.3-3.3zM9.5 14.5L4.5 19.5")
-private val gistIc = Ic("M6.5 3.5h8.5l4 4v12.5a.5.5 0 0 1-.5.5h-12a.5.5 0 0 1-.5-.5V4a.5.5 0 0 1 .5-.5zM15 3.5v4h4M9 9h3M9 12.5h7M9 16h7")
 private val trashIc = Ic("M4.5 7h15M9.5 7V5h5v2M6.5 7l1 12.5h9l1-12.5M10 11v5M14 11v5")
 private val clearIc = Ic("M7 7l10 10M17 7L7 17")
 private val danger get() = Skin.danger
@@ -169,7 +166,7 @@ internal fun ConvMenuLayer(history: ConvStore) {
                     .background(if (sideNow) Color.Transparent else Skin.scrim(.28f * t.value))
                     .pointerInput(Unit) { detectTapGestures { ConvMenu.close() } },
             )
-            val items = if (sideNow) listOf("rename", "pin", "del") else listOf("share", "rename", "gist", "pin", "del")
+            val items = if (sideNow) listOf("rename", "pin", "del") else listOf("share", "rename", "pin", "del")
             val menuH = with(density) { (items.size * 44 + 12 + (if (sideNow) 0 else 29)).dp.toPx() }
             val gap = with(density) { 6.dp.toPx() }
             var top = if (sideNow) at.bottom + gap else at.bottom + with(density) { 2.dp.toPx() }
@@ -198,7 +195,6 @@ internal fun ConvMenuLayer(history: ConvStore) {
                     val (ic, label) = when (k) {
                         "share" -> shareIc to "分享"
                         "rename" -> renameIc to "重命名"
-                        "gist" -> gistIc to "这段聊了什么"
                         "pin" -> if (sideNow) pinIc to (if (live.pinned) "取消置顶" else "置顶") else starIc to (if (live.pinned) "取消收藏" else "收藏")
                         else -> trashIc to "删除"
                     }
@@ -208,7 +204,6 @@ internal fun ConvMenuLayer(history: ConvStore) {
                             when (k) {
                                 "share" -> { ConvMenu.held = null; ConvMenu.close(); share(live) }
                                 "rename" -> { ConvMenu.renaming = live; ConvMenu.close() }
-                                "gist" -> { ConvMenu.close(); ConvMenu.gist = live }
                                 "pin" -> {
                                     history.togglePin(live.id)
                                     if (!sideNow) delay(200) // 收藏在菜单里翻过去，看到变了再收起
@@ -277,9 +272,6 @@ internal fun ConvMenuLayer(history: ConvStore) {
                 }
             }
         }
-
-        // ---------- 这段聊了什么 ----------
-        GistDrawer(ConvMenu.gist?.let { history.get(it.id) ?: it }, onClose = { ConvMenu.gist = null })
 
         // ---------- 提示 / 撤销 ----------
         LaunchedEffect(undo) { if (undo != null) { delay(4000); undo = null } }

@@ -85,7 +85,7 @@ private fun depth(s: String) = when {
     s == "assistant" || s == "mcp" || s == "about" || s == "features" || s == "theme" -> 1
     s == "persona" || s.startsWith("mcp/") || s == "search" || s == "skills" || s == "gallery" -> 2
     s.startsWith("search/") || s.startsWith("skills/") || s.startsWith("gallery/") -> 3
-    s == "providers" || s == "memories" -> 3
+    s == "providers" || s == "memories" || s == "digests" -> 3
     s == "memprompt" -> 5
     else -> 4
 }
