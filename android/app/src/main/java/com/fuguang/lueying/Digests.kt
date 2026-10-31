@@ -32,6 +32,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -63,6 +64,7 @@ import java.util.Locale
  */
 
 private val back = Ic("M14.5 6l-6 6 6 6")
+private val menuIc = Ic("M4 7h16M4 12h16M4 17h16")
 
 /** 一段小结里的主题行：「【换季买外套（2026年10月28日）】」→「换季买外套」。没有主题行的，取第一句。 */
 internal fun gistTopics(g: String): List<String> {
@@ -87,7 +89,12 @@ private fun dayLabel(t: Long): String {
 @Composable
 internal fun ColumnScope.DigestsScreen(p: Persona, compact: Boolean, nav: MineNav) {
     val store = Chats.current?.history
-    Title("聊天摘要", compact, onBack = { nav.back() })
+    var menu by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(false) }
+    Title("聊天摘要", compact, onBack = { nav.back() }) {
+        Pressable({ menu = !menu }, label = "摘要设置") { pr ->
+            SvgIcon(menuIc, if (pr) Page.muted else Page.ink, 24.dp, modifier = Modifier.padding(6.dp))
+        }
+    }
     val convs = store?.of(p.id).orEmpty().filter { c -> c.msgs.any { it.role == "user" } }.sortedByDescending { it.updated }
     val missing = convs.filter { it.gist.isBlank() && it.id !in Reflect.writing }
     Box(Modifier.weight(1f).fillMaxWidth()) {
@@ -125,6 +132,7 @@ internal fun ColumnScope.DigestsScreen(p: Persona, compact: Boolean, nav: MineNa
                 }
             }
         }
+        DigestMenu(menu, { menu = false }, nav)
     }
 }
 

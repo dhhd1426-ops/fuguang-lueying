@@ -82,9 +82,23 @@ object MemModel {
         return out.getOrNull()
     }
 
-    private fun why(e: Throwable, name: String, m: String): String = when {
-        e is java.net.SocketTimeoutException -> "$name / $m 没回应（超时）"
-        e is java.net.UnknownHostException || e is java.net.ConnectException -> "连不上 $name，看看网络"
-        else -> (e.message ?: e.javaClass.simpleName).replace("记忆整理失败", "$name / $m 出错").take(60)
+    /** 出错原因翻成人话（第 365 版：402 余额不足、401 Key 不对……）。 */
+    fun why(e: Throwable, name: String, m: String): String {
+        if (e is java.net.SocketTimeoutException) return "$name / $m 没回应（超时）"
+        if (e is java.net.UnknownHostException || e is java.net.ConnectException) return "连不上 $name，看看网络"
+        val msg = e.message ?: e.javaClass.simpleName
+        val code = Regex("（(\\d{3})）").find(msg)?.groupValues?.get(1)?.toIntOrNull()
+        return when (code) {
+            402 -> "$name 余额不足，去充值或换个模型"
+            401, 403 -> "$name 的 Key 不对或没权限"
+            404 -> "$name 没有 $m 这个模型"
+            429 -> "$name 请求太频繁，等一会儿再试"
+            400 -> "$name / $m 不接受这个请求（400）"
+            in 500..599 -> "$name 服务器出错（$code），等一会儿再试"
+            else -> msg.replace("记忆整理失败", "$name / $m 出错").take(60)
+        }
     }
+
+    /** 不会自己好的错：接着试也一样。 */
+    fun fatal(why: String) = "余额不足" in why || "Key 不对" in why || "没设置好" in why || "没有" in why && "模型" in why
 }
