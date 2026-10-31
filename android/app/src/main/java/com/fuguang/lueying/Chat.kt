@@ -284,7 +284,7 @@ class ChatState(val history: ConvStore) {
                 val mcp = Mcp.specs
                 val web = WebSearch.usable
                 val skills = Skills.specs()
-                val specs = Memory.toolSpecs + Works.specs.filter { it.name != Works.MAKE } + WorkJobs.spec + SentFiles.spec + Pacts.specs + Materials.specs + VideoParse.specs + PanTools.specs + ClockTools.specs + skills + (if (web) listOf(WebSearch.spec) else emptyList()) + (if (yu) Yu.tools else emptyList()) + (if (recall) listOf(Recall.spec) else emptyList()) + mcp
+                val specs = Memory.toolSpecs + Works.specs.filter { it.name != Works.MAKE } + WorkJobs.spec + SentFiles.spec + Pacts.specs + Materials.specs + VideoParse.specs + PanTools.specs + ClockTools.specs + skills + (if (web) listOf(WebSearch.spec) else emptyList()) + (if (yu) Yu.tools else emptyList()) + (if (recall) listOf(Recall.spec, Recall.openSpec) else emptyList()) + mcp
                 val convTitle0 = store0.get(cur)?.title ?: firstSentence(question, 18)
                 val extra = buildString {
                     append("\n\n你手边还有这些东西，需要时再用，不需要就不用：")
@@ -303,8 +303,11 @@ class ChatState(val history: ConvStore) {
                     if (yu) append("\n").append(Yu.system())
                     if (mcp.isNotEmpty()) append("\n").append(Mcp.system())
                 }
+                // 跨聊天回忆：拿他这句话对一下以前的聊天，对上的把小结放到她眼前，时间线上记一步「想起之前聊过的」（第 363 版）
+                val hits = if (recall) runCatching { Recall.match(store0, cur, question) }.getOrDefault(emptyList()) else emptyList()
+                if (hits.isNotEmpty()) liveSteps.add(0, Recall.step(hits))
                 ChatApi.stream(
-                    p, c, store.activeModel, Prompt.system(who, store.activeModel), Entries.weave(who, history, Prompt.aside(who, history, who.prevAt) + Lessons.aside(shownLessons, slips)), effort,
+                    p, c, store.activeModel, Prompt.system(who, store.activeModel), Entries.weave(who, history, Prompt.aside(who, history, who.prevAt) + Lessons.aside(shownLessons, slips) + Recall.note(hits).let { if (it.isEmpty()) "" else "\n$it" }), effort,
                     onThink = { thinkText += it; thinking = true; val t = System.currentTimeMillis(); if (thinkAt == 0L) thinkAt = t; thinkEnd = t },
                     tools = if (specs.isNotEmpty()) Tools(
                         specs,
@@ -319,6 +322,7 @@ class ChatState(val history: ConvStore) {
                             try {
                             if (n == Memory.REMEMBER || n == Memory.FORGET || n == Memory.READ) Memory.runTool(who, n, a, cur.orEmpty(), convTitle0)
                             else if (n == Recall.TOOL) Recall.run(store0, cur, a.optString("query"))
+                            else if (n == Recall.OPEN) Recall.open(store0, a)
                             else if (n == WebSearch.TOOL) WebSearch.run(a.optString("query"))
                             else if (n == VideoParse.TOOL || n == VideoParse.SAVE) VideoParse.run(n, a) { l -> if (messages.none { l in it.clips } && l !in pendingClips) pendingClips.add(l) }
                             else if (n == PanTools.OPEN || n == PanTools.GET) PanTools.run(n, a) { l -> if (messages.none { l in it.clips } && l !in pendingClips) pendingClips.add(l) }
@@ -341,7 +345,7 @@ class ChatState(val history: ConvStore) {
                                 // 没做成的作品如实标出来，不显示「做好了」
                                 val t = if (made) Trail.doneTitle(n, a) else Trail.failTitle(n, a)
                                 if (!made) slips += Lessons.WORK
-                                if (idx < liveSteps.size) liveSteps[idx] = liveSteps[idx].copy(title = t, done = true)
+                                if (idx < liveSteps.size) liveSteps[idx] = liveSteps[idx].copy(title = t, done = true, detail = if (n == Recall.OPEN) Recall.lastOpen.ifEmpty { liveSteps[idx].detail } else liveSteps[idx].detail)
                                 if (n == Works.MAKE || n == Works.EDIT) workDraft = null
                             }
                         },

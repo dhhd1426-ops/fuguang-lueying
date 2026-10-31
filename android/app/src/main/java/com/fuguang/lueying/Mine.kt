@@ -111,6 +111,8 @@ class MineNav {
             screen == "memmodel" -> if (persona.isNotEmpty() && Memory.get(persona) != null) "memories" else "mine"
             screen == "memprompt" -> "memmodel"
             screen == "memcatalog" -> "memories"
+            screen == "digests" -> "persona"
+            screen.startsWith("digest/") -> "digests"
             screen == "features" -> "mine"
             screen == "theme" -> "mine"
             screen.startsWith("mcp/") -> "mcp"
@@ -140,6 +142,11 @@ internal fun ColumnScope.MineSub(store: AssistantStore, screen: String, compact:
         }
         screen == "memories" -> { val p = Memory.get(nav.persona); if (p != null) MemBookScreen(p, compact, nav) else LaunchedEffect(screen) { nav.back() } }
         screen == "memcatalog" -> { val p = Memory.get(nav.persona); if (p != null) MemCatalogScreen(p, compact, blur, nav) else LaunchedEffect(screen) { nav.back() } }
+        screen == "digests" -> { val p = Memory.get(nav.persona); if (p != null) DigestsScreen(p, compact, nav) else LaunchedEffect(screen) { nav.back() } }
+        screen.startsWith("digest/") -> {
+            val c = Chats.current?.history?.get(screen.removePrefix("digest/"))
+            if (c != null && c.gist.isNotBlank()) DigestScreen(c) { nav.back() } else LaunchedEffect(screen) { nav.back() }
+        }
         screen == "memmodel" -> MemModelScreen(store, compact, blur, nav)
         screen == "memprompt" -> MemPromptScreen(compact, blur, nav)
         else -> AssistantScreen(compact, blur, nav)
@@ -152,7 +159,7 @@ internal val LocalTitleEnd = androidx.compose.runtime.compositionLocalOf { 0.dp 
 /* ---------- 通用小部件 ---------- */
 
 @Composable
-private fun Title(text: String, compact: Boolean, onBack: (() -> Unit)?, trailing: @Composable () -> Unit = {}) {
+internal fun Title(text: String, compact: Boolean, onBack: (() -> Unit)?, trailing: @Composable () -> Unit = {}) {
     Row(Modifier.fillMaxWidth().padding(bottom = 22.dp, end = LocalTitleEnd.current), verticalAlignment = Alignment.CenterVertically) {
         if (onBack != null) {
             Pressable(onBack, label = "返回") { pressed ->
@@ -424,7 +431,7 @@ private fun ColumnScope.PersonaScreen(store: AssistantStore, p: Persona, compact
                 when (page) {
                     0 -> BasicTab(store, p, blur, nav)
                     1 -> PromptTab(p, blur)
-                    else -> MemoryTab(p, blur) { nav.screen = "memories" }
+                    else -> MemoryTab(p, blur, onDigests = { nav.screen = "digests" }) { nav.screen = "memories" }
                 }
             }
         }
@@ -768,7 +775,7 @@ private val listIc = Ic("M5 7h14M5 12h14M5 17h8")
 private val infoIc = Ic("M12 11v5.5M12 7.6v.4", circles = listOf(floatArrayOf(12f, 12f, 9f)))
 
 @Composable
-private fun ColumnScope.MemoryTab(p: Persona, blur: Dp, onBook: () -> Unit) {
+private fun ColumnScope.MemoryTab(p: Persona, blur: Dp, onDigests: () -> Unit, onBook: () -> Unit) {
     val days = if (p.firstAt <= 0) 0 else ((System.currentTimeMillis() - p.firstAt) / 86_400_000L).toInt() + 1
     Txt(if (days == 0) "${p.name} 还在认识你" else "${p.name} 认识你 $days 天了", Page.ink, 19.sp, Modifier.padding(start = 4.dp, top = 2.dp, bottom = 16.dp), family = Serif, lineHeight = 30.sp)
     // 记忆入口：折角纸图标 + 记忆 + 一行小字
@@ -785,6 +792,28 @@ private fun ColumnScope.MemoryTab(p: Persona, blur: Dp, onBook: () -> Unit) {
                 Spacer(Modifier.height(3.dp))
                 Txt(
                     listOfNotNull("聊过 ${p.chats} 次", "记得 ${p.items.size} 件".takeIf { p.items.isNotEmpty() }, ago(p.lastAt).takeIf { it.isNotEmpty() }?.let { "上次是$it" }).joinToString(" · "),
+                    Page.muted, 12.5.sp, maxLines = 1,
+                )
+            }
+            SvgIcon(MineIcons.next, Page.muted, 18.dp)
+        }
+    }
+    Spacer(Modifier.height(12.dp))
+    // 聊天摘要（第 363 版，原型 9wcvNyRWC8mbSBUexNC7FF 第 2 版）：每段聊天聊了什么，她翻以前的聊天时先看这些
+    Pressable(onDigests, Modifier.fillMaxWidth().spot("digests"), label = "聊天摘要") { pr ->
+        Row(
+            Modifier.fillMaxWidth().glass(RoundedCornerShape(20.dp), blur, fill = glassFill).background(veil(if (pr) .06f else 0f))
+                .padding(horizontal = 18.dp, vertical = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            DigestIcon(pr)
+            Spacer(Modifier.width(14.dp))
+            Column(Modifier.weight(1f)) {
+                Txt("聊天摘要", Page.ink, 16.sp, maxLines = 1)
+                Spacer(Modifier.height(3.dp))
+                val convs = Chats.current?.history?.of(p.id).orEmpty().filter { c -> c.msgs.any { it.role == "user" } }
+                Txt(
+                    if (convs.isEmpty()) "还没有聊天 · 她翻以前的聊天时看" else "${convs.size} 段聊天 · ${convs.count { it.gist.isNotBlank() }} 段有摘要 · 她翻以前的聊天时看",
                     Page.muted, 12.5.sp, maxLines = 1,
                 )
             }

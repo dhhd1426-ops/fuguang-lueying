@@ -1,6 +1,8 @@
 package com.fuguang.lueying
 
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.setValue
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -70,22 +72,29 @@ object Reflect {
     val writing = mutableStateListOf<String>()
 
     /** 要用小结却还没有（打开「这段聊了什么」、她翻到没小结的旧聊天）：当场读那段原文补一份。 */
-    fun digestNow(id: String) {
-        scope.launch {
-            if (id in writing) return@launch
-            val c0 = Chats.current?.history?.get(id) ?: return@launch
-            if (c0.gist.isNotBlank() || c0.msgs.none { it.role == "user" }) return@launch
-            writing += id
-            try {
-                lock.withLock {
-                    val c = Chats.current?.history?.get(id) ?: return@withLock
-                    if (c.gist.isNotBlank()) return@withLock
-                    val her = Memory.get(c.who) ?: Memory.active
-                    runCatching { digest(her, emptyList(), id, c.title) }
-                }
-            } finally { writing.remove(id) }
-        }
+    fun digestNow(id: String) { scope.launch { digestOne(id) } }
+
+    /** 聊天摘要页「补写没写的 N 段」：一段一段写，没写出来的记下原因、接着写下一段。 */
+    fun digestAll(ids: List<String>) {
+        if (filling) return
+        filling = true
+        scope.launch { try { ids.forEach { digestOne(it) } } finally { filling = false } }
     }
+    var filling by androidx.compose.runtime.mutableStateOf(false)
+        private set
+
+    private suspend fun digestOne(id: String) {
+        if (id in writing) return
+        val c0 = Chats.current?.history?.get(id) ?: return
+        if (c0.gist.isNotBlank() || c0.msgs.none { it.role == "user" }) return
+        val her = Memory.get(c0.who) ?: Memory.active
+        runCatching { digest(her, emptyList(), id, c0.title) }
+    }
+
+    /** 小结写不出来的原因（对话 id → 一句话），摘要页里显示，写成了就清掉。 */
+    val gistFail = androidx.compose.runtime.mutableStateMapOf<String, String>()
+    /** 小结自己的锁：一段一段写，不和记忆整理抢。 */
+    private val gistLock = Mutex()
 
     /** 证件号、银行卡、手机号这类，提示词说了不记，写入前再硬拦一道（照 RikkaHub 的 MemoryContentGuard）。 */
     private val secret = listOf(
@@ -144,8 +153,9 @@ $OPS
 """.trim()
             // 记忆那次没回也照样写小结，两件事互不拖累（第 361 版）
             MemModel.ask(sys(her), ask, 3000)?.let { raw -> apply(her, raw, conv, convTitle, emptySet()) }
-            runCatching { digest(her, window, conv, convTitle) }
         }
+        // 小结不占记忆的锁：每天整理记忆时也能写（第 363 版）
+        runCatching { digest(her, window, conv, convTitle) }
     }
 
     /**
@@ -155,16 +165,24 @@ $OPS
     private suspend fun digest(her: Persona, window: List<ChatMsg>, conv: String, convTitle: String) {
         val store = Chats.current?.history ?: return
         val c = store.get(conv) ?: return
+        if (c.msgs.none { it.role == "user" }) return
         val mine = conv !in writing
         if (mine) writing += conv
-        try { digestBody(her, window, conv, convTitle, store, c) } finally { if (mine) writing.remove(conv) }
+        try {
+            gistLock.withLock {
+                val now = store.get(conv) ?: return@withLock
+                val err = digestBody(her, if (now.gist.isBlank()) emptyList() else window, conv, convTitle, store, now)
+                if (err == null) gistFail.remove(conv) else gistFail[conv] = err
+            }
+        } finally { if (mine) writing.remove(conv) }
     }
 
-    private suspend fun digestBody(her: Persona, window: List<ChatMsg>, conv: String, convTitle: String, store: ConvStore, c: Conv) {
+    /** 写成了返回 null；没写成返回原因。 */
+    private suspend fun digestBody(her: Persona, window: List<ChatMsg>, conv: String, convTitle: String, store: ConvStore, c: Conv): String? {
         val who = Memory.userCall
         val msgs = if (c.gist.isBlank()) c.msgs.takeLast(80) else window
         val talk = msgs.filter { it.text.isNotBlank() }.joinToString("\n") { (if (it.role == "user") "$who：" else "${her.name}：") + it.text.take(1500) }.takeLast(16000)
-        if (talk.isBlank()) return
+        if (talk.isBlank()) return null
         val ask = """
 你在给${her.name}和$who 的一段聊天写小结。小结只给${her.name}自己看：以后$who 问起以前聊过的事，她先看小结找到是哪段、聊过什么。
 
@@ -186,14 +204,15 @@ $talk
 - 不超过 900 字。
 直接输出小结正文，不要标题、不要解释、不要 JSON、不要代码块。
 """.trim()
-        val raw = MemModel.ask("你替${her.name}给聊天写小结，只输出小结正文。", ask, 3000) ?: return
+        val raw = MemModel.ask("你替${her.name}给聊天写小结，只输出小结正文。", ask, 3000) ?: return MemModel.lastError.ifBlank { "记忆模型没回应" }
         // 万一还是包了代码块或 JSON：剥掉
         var text = raw.trim().removePrefix("```json").removePrefix("```").removeSuffix("```").trim()
         if (text.startsWith("{")) obj(text)?.optString("gist")?.takeIf { it.isNotBlank() }?.let { text = it }
         // 证件号、卡号、手机号、密码这类抹掉，其余照留
         val g = secret.fold(text.trim().take(1500)) { s, r -> r.replace(s, "（略）") }
-        if (g.isEmpty()) return
+        if (g.isEmpty()) return "记忆模型回了空白"
         store.setGist(conv, g)
+        return null
     }
 
     /** 她当场记下的、你手写的、做事上记的一句：交给记忆模型写成标题 + 正文，或者并进说同一件事的那条。 */

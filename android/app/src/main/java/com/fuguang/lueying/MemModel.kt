@@ -65,14 +65,26 @@ object MemModel {
         return if (pid.isNotEmpty() && model.isNotBlank() && store.config(pid).configured) "$name / $m" else "跟着默认 · $name / $m"
     }
 
-    /** 问一次记忆模型；没配好、出错都返回 null，不打扰用户。 */
+    /** 上一次没问成的原因（聊天摘要页里给用户看，第 363 版）。 */
+    @Volatile var lastError = ""
+
+    /** 问一次记忆模型；没配好、出错都返回 null，不打扰用户（原因记在 [lastError]）。 */
     suspend fun ask(system: String, user: String, maxTokens: Int = 2000): String? {
-        val store = AttachLook.store ?: return null
+        val store = AttachLook.store ?: return null.also { lastError = "App 还没准备好，等一下再试" }
         val (id, m) = pick(store)
         val c = store.config(id)
-        if (!c.configured || m.isBlank()) return null
+        if (!c.configured || m.isBlank()) return null.also { lastError = "记忆模型没设置好（${c.name}）" }
         val first = runCatching { ChatApi.complete(provider(id), c, m, system, user, maxTokens, think) }
         // 开了思考被拒：不想再试一次
-        return first.getOrNull() ?: if (think) runCatching { ChatApi.complete(provider(id), c, m, system, user, maxTokens) }.getOrNull() else null
+        val second = if (first.isFailure && think) runCatching { ChatApi.complete(provider(id), c, m, system, user, maxTokens) } else null
+        val out = (second ?: first)
+        out.exceptionOrNull()?.let { e -> lastError = why(e, c.name, m) }
+        return out.getOrNull()
+    }
+
+    private fun why(e: Throwable, name: String, m: String): String = when {
+        e is java.net.SocketTimeoutException -> "$name / $m 没回应（超时）"
+        e is java.net.UnknownHostException || e is java.net.ConnectException -> "连不上 $name，看看网络"
+        else -> (e.message ?: e.javaClass.simpleName).replace("记忆整理失败", "$name / $m 出错").take(60)
     }
 }
