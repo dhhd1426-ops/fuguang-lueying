@@ -74,11 +74,22 @@ object Reflect {
     /** 要用小结却还没有（打开「这段聊了什么」、她翻到没小结的旧聊天）：当场读那段原文补一份。 */
     fun digestNow(id: String) { scope.launch { digestOne(id) } }
 
+    /** 后台顺手补（翻旧聊天时碰到没摘要的）：只在开着「自动写摘要」时。 */
+    fun digestLater(id: String) { if (GistModel.auto) digestNow(id) }
+
     /** 聊天摘要页「补写没写的 N 段」：一段一段写，没写出来的记下原因、接着写下一段。 */
     fun digestAll(ids: List<String>) {
         if (filling) return
         filling = true
-        scope.launch { try { ids.forEach { digestOne(it) } } finally { filling = false } }
+        scope.launch {
+            try {
+                for (id in ids) {
+                    digestOne(id)
+                    // 余额不足、Key 不对、没设置好：后面的也一样写不出来，停下（第 365 版）
+                    if (gistFail[id]?.let { MemModel.fatal(it) } == true) break
+                }
+            } finally { filling = false }
+        }
     }
     var filling by androidx.compose.runtime.mutableStateOf(false)
         private set
@@ -154,8 +165,8 @@ $OPS
             // 记忆那次没回也照样写小结，两件事互不拖累（第 361 版）
             MemModel.ask(sys(her), ask, 3000)?.let { raw -> apply(her, raw, conv, convTitle, emptySet()) }
         }
-        // 小结不占记忆的锁：每天整理记忆时也能写（第 363 版）
-        runCatching { digest(her, window, conv, convTitle) }
+        // 小结不占记忆的锁：每天整理记忆时也能写（第 363 版）；关了「自动写摘要」就不写（第 365 版）
+        if (GistModel.auto) runCatching { digest(her, window, conv, convTitle) }
     }
 
     /**
@@ -183,34 +194,27 @@ $OPS
         val msgs = if (c.gist.isBlank()) c.msgs.takeLast(80) else window
         val talk = msgs.filter { it.text.isNotBlank() }.joinToString("\n") { (if (it.role == "user") "$who：" else "${her.name}：") + it.text.take(1500) }.takeLast(16000)
         if (talk.isBlank()) return null
+        // 写法（GistModel.text，摘要页 ☰ 里能改）放在 system 里，这段聊天放在 user 里（第 365 版）
+        val system = GistModel.text + "\n\n这里的「她」是${her.name}，「他」是$who。摘要里称呼用「$who」和「${her.name}」，不用「我」「你」。直接输出摘要正文，不要标题、不要解释、不要 JSON、不要代码块。"
         val ask = """
-你在给${her.name}和$who 的一段聊天写小结。小结只给${her.name}自己看：以后$who 问起以前聊过的事，她先看小结找到是哪段、聊过什么。
-
 这段聊天的标题：${c.title.ifBlank { convTitle }}
 今天是 ${today()}。
 
-原来的小结：
+原来的摘要：
 ${c.gist.ifBlank { "（还没有）" }}
 
 ${if (c.gist.isBlank()) "这段聊天（最近的部分）：" else "后来又聊的这些："}
 $talk
 
-把${if (c.gist.isBlank()) "这段聊天" else "后来聊的并进原来的小结，"}写成一份完整的小结：
-- 只写聊天里真的说过、发生过的，不添不猜，不评价，不写感受。
-- 细节写全：人名、地名、店名、品牌、型号、颜色、尺码、价格、数量、日期时间；谁推荐了什么、为什么；$who 选了什么、定下了什么；答应了还没办的事。以后会被问到的，宁可多写。
-- 按话题分段：每个话题先单独一行写「【话题（年月日）】」，下面一段段写细节；时间都写具体日期，不写「今天」「上周」。还没办完的事写在那个话题最后，单独一行，以「还没办完：」开头。
-- 原来小结里的内容都留着；被后来的话改掉的，写成最新的，并注一句原来是什么。
-- 称呼用「$who」和「${her.name}」，不用「我」「你」。寒暄不写。
-- 不超过 900 字。
-直接输出小结正文，不要标题、不要解释、不要 JSON、不要代码块。
+${if (c.gist.isBlank()) "把这段聊天写成一份摘要。" else "把后来聊的并进原来的摘要，整份重写。"}
 """.trim()
-        val raw = MemModel.ask("你替${her.name}给聊天写小结，只输出小结正文。", ask, 3000) ?: return MemModel.lastError.ifBlank { "记忆模型没回应" }
+        val raw = GistModel.ask(system, ask, 3000) ?: return MemModel.lastError.ifBlank { "摘要模型没回应" }
         // 万一还是包了代码块或 JSON：剥掉
         var text = raw.trim().removePrefix("```json").removePrefix("```").removeSuffix("```").trim()
         if (text.startsWith("{")) obj(text)?.optString("gist")?.takeIf { it.isNotBlank() }?.let { text = it }
         // 证件号、卡号、手机号、密码这类抹掉，其余照留
         val g = secret.fold(text.trim().take(1500)) { s, r -> r.replace(s, "（略）") }
-        if (g.isEmpty()) return "记忆模型回了空白"
+        if (g.isEmpty()) return "摘要模型回了空白"
         store.setGist(conv, g)
         return null
     }

@@ -38,6 +38,7 @@ class MainActivity : ComponentActivity() {
         ThinkTidy.dir = java.io.File(filesDir, "tidy")
         Memory.init(prefs)
         MemModel.init(prefs)
+        GistModel.init(prefs)
         Mcp.init(prefs)
         Backup.init(prefs)
         // 约定（Pacts.kt）：读进来，闹钟重新定一遍，刚过点的补上

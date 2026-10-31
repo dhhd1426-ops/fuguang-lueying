@@ -113,6 +113,7 @@ class MineNav {
             screen == "memcatalog" -> "memories"
             screen == "digests" -> "persona"
             screen.startsWith("digest/") -> "digests"
+            screen == "digestmodel" || screen == "digestprompt" -> "digests"
             screen == "features" -> "mine"
             screen == "theme" -> "mine"
             screen.startsWith("mcp/") -> "mcp"
@@ -147,6 +148,8 @@ internal fun ColumnScope.MineSub(store: AssistantStore, screen: String, compact:
             val c = Chats.current?.history?.get(screen.removePrefix("digest/"))
             if (c != null && c.gist.isNotBlank()) DigestScreen(c) { nav.back() } else LaunchedEffect(screen) { nav.back() }
         }
+        screen == "digestmodel" -> DigestModelScreen(store, compact, blur, nav)
+        screen == "digestprompt" -> DigestPromptScreen(compact, blur, nav)
         screen == "memmodel" -> MemModelScreen(store, compact, blur, nav)
         screen == "memprompt" -> MemPromptScreen(compact, blur, nav)
         else -> AssistantScreen(compact, blur, nav)
@@ -1165,6 +1168,129 @@ private fun ColumnScope.MemPromptScreen(compact: Boolean, blur: Dp, nav: MineNav
     }
 }
 
+
+/* ---------- 聊天摘要的 ☰（第 365 版，原型 N1rGviN3HUFX2VdB5yj8qx 第 3 版）：下拉菜单里自动写摘要开关、摘要模型、摘要提示词；后两个各推一页 ---------- */
+
+private val autoIc = Ic("M12 4v3M12 17v3M4 12h3M17 12h3M6.3 6.3l2.1 2.1M15.6 15.6l2.1 2.1M6.3 17.7l2.1-2.1M15.6 8.4l2.1-2.1")
+private val penIc = Ic("M14.5 5.5l4 4M5 19l1-4.5L15.5 5a1.4 1.4 0 0 1 2 0l1.5 1.5a1.4 1.4 0 0 1 0 2L9.5 18z")
+
+/** 从右上角长出来（220ms 减速），点空白处收回（140ms 加速）；样式照记忆页的 ☰。 */
+@Composable
+internal fun androidx.compose.foundation.layout.BoxScope.DigestMenu(open: Boolean, onDismiss: () -> Unit, nav: MineNav) {
+    val t by androidx.compose.animation.core.animateFloatAsState(
+        if (open) 1f else 0f, tween(if (open) 220 else 140, easing = if (open) Curves.decel else Curves.accel), label = "digestMenu",
+    )
+    androidx.activity.compose.BackHandler(open) { onDismiss() }
+    if (t <= 0f) return
+    if (open) Box(Modifier.fillMaxSize().pointerInput(Unit) { detectTapGestures { onDismiss() } })
+    Column(
+        Modifier.align(Alignment.TopEnd)
+            .graphicsLayer {
+                alpha = t
+                val s = .9f + .1f * t; scaleX = s; scaleY = s
+                transformOrigin = androidx.compose.ui.graphics.TransformOrigin(1f, 0f)
+            }
+            .width(250.dp)
+            .shadow(18.dp, RoundedCornerShape(16.dp), ambientColor = Color.Black.copy(alpha = .35f), spotColor = Color.Black.copy(alpha = .35f))
+            .background(Skin.pop, RoundedCornerShape(16.dp))
+            .pointerInput(Unit) { detectTapGestures { } }
+            .padding(vertical = 6.dp),
+    ) {
+        @Composable
+        fun row(ic: Ic, label: String, sub: String?, onClick: () -> Unit, end: @Composable () -> Unit) {
+            Pressable({ if (open) onClick() }, Modifier.fillMaxWidth(), label = label) { pr ->
+                Row(
+                    Modifier.fillMaxWidth().heightIn(min = 48.dp).background(veil(if (pr) .08f else 0f)).padding(start = 14.dp, end = 14.dp, top = 6.dp, bottom = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    SvgIcon(ic, Page.ink.copy(alpha = .8f), 18.dp, stroke = 1.6f)
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Txt(label, Page.ink, 14.5.sp, maxLines = 1)
+                        if (sub != null) Txt(sub, Page.muted, 12.sp, maxLines = 1)
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    end()
+                }
+            }
+        }
+        row(autoIc, "自动写摘要", null, { GistModel.auto = !GistModel.auto; GistModel.save() }) {
+            Switch(GistModel.auto, "自动写摘要") { GistModel.auto = it; GistModel.save() }
+        }
+        row(modelIc, "摘要模型", GistModel.label(AttachLook.store), { onDismiss(); nav.screen = "digestmodel" }) { SvgIcon(MineIcons.next, Page.muted, 14.dp) }
+        row(penIc, "摘要提示词", null, { onDismiss(); nav.screen = "digestprompt" }) {
+            Chip(if (GistModel.custom) "改过" else "默认", if (GistModel.custom) Skin.accent.copy(alpha = .9f) else veil(.08f), if (GistModel.custom) Skin.onAccent else Page.muted)
+            Spacer(Modifier.width(6.dp))
+            SvgIcon(MineIcons.next, Page.muted, 14.dp)
+        }
+        Box(Modifier.padding(horizontal = 14.dp, vertical = 4.dp)) { Divider() }
+        Txt(
+            if (GistModel.auto) "开着：聊完停一会儿、聊满 6 轮、切走时，后台用摘要模型写。" else "关着：不自动写。这一页的「补写」「重试」照样能用。",
+            Page.muted, 12.sp, Modifier.padding(start = 14.dp, end = 14.dp, top = 4.dp, bottom = 8.dp), lineHeight = 19.sp,
+        )
+    }
+}
+
+/** 摘要模型：跟着记忆模型，或者单独挑一个。 */
+@Composable
+private fun ColumnScope.DigestModelScreen(store: AssistantStore, compact: Boolean, blur: Dp, nav: MineNav) {
+    Title("摘要模型", compact, onBack = { nav.back() })
+    Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(bottom = 24.dp)) {
+        Txt("写每段聊天摘要用哪个模型。可以挑个便宜、快的专门写摘要。", Page.muted, 13.sp, Modifier.padding(start = 6.dp, end = 6.dp, bottom = 14.dp), lineHeight = 21.sp)
+        Column(Modifier.fillMaxWidth().glass(RoundedCornerShape(20.dp), blur, fill = glassFill).padding(8.dp)) {
+            ModelOption("跟着记忆模型", "现在是 " + MemModel.label(store).removePrefix("跟着默认 · "), GistModel.pid.isEmpty()) { GistModel.use("", "") }
+            store.order.filter { store.config(it).configured }.forEach { id ->
+                val cfg = store.config(id)
+                cfg.models.ifEmpty { ProviderConfig.DEFAULT_MODELS[id].orEmpty() }.forEach { m ->
+                    ModelOption("${cfg.name} / $m", "", GistModel.pid == id && GistModel.model == m) { GistModel.use(id, m) }
+                }
+            }
+        }
+    }
+}
+
+/** 摘要提示词：写摘要时读的写法。照记忆系统提示词那页。 */
+@Composable
+private fun ColumnScope.DigestPromptScreen(compact: Boolean, blur: Dp, nav: MineNav) {
+    var draft by remember { mutableStateOf(GistModel.text) }
+    var ask by remember { mutableStateOf(false) }
+    val dirty = draft.trim() != GistModel.text
+    androidx.activity.compose.BackHandler(dirty && !ask) { ask = true }
+    Title("摘要提示词", compact, onBack = { if (dirty) ask = true else nav.back() }) {
+        SaveButton(dirty) { val t = draft.trim(); GistModel.prompt = if (t == GistModel.DEFAULT) "" else t; GistModel.save(); draft = t }
+    }
+    Box(Modifier.weight(1f).fillMaxWidth()) {
+        Column(Modifier.fillMaxSize()) {
+            BasicTextField(
+                value = draft,
+                onValueChange = { draft = it },
+                textStyle = TextStyle(fontFamily = Sans, color = Page.ink, fontSize = 14.5.sp, lineHeight = 25.sp),
+                cursorBrush = SolidColor(Page.accent),
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+                decorationBox = { inner ->
+                    Box(Modifier.fillMaxSize().glass(RoundedCornerShape(20.dp), blur, fill = glassFill).padding(18.dp)) { inner() }
+                },
+            )
+            Row(Modifier.fillMaxWidth().padding(start = 6.dp, top = 12.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                Txt("${draft.length} 字 · 写每段摘要时都按这段写", Page.muted, 12.5.sp, Modifier.weight(1f), maxLines = 1)
+                if (draft.trim() != GistModel.DEFAULT) {
+                    Pressable({ draft = GistModel.DEFAULT }, label = "恢复默认") { pr ->
+                        Txt("恢复默认", Skin.danger, 12.5.sp, Modifier.background(veil(if (pr) .1f else .05f), RoundedCornerShape(50)).padding(horizontal = 12.dp, vertical = 8.dp))
+                    }
+                }
+            }
+        }
+        Sheet(ask, onDismiss = { ask = false }) {
+            Txt("改的还没保存", Page.ink, 16.sp)
+            Spacer(Modifier.height(8.dp))
+            Txt("现在返回，这次改的就不要了。", Page.muted, 13.5.sp, lineHeight = 22.sp, align = androidx.compose.ui.text.style.TextAlign.Center)
+            Row(Modifier.fillMaxWidth().padding(top = 14.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                SheetButton("继续改", false, Modifier.weight(1f)) { ask = false }
+                SheetButton("不保存", true, Modifier.weight(1f), red = true) { ask = false; draft = GistModel.text; nav.back() }
+            }
+        }
+    }
+}
 
 /** 往左滑：底下露出「删除」，滑过一半松手就删；没过一半就弹回。 */
 @Composable
