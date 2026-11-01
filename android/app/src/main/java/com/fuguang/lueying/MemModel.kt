@@ -87,6 +87,7 @@ object MemModel {
         if (e is java.net.SocketTimeoutException) return "$name / $m 没回应（超时）"
         if (e is java.net.UnknownHostException || e is java.net.ConnectException) return "连不上 $name，看看网络"
         val msg = e.message ?: e.javaClass.simpleName
+        if (msg == QwenSearch.AUDIT) return "千问的内容审核拦下了这段（内容可能被判敏感），换个模型试试"
         val code = Regex("（(\\d{3})）").find(msg)?.groupValues?.get(1)?.toIntOrNull()
         return when (code) {
             402 -> "$name 余额不足，去充值或换个模型"

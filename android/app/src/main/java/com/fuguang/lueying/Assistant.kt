@@ -84,6 +84,8 @@ class AssistantStore(private val prefs: Prefs) {
     val efforts = mutableStateMapOf<String, String>()
     /** 每个型号开没开模型自带的搜索（「供应商|型号」→ 开着）；没记过是关（QwenSearch）。 */
     val searches = mutableStateMapOf<String, Boolean>()
+    /** 最近用过的三个（「供应商|型号」，新的在前），选择模型面板最上面那组。 */
+    val recent = mutableStateListOf<String>()
     val configs = mutableStateMapOf<String, ProviderConfig>()
     /** 最近一次查到的余额，只在本次打开 App 期间显示。 */
     val balances = mutableStateMapOf<String, String>()
@@ -100,6 +102,7 @@ class AssistantStore(private val prefs: Prefs) {
             activeModel = o.optString("model", "deepseek-flash")
             o.optJSONObject("efforts")?.let { e -> e.keys().forEach { k -> efforts[k] = e.optString(k) } }
             o.optJSONObject("searches")?.let { e -> e.keys().forEach { k -> searches[k] = e.optBoolean(k) } }
+            o.optJSONArray("recent")?.let { a -> repeat(a.length()) { recent.add(a.getString(it)) } }
             o.optJSONArray("order")?.let { a ->
                 val saved = List(a.length()) { a.getString(it) }.filter { id -> PROVIDERS.any { it.id == id } }.distinct()
                 order.clear(); order.addAll(saved + PROVIDERS.map { it.id }.filter { it !in saved })
@@ -120,6 +123,7 @@ class AssistantStore(private val prefs: Prefs) {
                 )
             }
         }
+        if (recent.isEmpty()) recent.add("$activeProvider|$activeModel")
     }
 
     fun config(id: String): ProviderConfig = configs[id] ?: ProviderConfig.default(provider(id))
@@ -128,6 +132,8 @@ class AssistantStore(private val prefs: Prefs) {
 
     fun use(providerId: String, model: String) {
         activeProvider = providerId; activeModel = model
+        val k = "$providerId|$model"
+        recent.remove(k); recent.add(0, k); while (recent.size > 3) recent.removeAt(recent.lastIndex)
         val c = config(providerId)
         if (!c.enabled && c.configured) configs[providerId] = c.copy(enabled = true)
         save()
@@ -172,7 +178,7 @@ class AssistantStore(private val prefs: Prefs) {
             })
         }
         prefs.putString(KEY, JSONObject().apply {
-            put("name", name); put("provider", activeProvider); put("model", activeModel); put("efforts", JSONObject(efforts.toMap())); put("searches", JSONObject(searches.toMap())); put("configs", cs); put("order", JSONArray(order.toList()))
+            put("name", name); put("provider", activeProvider); put("model", activeModel); put("efforts", JSONObject(efforts.toMap())); put("searches", JSONObject(searches.toMap())); put("recent", JSONArray(recent.toList())); put("configs", cs); put("order", JSONArray(order.toList()))
         }.toString())
     }
 
@@ -556,7 +562,11 @@ object ChatApi {
             } else if (p.id == "deepseek") body.put("thinking", JSONObject().put("type", "disabled"))
             ModelFit.strip(p.id, model, body)
             conn.outputStream.use { it.write(body.toString().toByteArray()) }
-            if (conn.responseCode !in 200..299) throw IllegalStateException("记忆整理失败（${conn.responseCode}）")
+            if (conn.responseCode !in 200..299) {
+                val err = runCatching { conn.errorStream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() } }.getOrNull().orEmpty()
+                if (QwenSearch.audited(err)) throw IllegalStateException(QwenSearch.AUDIT)
+                throw IllegalStateException("记忆整理失败（${conn.responseCode}）")
+            }
             val o = JSONObject(conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() })
             if (anthropic) {
                 val arr = o.optJSONArray("content") ?: JSONArray()
@@ -640,6 +650,7 @@ object ChatApi {
 
             val code = conn.responseCode
             val err = if (code !in 200..299) conn.errorStream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() } ?: "" else ""
+            if (QwenSearch.audited(err)) throw IllegalStateException(QwenSearch.AUDIT)
             if (code == 400 || code == 422) {
                 // 报错点名了哪个参数：记在这个模型名下，去掉重发
                 ModelFit.blame(err, body)?.let { w ->

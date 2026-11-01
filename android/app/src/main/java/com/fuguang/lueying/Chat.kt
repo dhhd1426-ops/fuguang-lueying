@@ -1123,6 +1123,9 @@ private fun ModelDrawer(open: Boolean, store: AssistantStore, compact: Boolean, 
         if (open) 1f else 0f, tween(if (open) 320 else 220, easing = androidx.compose.animation.core.CubicBezierEasing(.2f, .8f, .2f, 1f)), label = "drawer",
     )
     val card = remember { ProviderCardState() }
+    // 找型号：面板收起就清空
+    var find by remember { mutableStateOf("") }
+    LaunchedEffect(open) { if (!open) find = "" }
     var host by remember { mutableStateOf<androidx.compose.ui.layout.LayoutCoordinates?>(null) }
     var moreAt by remember { mutableStateOf<androidx.compose.ui.layout.LayoutCoordinates?>(null) }
     var anchor by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
@@ -1156,33 +1159,31 @@ private fun ModelDrawer(open: Boolean, store: AssistantStore, compact: Boolean, 
                     .background(Skin.sheet, sheet)
                     .pointerInput(Unit) { detectTapGestures { } }
                     .windowInsetsPadding(WindowInsets.safeDrawing.only(androidx.compose.foundation.layout.WindowInsetsSides.Bottom))
-                    .heightIn(max = h * .78f)
-                    .verticalScroll(rememberScrollState())
-                    .padding(start = 20.dp, end = 20.dp, top = 10.dp, bottom = 22.dp),
+                    .heightIn(max = h * .88f),
             ) {
-                Box(Modifier.align(Alignment.CenterHorizontally).width(40.dp).height(4.dp).background(veil(.25f), RoundedCornerShape(2.dp)))
-                Spacer(Modifier.height(14.dp))
-                Box(Modifier.fillMaxWidth()) {
-                    Pressable(onClose, Modifier.align(Alignment.CenterStart), label = "关闭") { _ ->
-                        SvgIcon(Icons.close, Page.ink, 20.dp, modifier = Modifier.padding(6.dp))
+                // 上：把手、标题、找型号
+                Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 10.dp, bottom = 6.dp)) {
+                    Box(Modifier.align(Alignment.CenterHorizontally).width(40.dp).height(4.dp).background(veil(.25f), RoundedCornerShape(2.dp)))
+                    Spacer(Modifier.height(14.dp))
+                    Box(Modifier.fillMaxWidth()) {
+                        Pressable(onClose, Modifier.align(Alignment.CenterStart), label = "关闭") { _ ->
+                            SvgIcon(Icons.close, Page.ink, 20.dp, modifier = Modifier.padding(6.dp))
+                        }
+                        Txt("选择模型", Page.ink, 16.sp, Modifier.align(Alignment.Center), weight = FontWeight.SemiBold)
                     }
-                    Txt("选择模型", Page.ink, 16.sp, Modifier.align(Alignment.Center), weight = FontWeight.SemiBold)
+                    Spacer(Modifier.height(12.dp))
+                    ModelFind(find) { find = it }
                 }
-                Spacer(Modifier.height(10.dp))
-                val ready = store.ready()
-                if (ready.isEmpty()) {
-                    Spacer(Modifier.height(8.dp))
-                    DrawerRow("还没有可用的模型", selected = false, dim = true) { openCard() }
+                // 中：型号列表，只有这一段滚（ModelPicker.kt）
+                Column(
+                    Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState())
+                        .padding(start = 20.dp, end = 20.dp, top = 2.dp, bottom = 10.dp),
+                ) {
+                    ModelList(store, find, onPick = { pid, m -> store.use(pid, m); onClose() }, onEmpty = { openCard() })
                 }
-                ready.forEach { p ->
-                    val c = store.config(p.id)
-                    Txt(c.name.uppercase(), Page.muted, 10.sp, Modifier.padding(start = 6.dp, top = 14.dp, bottom = 8.dp), spacing = ls(2.5f, 10f))
-                    c.models.forEach { m ->
-                        val sel = store.activeProvider == p.id && store.activeModel == m
-                        DrawerRow(m, selected = sel) { store.use(p.id, m); onClose() }
-                    }
-                }
-                Spacer(Modifier.height(16.dp))
+                // 下：思考档、自带搜索、更多模型钉住不动
+                Box(Modifier.fillMaxWidth().height(1.dp).background(veil(.08f)))
+                Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 10.dp, bottom = 14.dp)) {
                 // 深度思考六档：液体色块，可点可拖
                 ThinkSegment(Effort.spec(store.activeProvider, store.activeModel), store.effort()) { store.setEffort(it) }
                 // 这个型号有自带搜索才长出开关（QwenSearch）：长出来 320ms 减速，收起 220ms 加速
@@ -1208,6 +1209,7 @@ private fun ModelDrawer(open: Boolean, store: AssistantStore, compact: Boolean, 
                             SvgIcon(Ic("M9.5 6l6 6-6 6"), Page.muted, 14.dp)
                         }
                     }
+                }
                 }
             }
         }
@@ -1238,24 +1240,6 @@ private fun NativeSearchRow(store: AssistantStore) {
         }
         Spacer(Modifier.width(10.dp))
         CardSwitch(on, "千问自带搜索") { store.setSearch(it) }
-    }
-}
-
-@Composable
-private fun DrawerRow(text: String, selected: Boolean, dim: Boolean = false, onClick: () -> Unit) {
-    Pressable(onClick, Modifier.fillMaxWidth().padding(bottom = 6.dp), label = text) { pressed ->
-        Row(
-            Modifier.fillMaxWidth()
-                .background(
-                    when { selected -> Skin.accent.copy(alpha = .16f); pressed -> veil(.05f); else -> Color.Transparent },
-                    RoundedCornerShape(14.dp),
-                )
-                .padding(horizontal = 16.dp, vertical = 14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Txt(text, if (selected) Page.ink else if (dim) Page.muted else Page.ink.copy(alpha = .78f), 15.sp, Modifier.weight(1f), maxLines = 1)
-            if (selected) SvgIcon(Ic("M5 12.5l4.5 4.5L19 7.5"), Skin.accent.copy(alpha = 1f), 18.dp, stroke = 1.8f)
-        }
     }
 }
 

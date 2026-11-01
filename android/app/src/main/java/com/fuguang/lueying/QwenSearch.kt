@@ -44,6 +44,15 @@ object QwenSearch {
 
     const val STEP = "qwen_search"
 
+    /**
+     * 阿里云百炼的内容审核（AI 安全护栏）：发过去的整份内容（她的设定、记忆、前面的聊天）先审一遍，
+     * 觉得可能不合适就 400 DataInspectionFailed 直接拒，模型根本没看到。用户关不掉；报错原文是截断的英文，翻成人话。
+     * 这种错不是参数的事，不退档、不去工具重发，也不记进 ModelFit。
+     */
+    const val AUDIT = "千问的内容审核拦下了这次发过去的内容（可能是前面的聊天、她的设定或记忆里的某句话），换个对话或换个模型试试"
+
+    fun audited(err: String) = err.contains("DataInspectionFailed", true) || err.contains("data_inspection_failed", true)
+
     /** 地域：Key 是哪个地域开的就选哪个，对不上官方直接报 Key 无效。 */
     val REGIONS = listOf(
         "北京" to "https://dashscope.aliyuncs.com/compatible-mode/v1",
