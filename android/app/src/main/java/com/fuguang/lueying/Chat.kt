@@ -282,7 +282,9 @@ class ChatState(val history: ConvStore) {
                 val cur = convId
                 val question = history.lastOrNull { it.role == "user" }?.text.orEmpty()
                 val mcp = Mcp.specs
-                val web = WebSearch.usable
+                // 开着千问自带搜索：她自己会查，App 的 web_search 这一轮不给（免得查两遍）
+                val native = store.search()
+                val web = WebSearch.usable && !native
                 val skills = Skills.specs()
                 val specs = Memory.toolSpecs + Works.specs.filter { it.name != Works.MAKE } + WorkJobs.spec + SentFiles.spec + Pacts.specs + Materials.specs + VideoParse.specs + PanTools.specs + ClockTools.specs + skills + (if (web) listOf(WebSearch.spec) else emptyList()) + (if (yu) Yu.tools else emptyList()) + (if (recall) listOf(Recall.spec, Recall.openSpec) else emptyList()) + mcp
                 val convTitle0 = store0.get(cur)?.title ?: firstSentence(question, 18)
@@ -299,6 +301,7 @@ class ChatState(val history: ConvStore) {
                     append("\n\n").append(Craft.system())
                     if (skills.isNotEmpty()) append("\n").append(Skills.system())
                     if (web) append("\n").append(WebSearch.system())
+                    if (native) append("\n").append("你这会儿能直接上网查（用的是你自己带的搜索）：问到天气、新闻、价格、谁现在是什么职位这类会变的事，先查再说；查到的照实说，拿不准的说拿不准。")
                     if (recall) append("\n").append(Recall.system())
                     if (yu) append("\n").append(Yu.system())
                     if (mcp.isNotEmpty()) append("\n").append(Mcp.system())
@@ -306,6 +309,7 @@ class ChatState(val history: ConvStore) {
                 // 跨聊天回忆：拿他这句话对一下以前的聊天，对上的把小结放到她眼前，时间线上记一步「想起之前聊过的」（第 363 版）
                 val hits = if (recall) runCatching { Recall.match(store0, cur, question) }.getOrDefault(emptyList()) else emptyList()
                 if (hits.isNotEmpty()) liveSteps.add(0, Recall.step(hits))
+                var searchedOnce = false
                 ChatApi.stream(
                     p, c, store.activeModel, Prompt.system(who, store.activeModel), Entries.weave(who, history, Prompt.aside(who, history, who.prevAt) + Lessons.aside(shownLessons, slips) + Recall.note(hits).let { if (it.isEmpty()) "" else "\n$it" }), effort,
                     onThink = { thinkText += it; thinking = true; val t = System.currentTimeMillis(); if (thinkAt == 0L) thinkAt = t; thinkEnd = t },
@@ -360,6 +364,15 @@ class ChatState(val history: ConvStore) {
                         ).joinToString("\n\n")
                     }) else null,
                     toolNote = extra,
+                    // 真查了（usage 里有 x_tools）：时间线记一步，一轮只记一次
+                    search = if (native) ({
+                        android.os.Handler(android.os.Looper.getMainLooper()).post {
+                            if (!searchedOnce) {
+                                searchedOnce = true; happened += "web"
+                                liveSteps.add(ToolStep(thinkText.length, QwenSearch.STEP, Trail.doneTitle(QwenSearch.STEP, org.json.JSONObject())))
+                            }
+                        }
+                    }) else null,
                 ) { partial += it; thinking = false }
                 streamDone = true
                 // 等书写追上再收尾（切到后台没有画面推进书写，直接写完）
@@ -1172,6 +1185,14 @@ private fun ModelDrawer(open: Boolean, store: AssistantStore, compact: Boolean, 
                 Spacer(Modifier.height(16.dp))
                 // 深度思考六档：液体色块，可点可拖
                 ThinkSegment(Effort.spec(store.activeProvider, store.activeModel), store.effort()) { store.setEffort(it) }
+                // 这个型号有自带搜索才长出开关（QwenSearch）：长出来 320ms 减速，收起 220ms 加速
+                androidx.compose.animation.AnimatedVisibility(
+                    QwenSearch.offered(store.activeProvider, store.activeModel),
+                    enter = androidx.compose.animation.expandVertically(tween(320, easing = androidx.compose.animation.core.CubicBezierEasing(.05f, .7f, .1f, 1f))) +
+                        androidx.compose.animation.fadeIn(tween(260, delayMillis = 60)),
+                    exit = androidx.compose.animation.shrinkVertically(tween(220, easing = androidx.compose.animation.core.CubicBezierEasing(.3f, 0f, .8f, .15f))) +
+                        androidx.compose.animation.fadeOut(tween(160)),
+                ) { NativeSearchRow(store) }
                 val note = card.note
                 val noteA by androidx.compose.animation.core.animateFloatAsState(if (note != null) 1f else 0f, tween(200), label = "note")
                 if (noteA > 0f) Txt(note ?: "", Page.accent, 12.sp, Modifier.fillMaxWidth().padding(top = 10.dp).alpha(noteA), align = androidx.compose.ui.text.style.TextAlign.Center)
@@ -1191,6 +1212,32 @@ private fun ModelDrawer(open: Boolean, store: AssistantStore, compact: Boolean, 
             }
         }
         ProviderCardLayer(card, store, anchor) { card.sink = true; card.open = false; onClose() }
+    }
+}
+
+private val searchGlobe = Ic("M4 12h16M12 4c2.4 2.5 2.4 13.5 0 16M12 4c-2.4 2.5-2.4 13.5 0 16", circles = listOf(floatArrayOf(12f, 12f, 8f)))
+
+/** 选择模型面板里「千问自带搜索」那一行（原型 5ryWctBCsAJGzBfFf5nFyH）。 */
+@Composable
+private fun NativeSearchRow(store: AssistantStore) {
+    val on = store.search()
+    Row(
+        Modifier.fillMaxWidth().padding(top = 12.dp).background(veil(.06f), RoundedCornerShape(16.dp)).padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.size(32.dp).background(Skin.accent.copy(alpha = .16f), CircleShape), contentAlignment = Alignment.Center) {
+            SvgIcon(searchGlobe, Skin.accent, 17.dp)
+        }
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Txt("千问自带搜索", Page.ink, 14.5.sp)
+            Txt(
+                if (on) "开着：她自己判断要不要上网查，App 的搜索这轮不用" else "关着：照旧用「我的 → 联网搜索」里选的那家",
+                Page.muted, 11.5.sp, Modifier.padding(top = 2.dp), lineHeight = 17.sp,
+            )
+        }
+        Spacer(Modifier.width(10.dp))
+        CardSwitch(on, "千问自带搜索") { store.setSearch(it) }
     }
 }
 

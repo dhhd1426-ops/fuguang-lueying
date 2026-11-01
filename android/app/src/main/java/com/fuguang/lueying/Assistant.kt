@@ -37,6 +37,8 @@ val PROVIDERS = listOf(
     Provider("grok", "Grok", "openai", "https://api.x.ai/v1", "/chat/completions", "X", note = "xAI"),
     Provider("kimi", "月之暗面 Kimi", "openai", "https://api.moonshot.cn/v1", "/chat/completions", "月"),
     Provider("siliconflow", "硅基流动", "openai", "https://api.siliconflow.cn/v1", "/chat/completions", "硅"),
+    // 阿里云百炼的 OpenAI 兼容接口；Key 是哪个地域开的就用哪个地域的地址（QwenSearch.REGIONS）
+    Provider("qwen", "通义千问", "openai", "https://dashscope.aliyuncs.com/compatible-mode/v1", "/chat/completions", "千", note = "阿里云百炼"),
 )
 
 fun provider(id: String): Provider = PROVIDERS.firstOrNull { it.id == id } ?: PROVIDERS.first()
@@ -67,6 +69,8 @@ data class ProviderConfig(
             "openai" to listOf("gpt-6.1-sol", "gpt-6-luna"),
             "grok" to listOf("grok-4.7", "grok-4.3"),
             "kimi" to listOf("kimi-k3", "kimi-k2.6"),
+            // 官方文本生成页（2026-11 查）：旗舰 / 均衡 / 轻量。百炼没写列模型的接口，拉不到时就用这几个，别的手动加
+            "qwen" to listOf("qwen3.8-max", "qwen3.7-plus", "qwen3.8-flash"),
         )
     }
 }
@@ -78,6 +82,8 @@ class AssistantStore(private val prefs: Prefs) {
     var activeModel by mutableStateOf("deepseek-flash")
     /** 每个型号选的思考档（「供应商|型号」→ 发出去的原值，见 Effort）；没选过用这家的默认档。 */
     val efforts = mutableStateMapOf<String, String>()
+    /** 每个型号开没开模型自带的搜索（「供应商|型号」→ 开着）；没记过是关（QwenSearch）。 */
+    val searches = mutableStateMapOf<String, Boolean>()
     val configs = mutableStateMapOf<String, ProviderConfig>()
     /** 最近一次查到的余额，只在本次打开 App 期间显示。 */
     val balances = mutableStateMapOf<String, String>()
@@ -93,6 +99,7 @@ class AssistantStore(private val prefs: Prefs) {
             activeProvider = o.optString("provider", "deepseek")
             activeModel = o.optString("model", "deepseek-flash")
             o.optJSONObject("efforts")?.let { e -> e.keys().forEach { k -> efforts[k] = e.optString(k) } }
+            o.optJSONObject("searches")?.let { e -> e.keys().forEach { k -> searches[k] = e.optBoolean(k) } }
             o.optJSONArray("order")?.let { a ->
                 val saved = List(a.length()) { a.getString(it) }.filter { id -> PROVIDERS.any { it.id == id } }.distinct()
                 order.clear(); order.addAll(saved + PROVIDERS.map { it.id }.filter { it !in saved })
@@ -139,6 +146,12 @@ class AssistantStore(private val prefs: Prefs) {
 
     fun setEffort(value: String, pid: String = activeProvider, model: String = activeModel) { efforts[effortKey(pid, model)] = value; save() }
 
+    /** 这个型号这一轮用不用它自带的搜索：型号得支持、没被拒过、而且开着。 */
+    fun search(pid: String = activeProvider, model: String = activeModel): Boolean =
+        QwenSearch.offered(pid, model) && searches[effortKey(pid, model)] == true
+
+    fun setSearch(on: Boolean, pid: String = activeProvider, model: String = activeModel) { searches[effortKey(pid, model)] = on; save() }
+
     /** 按用户排好的顺序。 */
     fun ordered(): List<Provider> = order.mapNotNull { id -> PROVIDERS.firstOrNull { it.id == id } }
 
@@ -159,7 +172,7 @@ class AssistantStore(private val prefs: Prefs) {
             })
         }
         prefs.putString(KEY, JSONObject().apply {
-            put("name", name); put("provider", activeProvider); put("model", activeModel); put("efforts", JSONObject(efforts.toMap())); put("configs", cs); put("order", JSONArray(order.toList()))
+            put("name", name); put("provider", activeProvider); put("model", activeModel); put("efforts", JSONObject(efforts.toMap())); put("searches", JSONObject(searches.toMap())); put("configs", cs); put("order", JSONArray(order.toList()))
         }.toString())
     }
 
@@ -233,6 +246,7 @@ object AssistantApi {
                 put("model", model)
                 put("max_tokens", 1)
                 if (p.id == "deepseek") put("thinking", JSONObject().put("type", "disabled"))
+                if (p.id == "qwen") put("enable_thinking", false)
                 put("messages", JSONArray().put(JSONObject().put("role", "user").put("content", "hi")))
             }
             conn.outputStream.use { it.write(payload.toString().toByteArray()) }
@@ -369,19 +383,23 @@ object ChatApi {
         fallback: (suspend () -> String)? = null,
         /** 只在真的带上工具时才拼进 system 的说明：工具被去掉了还写着「你有笔」，她会说做好了其实没做。 */
         toolNote: String = "",
+        /** 不是 null：这一轮用模型自带的搜索（QwenSearch），真查了就叫它一声。 */
+        search: (() -> Unit)? = null,
         onText: suspend (String) -> Unit,
     ) {
         slips.clear()
         // 先按 ModelFit 认这个模型（认过 / 学过的参数一开始就不带）；报错点名了哪个参数就记下、去掉重发（最多 5 次）；思考档位先一档档往下退，退到底才不带。
         repeat(5) {
-            try { return tiers(p, c, model, system, history, effort, onThink, tools, fallback, toolNote, onText) } catch (_: Adapted) { }
+            // 自带搜索被拒过（ModelFit 记了 search），这一轮就不带
+            val s = search?.takeIf { QwenSearch.offered(p.id, model) }
+            try { return tiers(p, c, model, system, history, effort, onThink, tools, fallback, toolNote, s, onText) } catch (_: Adapted) { }
         }
-        tiers(p, c, model, system, history, effort, onThink, tools, fallback, toolNote, onText)
+        tiers(p, c, model, system, history, effort, onThink, tools, fallback, toolNote, search?.takeIf { QwenSearch.offered(p.id, model) }, onText)
     }
 
     private suspend fun tiers(
         p: Provider, c: ProviderConfig, model: String, system: String, history: List<ChatMsg>, effort: String?,
-        onThink: suspend (String) -> Unit, tools: Tools?, fallback: (suspend () -> String)?, toolNote: String, onText: suspend (String) -> Unit,
+        onThink: suspend (String) -> Unit, tools: Tools?, fallback: (suspend () -> String)?, toolNote: String, search: (() -> Unit)?, onText: suspend (String) -> Unit,
     ) {
         // 报错没点名时：先怀疑工具，再怀疑思考参数，逐个去掉再发；null = 什么思考参数都不带
         val hasTools = tools != null && !ModelFit.drops(p.id, model, "tools")
@@ -396,7 +414,7 @@ object ChatApi {
                     else -> system + "\n\n这一会儿你手边那些本事用不上：记不了事，也做不了作品。没真做出来的东西，别说已经做好了。" +
                         (fallback?.let { "\n\n" + runCatching { it() }.getOrDefault("") } ?: "")
                 }
-                conversation(p, c, model, sys, history, lv, if (useTools) tools else null, show, onText)
+                conversation(p, c, model, sys, history, lv, if (useTools) tools else null, show, search, onText)
                 // 去掉思考参数、工具留着就通了：这个模型不收思考参数，记下来，下次直接不带
                 if (lv == null && effort != null && useTools == hasTools) ModelFit.learn(p.id, model, "think")
                 return
@@ -408,14 +426,15 @@ object ChatApi {
 
     private suspend fun conversation(
         p: Provider, c: ProviderConfig, model: String, system: String, history: List<ChatMsg>,
-        effort: String?, tools: Tools?, onThink: suspend (String) -> Unit, onText: suspend (String) -> Unit,
+        effort: String?, tools: Tools?, onThink: suspend (String) -> Unit, search: (() -> Unit)?, onText: suspend (String) -> Unit,
     ) {
         val anthropic = p.kind == "anthropic"
         val msgs = JSONArray()
         if (!anthropic) msgs.put(JSONObject().put("role", "system").put("content", system))
         // DeepSeek 思考模式下带工具：以前每一条回复的 reasoning_content 都要带回去，没想过的也要带一个空的，
         // 少一条就 400，然后会退成不带工具再发，她就只能嘴上说「做好了」（作品卡丢失的根子）
-        val echo = p.id == "deepseek" && tools != null && effort != Effort.OFF
+        // qwen3.8 也一样：官方要求历史思考原样回传（preserve_thinking 默认开）
+        val echo = Effort.echoes(p, model) && tools != null && effort != Effort.OFF
         // 做事中途收到新消息时，那一段回复可能没有正文：空的不带，免得供应商报错
         // 你发来的照片、文件：最近两条带东西的原样带上，更早的只说一句
         val withFiles = history.indices.filter { history[it].role == "user" && history[it].files.isNotEmpty() }.takeLast(2).toSet()
@@ -443,12 +462,12 @@ object ChatApi {
                 if (anthropic && last?.optString("role") == "user" && arr != null) arr.put(JSONObject().put("type", "text").put("text", CAP_NOTE))
                 else msgs.put(JSONObject().put("role", "user").put("content", CAP_NOTE))
             }
-            val r = once(p, c, model, system, msgs, effort, if (round < MAX_ROUNDS) tools else null, round == 0, onThink, onText)
+            val r = once(p, c, model, system, msgs, effort, if (round < MAX_ROUNDS) tools else null, round == 0, onThink, search, onText)
             if (r.calls.any { it.name.toString() in setOf(Works.MAKE, Works.EDIT, WorkJobs.START) }) worked = true
             // 嘴上说「做好了 / 卡在下面」，这一轮却没真的调用做作品的工具：提醒她一次，接着真的去做
             if (r.calls.isEmpty() && tools != null && round < MAX_ROUNDS && !nudged && !worked && Claims.saysDone(r.text)) {
                 nudged = true; round++; slips += Lessons.CLAIM
-                if (r.text.isNotBlank()) msgs.put(if (anthropic) JSONObject().put("role", "assistant").put("content", r.blocks) else JSONObject().put("role", "assistant").put("content", r.text).apply { if (p.id == "deepseek" && (echo || r.reasoning.isNotEmpty())) put("reasoning_content", r.reasoning) })
+                if (r.text.isNotBlank()) msgs.put(if (anthropic) JSONObject().put("role", "assistant").put("content", r.blocks) else JSONObject().put("role", "assistant").put("content", r.text).apply { if (Effort.echoes(p, model) && (echo || r.reasoning.isNotEmpty())) put("reasoning_content", r.reasoning) })
                 msgs.put(JSONObject().put("role", "user").put("content", Claims.NUDGE))
                 continue
             }
@@ -483,7 +502,7 @@ object ChatApi {
                 }
                 val am = JSONObject().put("role", "assistant").put("content", r.text).put("tool_calls", tc)
                 // DeepSeek 思考模式下用工具，要把这一轮的思考原样带回去
-                if (echo || (p.id == "deepseek" && r.reasoning.isNotEmpty())) am.put("reasoning_content", r.reasoning)
+                if (echo || (Effort.echoes(p, model) && r.reasoning.isNotEmpty())) am.put("reasoning_content", r.reasoning)
                 msgs.put(am)
                 // 工具消息只能放文字，图片另起一条放在后面给模型看
                 val pics = JSONArray()
@@ -561,6 +580,7 @@ object ChatApi {
         tools: Tools?,
         canReject: Boolean,
         onThink: suspend (String) -> Unit,
+        search: (() -> Unit)?,
         onText: suspend (String) -> Unit,
     ): Round = withContext(Dispatchers.IO) {
         if (c.key.isBlank()) throw IllegalStateException("还没填 ${c.name} 的 API Key")
@@ -614,6 +634,7 @@ object ChatApi {
                 }
                 body.put("tools", arr)
             }
+            if (search != null) QwenSearch.apply(body)
             ModelFit.strip(p.id, model, body)
             conn.outputStream.use { it.write(body.toString().toByteArray()) }
 
@@ -626,6 +647,8 @@ object ChatApi {
                     throw Adapted()
                 }
                 if (canReject && (sentThink || tools != null)) throw Rejected()
+                // 思考、工具都退掉了还被拒、又带着自带搜索：就是它，记下、不带再发
+                if (body.has("enable_search")) { ModelFit.learn(p.id, model, "search"); throw Adapted() }
             }
             if (code !in 200..299) {
                 val msg = runCatching { JSONObject(err).optJSONObject("error")?.optString("message") }.getOrNull()
@@ -679,6 +702,7 @@ object ChatApi {
                             }
                         }
                     } else {
+                        if (search != null && QwenSearch.searched(o)) search()
                         val d = o.optJSONArray("choices")?.optJSONObject(0)?.optJSONObject("delta") ?: continue
                         if (!d.isNull("reasoning_content")) d.optString("reasoning_content").takeIf { it.isNotEmpty() }?.let {
                             reasoning.append(it); withContext(Dispatchers.Main) { onThink(it) }

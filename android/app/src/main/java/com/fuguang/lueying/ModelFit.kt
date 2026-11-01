@@ -20,6 +20,7 @@ object ModelFit {
         "temp" to listOf("temperature"),
         "top_p" to listOf("top_p"),
         "tools" to listOf("tools", "tool_choice"),
+        "search" to listOf("enable_search", "search_options", "include_tool_usage"),
     )
     /** 报错里出现这些词，就是在说这一类参数。 */
     private val words = mapOf(
@@ -27,6 +28,7 @@ object ModelFit {
         "temp" to listOf("temperature"),
         "top_p" to listOf("top_p", "top-p", "topp"),
         "tools" to listOf("tools", "tool_choice", "function calling", "functions", "tool use"),
+        "search" to listOf("enable_search", "search_options", "search_strategy", "include_tool_usage", "联网搜索"),
     )
 
     fun init(p: Prefs) {
@@ -78,7 +80,7 @@ object ModelFit {
     fun blame(err: String, body: JSONObject): String? {
         val e = err.lowercase()
         // 先看最具体的：思考、Top P、温度，最后才是工具（工具的报错常常顺带提到别的）
-        return listOf("think", "top_p", "temp", "tools").firstOrNull { w ->
+        return listOf("search", "think", "top_p", "temp", "tools").firstOrNull { w ->
             keys[w]!!.any { body.has(it) } && words[w]!!.any { it in e }
         }
     }
@@ -86,7 +88,7 @@ object ModelFit {
     /** 记了哪些（给界面以后用）：「不带思考参数」「不带温度」…… */
     fun note(provider: String, model: String): String = map[id(provider, model)].orEmpty().joinToString("、") {
         when {
-            it == "think" -> "不带思考参数"; it == "temp" -> "不带温度"; it == "top_p" -> "不带 Top P"
+            it == "think" -> "不带思考参数"; it == "temp" -> "不带温度"; it == "top_p" -> "不带 Top P"; it == "search" -> "不用自带搜索"
             it.startsWith("cap:") -> "思考最多到 ${it.removePrefix("cap:")}"; else -> "不用工具"
         }
     }

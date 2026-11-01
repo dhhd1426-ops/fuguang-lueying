@@ -46,6 +46,9 @@ object Effort {
                 else -> NONE
             }
             providerId == "grok" -> if (m.startsWith("grok-4.3")) EffortSpec(lv(OFF, "low", "medium", "high"), 1, "Grok 里只有 4.3 收档位，默认 low") else NONE
+            // 千问：enable_thinking 开关 + thinking_budget 定想多少（百炼 OpenAI 兼容接口，2026-11 查）
+            providerId == "qwen" -> if (Regex("coder|-mt|-vl-|ocr|omni").containsMatchIn(m)) NONE
+                else EffortSpec(lv(OFF, "low", "medium", "high"), 2, "千问按 thinking_budget 定想多少")
             providerId == "kimi" -> when {
                 m.startsWith("kimi-k3") -> EffortSpec(lv("low", "high", "max"), 2, "Kimi K3 一直在想，默认 max")
                 m.startsWith("kimi-k2") -> EffortSpec(lv(OFF, "on"), 1, "K2 只有开、关，没有深浅")
@@ -82,6 +85,8 @@ object Effort {
             p.id == "deepseek" -> if (value == OFF) body.put("thinking", JSONObject().put("type", "disabled"))
                 else body.put("thinking", JSONObject().put("type", "enabled")).put("reasoning_effort", value)
             p.id == "kimi" && m.startsWith("kimi-k2") -> body.put("thinking", JSONObject().put("type", if (value == OFF) "disabled" else "enabled"))
+            p.id == "qwen" -> if (value == OFF) body.put("enable_thinking", false)
+                else body.put("enable_thinking", true).put("thinking_budget", mapOf("low" to 2048, "medium" to 8000, "high" to 20000)[value] ?: 8000)
             p.id == "siliconflow" -> if (value == OFF) body.put("enable_thinking", false)
                 else body.put("enable_thinking", true).put("thinking_budget", mapOf("low" to 2048, "medium" to 8000, "high" to 16000)[value] ?: 8000)
             p.id == "grok" || p.id == "gemini" -> body.put("reasoning_effort", if (value == OFF) "none" else value)
@@ -89,6 +94,9 @@ object Effort {
         }
         return true
     }
+
+    /** 历史回复的思考要原样带回去的：DeepSeek 思考模式带工具、qwen3.8（官方默认 preserve_thinking，少带会报错）。 */
+    fun echoes(p: Provider, model: String) = p.id == "deepseek" || (p.id == "qwen" && model.trim().lowercase().startsWith("qwen3.8"))
 
     /** 这一档被拒：往下退一档（关掉的那档不算）；已经是最低一档就返回 null（整个不带思考参数）。 */
     fun lower(spec: EffortSpec, value: String): String? {

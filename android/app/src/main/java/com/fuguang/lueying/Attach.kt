@@ -38,7 +38,9 @@ object Attach {
      * 原来的 deepseek-v4-flash-vision-exp 已退役；deepseek-v4-pro 还看不了。看不了的请 AttachLook 帮她看。
      */
     fun vision(providerId: String, model: String = "") = providerId in setOf("claude", "openai", "gemini", "grok") ||
-        (providerId == "deepseek" && model.contains("flash", true))
+        (providerId == "deepseek" && model.contains("flash", true)) ||
+        // 千问 3.5 起的主力型号都能看图，另有 VL、Omni
+        (providerId == "qwen" && Regex("qwen3\\.[5-9]|qwen[4-9]|-vl|omni|qvq").containsMatchIn(model.lowercase()) && !model.contains("coder", true))
 
     /** 拍照前给相机一个落脚的地方：cache/camera/<时间>.jpg。 */
     fun cameraTarget(ctx: Context): Pair<File, Uri> {

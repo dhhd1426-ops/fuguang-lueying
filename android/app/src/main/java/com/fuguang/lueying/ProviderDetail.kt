@@ -108,6 +108,16 @@ private fun ConfigPane(state: ProviderCardState, store: AssistantStore, p: Provi
             }
             Label("API Base Url")
             CardField(d.base, { state.draft = d.copy(base = it.trim()) }, p.base, keyboard = KeyboardType.Uri)
+            // 千问：Key 是哪个地域开的就选哪个，对不上官方直接报 Key 无效
+            if (p.id == "qwen") Row(Modifier.padding(start = 2.dp, top = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                QwenSearch.REGIONS.forEach { (name, url) ->
+                    val sel = d.base.trimEnd('/') == url
+                    PressSurface({ state.draft = d.copy(base = url) }, shape = RoundedCornerShape(50), fill = if (sel) Skin.accent.copy(alpha = .9f) else veil(.06f), pressScale = .94f, label = name) {
+                        Txt(name, if (sel) Skin.onAccent else Page.ink, 13.sp, Modifier.padding(horizontal = 12.dp, vertical = 7.dp))
+                    }
+                }
+                Txt("Key 在哪个地域开的就选哪个", Page.muted, 11.5.sp, Modifier.padding(start = 4.dp))
+            }
             Label("API 路径")
             CardField(d.path, { state.draft = d.copy(path = it.trim()) }, p.path, keyboard = KeyboardType.Uri)
             Spacer(Modifier.height(8.dp))
@@ -125,8 +135,12 @@ private fun ConfigPane(state: ProviderCardState, store: AssistantStore, p: Provi
                     probe = Probe.Busy; result = null
                     val cfg = state.draft ?: d
                     scope.launch {
-                        AssistantApi.models(p, cfg)
-                            .onSuccess { result = true to "连接成功，可用 ${it.size} 个模型" }
+                        // 千问没开放列型号的接口：拉不到就拿第一个型号真发一句试
+                        val listed = AssistantApi.models(p, cfg)
+                        val r = if (listed.isFailure && p.id == "qwen" && cfg.models.isNotEmpty())
+                            AssistantApi.ping(p, cfg, cfg.models.first()).map { cfg.models }
+                        else listed
+                        r.onSuccess { result = true to (if (listed.isSuccess) "连接成功，可用 ${it.size} 个模型" else "连接成功，${cfg.models.first()} 能用") }
                             .onFailure {
                                 val k = cfg.key.trim()
                                 result = false to (

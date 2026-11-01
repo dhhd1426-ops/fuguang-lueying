@@ -98,7 +98,7 @@ fun ModelsPane(store: AssistantStore, p: Provider, onPicked: () -> Unit) {
                             store.update(p.id, now.copy(models = now.models + added))
                             status = true to if (added.isEmpty()) "没有新模型" else "新增 ${added.size} 个模型"
                         }
-                        .onFailure { status = false to (it.message ?: "获取失败") }
+                        .onFailure { status = false to (if (p.id == "qwen") "千问没开放型号列表，常用的已经内置，别的型号名手动加" else it.message ?: "获取失败") }
                     fetching = false
                 }
             }, modifier = Modifier.weight(1f), busy = fetching) { busy, ink ->
