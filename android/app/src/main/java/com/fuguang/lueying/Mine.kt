@@ -219,7 +219,7 @@ private fun Field(
  * pad 是开关四周额外的可点范围。
  */
 @Composable
-private fun Switch(on: Boolean, label: String, pad: PaddingValues = PaddingValues(0.dp), onChange: (Boolean) -> Unit) {
+private fun Switch(on: Boolean, label: String, pad: PaddingValues = PaddingValues(0.dp), origin: Modifier = Modifier, onChange: (Boolean) -> Unit) {
     Pressable({ onChange(!on) }, label = label) { pr ->
         val snappy = androidx.compose.animation.core.spring<Float>(dampingRatio = .745f, stiffness = 520f)
         val soft = androidx.compose.animation.core.spring<Color>(dampingRatio = .894f, stiffness = 180f)
@@ -229,7 +229,7 @@ private fun Switch(on: Boolean, label: String, pad: PaddingValues = PaddingValue
         val knob by androidx.compose.animation.animateColorAsState(if (on) Skin.onAccent else Page.ink.copy(alpha = .7f), soft, label = "swKnob")
         Box(Modifier.padding(pad)) {
             Box(
-                Modifier.width(48.dp).height(28.dp)
+                origin.width(48.dp).height(28.dp)
                     .graphicsLayer { val k = 1f - .04f * press; scaleX = k; scaleY = k }
                     .background(track, RoundedCornerShape(50))
                     .padding(3.dp),
@@ -804,6 +804,7 @@ private fun ColumnScope.MemoryTab(p: Persona, blur: Dp, onDigests: () -> Unit, o
         p.noteOn, "记忆", "memory", blur, onBook, { pr -> MemIcon(pr) },
         listOfNotNull("聊过 ${p.chats} 次", "记得 ${p.items.size} 件".takeIf { p.items.isNotEmpty() }, ago(p.lastAt).takeIf { it.isNotEmpty() }?.let { "上次是$it" }).joinToString(" · "),
         "已停用 · 她不记也不翻记忆",
+        "记忆已打开" to "她会接着记", "记忆已停用" to "记得的 ${p.items.size} 件还在",
     ) { p.noteOn = it; Memory.save() }
     Spacer(Modifier.height(12.dp))
     // 聊天摘要（第 363 版，原型 9wcvNyRWC8mbSBUexNC7FF 第 2 版）：每段聊天聊了什么，她翻以前的聊天时先看这些；右边开关停用（第 375 版）
@@ -812,19 +813,25 @@ private fun ColumnScope.MemoryTab(p: Persona, blur: Dp, onDigests: () -> Unit, o
         p.gistOn, "聊天摘要", "digests", blur, onDigests, { pr -> DigestIcon(pr) },
         if (convs.isEmpty()) "还没有聊天 · 她翻以前的聊天时看" else "${convs.size} 段聊天 · ${convs.count { it.gist.isNotBlank() }} 段有摘要 · 她翻以前的聊天时看",
         "已停用 · 不写摘要，翻聊天时也不看",
+        "聊天摘要已打开" to "聊完接着写", "聊天摘要已停用" to "写好的 ${convs.count { it.gist.isNotBlank() }} 段还在",
     ) { p.gistOn = it; Memory.save() }
     Spacer(Modifier.height(12.dp))
-    // 跨聊天回忆（不管记录，只管她能不能翻以前的聊天）
-    Row(
-        Modifier.fillMaxWidth().spot("cross").glass(RoundedCornerShape(20.dp), blur, fill = glassFill).padding(horizontal = 18.dp, vertical = 14.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(Modifier.weight(1f)) {
-            Txt("跨聊天回忆", Page.ink, 15.sp, maxLines = 1)
-            Spacer(Modifier.height(2.dp))
-            Txt("她能翻以前的聊天", Page.muted, 12.5.sp, maxLines = 1)
+    // 跨聊天回忆（不管记录，只管她能不能翻以前的聊天）；切换后从开关里长出胶囊报一句（第 377 版）
+    val crossCap = remember { Capsule() }
+    val scope = rememberCoroutineScope()
+    Box(Modifier.fillMaxWidth().spot("cross").glass(RoundedCornerShape(20.dp), blur, fill = glassFill).clip(RoundedCornerShape(20.dp))) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f).graphicsLayer { alpha = 1f - (crossCap.cover * 1.25f).coerceIn(0f, 1f) }) {
+                Txt("跨聊天回忆", Page.ink, 15.sp, maxLines = 1)
+                Spacer(Modifier.height(2.dp))
+                Txt("她能翻以前的聊天", Page.muted, 12.5.sp, maxLines = 1)
+            }
+            Switch(p.memOn, "跨聊天回忆", origin = Modifier.capsuleOrigin(crossCap)) {
+                p.memOn = it; Memory.save()
+                scope.launch { if (it) crossCap.flash("跨聊天回忆已打开", "她能翻以前的聊天") else crossCap.flash("跨聊天回忆已关", "她只看这段聊天", on = false) }
+            }
         }
-        Switch(p.memOn, "跨聊天回忆") { p.memOn = it; Memory.save() }
+        CapsuleLayer(crossCap, if (p.memOn) Skin.accent.copy(alpha = .85f) else veil(.12f))
     }
 }
 
@@ -833,16 +840,19 @@ private fun ColumnScope.MemoryTab(p: Persona, blur: Dp, onDigests: () -> Unit, o
  * 关掉时图标和字淡到 50%、小字换成停用说明——这几处由同一个值（soft 弹簧）驱动，小字旧的下移淡出、新的上移淡入。
  */
 @Composable
-private fun SwitchCard(on: Boolean, title: String, spotKey: String, blur: Dp, onOpen: () -> Unit, icon: @Composable (Boolean) -> Unit, sub: String, offSub: String, onChange: (Boolean) -> Unit) {
+private fun SwitchCard(
+    on: Boolean, title: String, spotKey: String, blur: Dp, onOpen: () -> Unit, icon: @Composable (Boolean) -> Unit, sub: String, offSub: String,
+    saidOn: Pair<String, String>, saidOff: Pair<String, String>, onChange: (Boolean) -> Unit,
+) {
     val t by androidx.compose.animation.core.animateFloatAsState(if (on) 1f else 0f, androidx.compose.animation.core.spring(dampingRatio = .894f, stiffness = 180f), label = "cardOn")
-    Row(
-        Modifier.fillMaxWidth().spot(spotKey).glass(RoundedCornerShape(20.dp), blur, fill = glassFill).clip(RoundedCornerShape(20.dp)),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
+    val cap = remember { Capsule() }
+    val scope = rememberCoroutineScope()
+    Box(Modifier.fillMaxWidth().spot(spotKey).glass(RoundedCornerShape(20.dp), blur, fill = glassFill).clip(RoundedCornerShape(20.dp))) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Pressable(onOpen, Modifier.weight(1f), label = title) { pr ->
             Row(
                 Modifier.fillMaxWidth().background(veil(if (pr) .06f else 0f)).padding(start = 18.dp, end = 10.dp, top = 16.dp, bottom = 16.dp)
-                    .graphicsLayer { alpha = .5f + .5f * t.coerceIn(0f, 1f) },
+                    .graphicsLayer { alpha = (.5f + .5f * t.coerceIn(0f, 1f)) * (1f - (cap.cover * 1.25f).coerceIn(0f, 1f)) },
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 icon(pr)
@@ -858,8 +868,14 @@ private fun SwitchCard(on: Boolean, title: String, spotKey: String, blur: Dp, on
                 }
             }
         }
-        Box(Modifier.width(1.dp).height(32.dp).background(veil(.08f)))
-        Switch(on, title, pad = PaddingValues(start = 14.dp, end = 16.dp, top = 20.dp, bottom = 20.dp), onChange = onChange)
+        Box(Modifier.width(1.dp).height(32.dp).graphicsLayer { alpha = 1f - cap.cover }.background(veil(.08f)))
+        Switch(on, title, pad = PaddingValues(start = 14.dp, end = 16.dp, top = 20.dp, bottom = 20.dp), origin = Modifier.capsuleOrigin(cap)) {
+            onChange(it)
+            // 切过去以后从开关里长出胶囊报一句（第 377 版，原型 VDAUMyKCSFbcBhmTNZ4M4W 第 3 版）
+            scope.launch { val (a, b) = if (it) saidOn else saidOff; cap.flash(a, b, on = it) }
+        }
+    }
+    CapsuleLayer(cap, if (on) Skin.accent.copy(alpha = .85f) else veil(.12f))
     }
 }
 
@@ -1739,6 +1755,7 @@ private fun ColumnScope.McpServerScreen(key: String, compact: Boolean, blur: Dp,
     var busy by remember { mutableStateOf(false) }
     var fail by remember { mutableStateOf("") }
     var okMsg by remember { mutableStateOf("") }
+    val mcpCap = remember { Capsule() }
 
     val finalUrl = if (auth == "key" && item != null) item.url.replace("{key}", keyText.trim()) else url.trim()
     val canConnect = finalUrl.startsWith("http") && (auth != "key" || keyText.isNotBlank()) && !busy
@@ -1780,27 +1797,40 @@ private fun ColumnScope.McpServerScreen(key: String, compact: Boolean, blur: Dp,
         }
 
         Spacer(Modifier.height(18.dp))
-        PillButton(
-            when { busy -> "正在连接…"; existing == null -> "连接"; else -> "重新连接" },
-            null, primary = true, enabled = canConnect, modifier = Modifier.fillMaxWidth(),
-        ) {
-            busy = true; fail = ""; okMsg = ""
-            scope.launch {
-                runCatching { Mcp.probe(finalUrl, token.trim()) }
-                    .onSuccess { (serverName, list) ->
-                        tools = list
-                        if (name.isBlank()) name = item?.name ?: serverName.ifBlank { "MCP 服务" }
-                        // 精选单说了默认只开哪几个，就照它的；别的全开
-                        if (existing == null && item != null && item.defaultTools.isNotEmpty()) off = list.map { it.name }.filter { it !in item.defaultTools }.toSet()
-                        val s = existing ?: McpServer(Mcp.newId(), name, finalUrl, token.trim(), list, off, true, item?.id.orEmpty())
-                        s.name = name; s.url = finalUrl; s.token = token.trim(); s.tools = list; s.off = off; s.enabled = true
-                        if (existing == null) Mcp.add(s) else Mcp.save()
-                        okMsg = "连上了，${list.size} 个工具"
-                        if (existing == null) nav.screen = "mcp/${s.id}"
+        // 连接的变形胶囊（第 377 版，原型 AP7TLzHk22SVxngCmybTsv 第 1 版）：按钮收成转圈小圆，再长成胶囊报结果，收回后结果写在下面
+        Box(Modifier.fillMaxWidth()) {
+            PillButton(
+                when { busy -> "正在连接…"; existing == null -> "连接"; else -> "重新连接" },
+                null, primary = true, enabled = canConnect, modifier = Modifier.fillMaxWidth().capsuleOrigin(mcpCap),
+            ) {
+                if (mcpCap.active) return@PillButton
+                // 不再把按钮变灰：胶囊盖着，收回时露出来的就是原来的按钮
+                fail = ""; okMsg = ""
+                scope.launch {
+                    var made: McpServer? = null
+                    mcpCap.play("正在连接 ${name.ifBlank { item?.name ?: "服务" }}", squeeze = true, clock = true) {
+                        runCatching { Mcp.probe(finalUrl, token.trim()) }.fold(
+                            { (serverName, list) ->
+                                tools = list
+                                if (name.isBlank()) name = item?.name ?: serverName.ifBlank { "MCP 服务" }
+                                // 精选单说了默认只开哪几个，就照它的；别的全开
+                                if (existing == null && item != null && item.defaultTools.isNotEmpty()) off = list.map { it.name }.filter { it !in item.defaultTools }.toSet()
+                                val s = existing ?: McpServer(Mcp.newId(), name, finalUrl, token.trim(), list, off, true, item?.id.orEmpty())
+                                s.name = name; s.url = finalUrl; s.token = token.trim(); s.tools = list; s.off = off; s.enabled = true
+                                if (existing == null) Mcp.add(s) else Mcp.save()
+                                okMsg = "连上了，${list.size} 个工具"
+                                made = s
+                                Capsule.Done("已连上 $name", "${list.size} 个工具")
+                            },
+                            { fail = it.message ?: "连不上"; Capsule.Failed("连不上", fail) },
+                        )
                     }
-                    .onFailure { fail = it.message ?: "连不上" }
-                busy = false
+                    busy = false
+                    // 新建的连上了：胶囊收回后再进它自己的页面
+                    if (existing == null) made?.let { nav.screen = "mcp/${it.id}" }
+                }
             }
+            CapsuleLayer(mcpCap, Skin.accent.copy(alpha = .9f), 50.dp)
         }
         if (fail.isNotEmpty()) { Spacer(Modifier.height(10.dp)); Txt(fail, rose, 12.5.sp, Modifier.padding(horizontal = 6.dp), lineHeight = 18.sp) }
         if (okMsg.isNotEmpty()) { Spacer(Modifier.height(10.dp)); Txt(okMsg, warm, 12.5.sp, Modifier.padding(horizontal = 6.dp)) }

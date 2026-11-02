@@ -87,6 +87,8 @@ private fun ConfigPane(state: ProviderCardState, store: AssistantStore, p: Provi
     var probe by remember(p.id) { mutableStateOf(Probe.Idle) }
     var shake by remember { mutableIntStateOf(0) }
     var result by remember(p.id) { mutableStateOf<Pair<Boolean, String>?>(null) }
+    // 测试连接的变形胶囊（第 377 版）：从按钮收成小圆，再长成横跨这一排的胶囊报结果
+    val cap = remember(p.id) { Capsule() }
     var done by remember { mutableStateOf(false) }
     val look = when { done -> SaveLook.Done; state.dirty() -> SaveLook.Dirty; else -> SaveLook.Clean }
 
@@ -128,36 +130,46 @@ private fun ConfigPane(state: ProviderCardState, store: AssistantStore, p: Provi
                 if (d.balance && d.configured) store.balances[p.id]?.let { Txt(it, Page.muted, 12.sp, Modifier.padding(start = 4.dp, bottom = 8.dp)) }
             }
         }
-        Row(Modifier.padding(start = 12.dp, end = 12.dp, top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Box(Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 12.dp)) {
+        Row(Modifier.fillMaxWidth().graphicsLayer { alpha = 1f - (cap.cover * 1.25f).coerceIn(0f, 1f) }, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             CardButton(
                 probe, when (probe) { Probe.Ok -> BtnTone.Ok; Probe.Bad -> BtnTone.Bad; else -> BtnTone.Plain }, "测试连接",
                 onClick = {
+                    if (cap.active) return@CardButton
                     probe = Probe.Busy; result = null
                     val cfg = state.draft ?: d
                     scope.launch {
-                        // 千问没开放列型号的接口：拉不到就拿第一个型号真发一句试
-                        val listed = AssistantApi.models(p, cfg)
-                        val r = if (listed.isFailure && p.id == "qwen" && cfg.models.isNotEmpty())
-                            AssistantApi.ping(p, cfg, cfg.models.first()).map { cfg.models }
-                        else listed
-                        r.onSuccess { result = true to (if (listed.isSuccess) "连接成功，可用 ${it.size} 个模型" else "连接成功，${cfg.models.first()} 能用") }
-                            .onFailure {
-                                val k = cfg.key.trim()
-                                result = false to (
-                                    if (k.isEmpty()) "先填上 API Key 再测试"
-                                    else if (p.id == "deepseek" && !k.startsWith("sk-")) "密钥应以 sk- 开头，好像少了这几个字符"
-                                    else it.message ?: "连接失败"
-                                )
-                            }
-                        val ok = result?.first == true
-                        if (ok && p.hasBalance && cfg.balance) AssistantApi.balance(p, cfg).onSuccess { store.balances[p.id] = it }
+                        val ok = cap.play("正在连接 ${p.name}", squeeze = true, clock = true) {
+                            val t0 = System.currentTimeMillis()
+                            // 千问没开放列型号的接口：拉不到就拿第一个型号真发一句试
+                            val listed = AssistantApi.models(p, cfg)
+                            val r = if (listed.isFailure && p.id == "qwen" && cfg.models.isNotEmpty())
+                                AssistantApi.ping(p, cfg, cfg.models.first()).map { cfg.models }
+                            else listed
+                            val ms = System.currentTimeMillis() - t0
+                            r.fold(
+                                {
+                                    result = true to (if (listed.isSuccess) "连接成功，可用 ${it.size} 个模型" else "连接成功，${cfg.models.first()} 能用")
+                                    if (p.hasBalance && cfg.balance) AssistantApi.balance(p, cfg).onSuccess { b -> store.balances[p.id] = b }
+                                    Capsule.Done("已连接", if (listed.isSuccess) "$ms ms · 可用 ${it.size} 个模型" else "$ms ms · ${cfg.models.first()} 能用")
+                                },
+                                {
+                                    val k = cfg.key.trim()
+                                    val why = if (k.isEmpty()) "先填上 API Key 再测试"
+                                        else if (p.id == "deepseek" && !k.startsWith("sk-")) "密钥应以 sk- 开头，好像少了这几个字符"
+                                        else it.message ?: "连接失败"
+                                    result = false to why
+                                    Capsule.Failed("连不上", why)
+                                },
+                            )
+                        }
+                        // 胶囊收回后结果留在按钮上 1.6 秒，详细的那句一直在下面
                         probe = if (ok) Probe.Ok else Probe.Bad
-                        if (!ok) shake++
                         delay(1600)
                         probe = Probe.Idle
                     }
                 },
-                modifier = Modifier.weight(1f), busy = probe != Probe.Idle, shake = shake,
+                modifier = Modifier.weight(1f).capsuleOrigin(cap), busy = probe != Probe.Idle, shake = shake,
             ) { s, ink ->
                 when (s) {
                     Probe.Idle -> BtnLabel("测试连接", ink) { SvgIcon(plug, ink, 17.dp) }
@@ -182,6 +194,8 @@ private fun ConfigPane(state: ProviderCardState, store: AssistantStore, p: Provi
                     SaveLook.Clean -> BtnLabel("已保存", ink)
                 }
             }
+        }
+        CapsuleLayer(cap, veil(.09f))
         }
         result?.let { (ok, msg) -> Txt(msg, if (ok) Page.accent else CardRose, 12.5.sp, Modifier.padding(start = 16.dp, end = 16.dp, top = 10.dp)) }
         Spacer(Modifier.height(14.dp))

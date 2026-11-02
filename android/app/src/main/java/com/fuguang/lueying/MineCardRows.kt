@@ -105,7 +105,7 @@ private fun RowBody(title: String, sub: String, glyph: @Composable () -> Unit, s
     }
 }
 
-/** 羽：连接会跳到羽那边授权，回来再查一次状态。 */
+/** 羽：连接会跳到羽那边授权，回来再查一次状态。第 377 版起「连接」按下后长成变形胶囊：等授权 → 已连接 / 没连上（带重试）。 */
 @Composable
 internal fun MineYuRow(i: Int, t: Float) {
     val scope = rememberCoroutineScope()
@@ -113,26 +113,46 @@ internal fun MineYuRow(i: Int, t: Float) {
         scope.launch { Yu.refresh() }
         onPauseOrDispose { }
     }
+    val cap = androidx.compose.runtime.remember { Capsule() }
+    var back by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<kotlinx.coroutines.CompletableDeferred<Unit>?>(null) }
     val launcher = androidx.activity.compose.rememberLauncherForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult(),
-    ) { scope.launch { Yu.refresh() } }
+    ) { back?.complete(Unit); scope.launch { Yu.refresh() } }
     val state = Yu.state
     val sub = when (state) { "on" -> "助理可以查阅 ${Yu.notes} 篇笔记"; "missing" -> "需要先安装羽"; else -> "让助理读取你的笔记" }
-    Box(Modifier.fillMaxWidth().mineRise(i, t).background(CardBlock, RoundedCornerShape(16.dp))) {
-        RowBody("羽", sub, glyph = { Txt("羽", warm, 17.sp, family = Serif) }) {
-            when (state) {
-                "on" -> {
-                    Box(Modifier.size(6.dp).background(warm, CircleShape))
-                    Spacer(Modifier.width(7.dp))
-                    Txt("已连接", Page.muted, 13.sp)
+    fun connect() {
+        if (cap.active) return
+        scope.launch {
+            cap.play("等 羽 那边授权") {
+                val d = kotlinx.coroutines.CompletableDeferred<Unit>(); back = d
+                if (runCatching { launcher.launch(Yu.connectIntent()) }.isFailure) {
+                    back = null; Yu.refresh()
+                    return@play Capsule.Failed("打不开 羽", "先装上羽")
                 }
-                "missing" -> Txt("未安装", Page.muted, 13.sp)
-                else -> PressSurface(
-                    { runCatching { launcher.launch(Yu.connectIntent()) }.onFailure { scope.launch { Yu.refresh() } } },
-                    fill = warm, pressedFill = warm.copy(alpha = .75f), ripple = warmInk, pressScale = .93f, label = "连接羽",
-                ) { Txt("连接", warmInk, 13.5.sp, Modifier.padding(horizontal = 15.dp, vertical = 8.dp)) }
+                d.await(); back = null
+                Yu.refresh()
+                if (Yu.state == "on") Capsule.Done("已连接 羽", "${Yu.notes} 篇笔记") else Capsule.Failed("没连上 羽", "授权没完成")
             }
         }
+    }
+    Box(Modifier.fillMaxWidth().mineRise(i, t).background(CardBlock, RoundedCornerShape(16.dp))) {
+        Box(Modifier.graphicsLayer { alpha = 1f - (cap.cover * 1.25f).coerceIn(0f, 1f) }) {
+            RowBody("羽", sub, glyph = { Txt("羽", warm, 17.sp, family = Serif) }) {
+                when (state) {
+                    "on" -> Row(Modifier.capsuleOrigin(cap), verticalAlignment = Alignment.CenterVertically) {
+                        Box(Modifier.size(6.dp).background(warm, CircleShape))
+                        Spacer(Modifier.width(7.dp))
+                        Txt("已连接", Page.muted, 13.sp)
+                    }
+                    "missing" -> Txt("未安装", Page.muted, 13.sp)
+                    else -> PressSurface(
+                        { connect() }, Modifier.capsuleOrigin(cap),
+                        fill = warm, pressedFill = warm.copy(alpha = .75f), ripple = warmInk, pressScale = .93f, label = "连接羽",
+                    ) { Txt("连接", warmInk, 13.5.sp, Modifier.padding(horizontal = 15.dp, vertical = 8.dp)) }
+                }
+            }
+        }
+        CapsuleLayer(cap, if (state == "on") Color.Transparent else warm)
     }
 }
 
