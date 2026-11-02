@@ -98,7 +98,6 @@ internal fun BackupRow(i: Int, t: Float) {
     var phase by remember { mutableStateOf<Phase>(Phase.Choose) }
     var line by remember { mutableStateOf(Backup.lastLine()) }
     var sizes by remember { mutableStateOf<Pair<Long, Long>?>(null) }
-    val cap = remember { Capsule() }
     var rowW by remember { mutableStateOf(0) }
     val working = phase is Phase.Work
 
@@ -107,42 +106,30 @@ internal fun BackupRow(i: Int, t: Float) {
     LaunchedEffect(shown.isIdle, shown.currentState) {
         if (shown.isIdle && !shown.currentState) { line = Backup.lastLine(); phase = Phase.Choose }
     }
-    // 第 377 版（原型 AP7TLzHk22SVxngCmybTsv 第 1 版）：选好以后长条收回，这一行长成变形胶囊报进度——进度环 + 步骤字 →
-    // 「备份好了 · 下载/Vignette」带「发给…」，或「没存成」带「重试」；收回后副标题换成「刚刚备份」。
     fun start(pack: Boolean) {
-        if (cap.active) return
-        shown.targetState = false
+        phase = Phase.Work(pack, -1)
         scope.launch {
-            delay(220)
-            val steps = if (pack) listOf("整理对话和记忆", "打包作品", "写入安装包", "存进下载") else listOf("整理对话和记忆", "打包作品", "存进下载")
-            cap.play(if (pack) "正在打包" else "正在备份") {
-                progress = 0f; step = "准备中"
-                var last = System.currentTimeMillis()
-                runCatching {
-                    Backup.run(ctx, pack) { s ->
-                        // 每一步至少停一会儿，让人看得见
-                        val gap = System.currentTimeMillis() - last
-                        if (gap < 420) delay(420 - gap)
-                        last = System.currentTimeMillis()
-                        progress = (s + 1f) / steps.size
-                        step = steps[(s + 1).coerceAtMost(steps.lastIndex)]
-                    }
-                }.fold(
-                    { r -> delay(260); Capsule.Done(if (pack) "打包好了" else "备份好了", "下载/${Backup.FOLDER}", "发给…") { Backup.share(ctx, r) } },
-                    { e ->
-                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                        Capsule.Failed("没存成", if (e is Backup.NoRoom) "还差 ${Backup.mb(e.short)}" else e.message?.take(18) ?: "出了点问题")
-                    },
-                )
+            delay(380)
+            var last = System.currentTimeMillis()
+            phase = runCatching {
+                val r = Backup.run(ctx, pack) { s ->
+                    // 每一步至少停一会儿，让人看得见
+                    val gap = System.currentTimeMillis() - last
+                    if (gap < 420) delay(420 - gap)
+                    last = System.currentTimeMillis()
+                    phase = Phase.Work(pack, s)
+                }
+                delay(260)
+                Phase.Done(pack, r)
+            }.getOrElse { e ->
+                Phase.Fail(pack, if (e is Backup.NoRoom) "空间不够，还差 ${Backup.mb(e.short)}" else "没存成：${e.message?.take(18) ?: "出了点问题"}")
             }
-            line = Backup.lastLine()
+            if (phase is Phase.Fail) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
         }
     }
 
     Box(Modifier.onSizeChanged { rowW = it.width }) {
-        Box(Modifier.graphicsLayer { alpha = 1f - (cap.cover * 1.25f).coerceIn(0f, 1f) }) {
         MineRow(i, t, "备份", "", {
-            if (cap.active) return@MineRow
             if (shown.targetState) close()
             else { shown.targetState = true; scope.launch { sizes = Backup.sizes(ctx) } }
         }, glyph = { SvgIcon(down, warm, 19.dp) }, subSlot = {
@@ -153,10 +140,8 @@ internal fun BackupRow(i: Int, t: Float) {
                 label = "line",
             ) { Txt(it, if (it.startsWith("刚刚")) warm else Page.muted, 12.sp, maxLines = 1) }
         }) {
-            SvgIcon(chevron, Page.muted.copy(alpha = .6f), 15.dp, stroke = 1.8f, modifier = Modifier.capsuleOrigin(cap))
+            SvgIcon(chevron, Page.muted.copy(alpha = .6f), 15.dp, stroke = 1.8f)
         }
-        }
-        CapsuleLayer(cap, Color.Transparent)
 
         if (shown.currentState || shown.targetState) {
             val d = LocalDensity.current
