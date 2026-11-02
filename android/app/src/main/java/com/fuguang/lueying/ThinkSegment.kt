@@ -107,7 +107,9 @@ fun ThinkSegment(spec: EffortSpec, value: String?, onChange: (String) -> Unit) {
     if (spec.levels.isEmpty()) { NoLevels(spec); return }
     val n = spec.levels.size
     val top = n - 1
-    val maxAt = spec.levels.indexOfFirst { it.value == "max" }
+    // 彩虹（max-rainbow）给每个型号的最高一档：有 max 就是 max，没有就是最后一档（千问的「高」、K2 的「开」…）；只有一档或最高档是「关」就不给
+    val maxAt = spec.levels.indexOfFirst { it.value == "max" }.takeIf { it >= 0 }
+        ?: spec.levels.lastIndex.takeIf { it >= 1 && spec.levels[it].value != Effort.OFF } ?: -1
     val names = spec.levels.map { it.label }
     val level = spec.index(value)
     val density = LocalDensity.current

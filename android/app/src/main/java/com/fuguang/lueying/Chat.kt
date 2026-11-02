@@ -6,6 +6,7 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -1176,10 +1177,13 @@ private fun ModelDrawer(open: Boolean, store: AssistantStore, compact: Boolean, 
                 }
                 // 中：型号列表，只有这一段滚（ModelPicker.kt）
                 Column(
-                    Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState())
-                        .padding(start = 20.dp, end = 20.dp, top = 2.dp, bottom = 10.dp),
+                    // 列表变长变短（展开、找型号）时高度 320ms 减速过渡，不一下跳
+                    Modifier.weight(1f, fill = false)
+                        .then(Modifier.animateContentSize(tween(320, easing = androidx.compose.animation.core.CubicBezierEasing(.05f, .7f, .1f, 1f))))
+                        .verticalScroll(rememberScrollState())
+                        .padding(start = 16.dp, end = 16.dp, top = 2.dp, bottom = 10.dp),
                 ) {
-                    ModelList(store, find, onPick = { pid, m -> store.use(pid, m); onClose() }, onEmpty = { openCard() })
+                    ModelList(store, find, onPick = { pid, m -> store.use(pid, m); onClose() }, onSetup = { id -> openCard(); if (id != null) card.openDetail(store, id) })
                 }
                 // 下：思考档、自带搜索、更多模型钉住不动
                 Box(Modifier.fillMaxWidth().height(1.dp).background(veil(.08f)))
