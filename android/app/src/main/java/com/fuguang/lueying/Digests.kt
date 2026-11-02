@@ -109,7 +109,7 @@ internal fun ColumnScope.DigestsScreen(p: Persona, compact: Boolean, nav: MineNa
                 }
                 Row(Modifier.fillMaxWidth().padding(bottom = 18.dp), verticalAlignment = Alignment.CenterVertically) {
                     Txt("${convs.size} 段聊天 · ${convs.count { it.gist.isNotBlank() }} 段有摘要", Page.muted, 13.sp, Modifier.weight(1f), maxLines = 1)
-                    if (missing.isNotEmpty() || Reflect.filling) {
+                    if ((missing.isNotEmpty() || Reflect.filling) && p.gistOn) {
                         Pressable({ if (!Reflect.filling) Reflect.digestAll(missing.map { it.id }) }, label = "补写没写的摘要") { pr ->
                             Txt(
                                 if (Reflect.filling) "正在补写…" else "补写没写的 ${missing.size} 段", Skin.onAccent, 13.5.sp,

@@ -16,6 +16,9 @@ import java.util.Locale
  * 她自己想找时还能用 [TOOL] 按关键词搜。
  */
 object Recall {
+    /** 停用了聊天摘要（第 375 版）：翻以前的聊天时不看已有的摘要，只按标题和原话。 */
+    private fun gist(c: Conv) = if (Memory.active.gistOn) c.gist else ""
+
     const val TOOL = "recall_chats"
     const val OPEN = "open_chat"
     /** 时间线上「想起之前聊过的」那一步（不是工具，是 App 自己对上的）。 */
@@ -88,7 +91,7 @@ object Recall {
         if (gs.size < 2) return emptyList()
         val convs = store.of().filter { it.id != current && it.msgs.any { m -> m.role == "user" } }
         if (convs.isEmpty()) return emptyList()
-        val hay = convs.associate { c -> c.id to (c.title + "\n" + c.gist).lowercase() }
+        val hay = convs.associate { c -> c.id to (c.title + "\n" + gist(c)).lowercase() }
         val body = convs.associate { c -> c.id to c.msgs.joinToString("\n") { it.text }.takeLast(30000).lowercase() }
         // 一半以上的聊天里都有的词，说明太常见，不算
         val common = if (convs.size >= 6) gs.map { it.first }.filter { g -> convs.count { c -> body[c.id]!!.contains(g) || hay[c.id]!!.contains(g) } * 2 > convs.size }.toSet() else emptySet()
@@ -108,7 +111,7 @@ object Recall {
         val sb = StringBuilder("（你想起以前聊过的、可能和他这句话有关的聊天：")
         hits.forEach { h ->
             sb.append("\n[编号 ").append(h.c.id).append("] ").append(day(h.c.updated)).append("「").append(h.c.title).append("」")
-            if (h.c.gist.isNotBlank()) sb.append("\n小结：").append(h.c.gist.take(900))
+            if (gist(h.c).isNotBlank()) sb.append("\n小结：").append(gist(h.c).take(900))
             else sb.append("\n（这段还没有小结）原话里说到的：").append(snippets(h.c, h.words))
         }
         sb.append("\n看小结够答就直接答；要核对原话用 $OPEN 打开那段（填编号和要找的词）。和他这句话无关就当没想起，不要提。）")
@@ -119,7 +122,7 @@ object Recall {
     fun step(hits: List<Hit>): ToolStep {
         val words = hits.flatMap { it.words }.distinct().take(4).joinToString("") { "「$it」" }
         val head = words + " → " + hits.joinToString("、") { day(it.c.updated) + "「" + it.c.title + "」" }
-        val detail = head + hits.joinToString("") { h -> "\n\n" + (if (hits.size > 1) "「${h.c.title}」\n" else "") + h.c.gist.ifBlank { "（还没有小结，按原话对上的）" } }
+        val detail = head + hits.joinToString("") { h -> "\n\n" + (if (hits.size > 1) "「${h.c.title}」\n" else "") + gist(h.c).ifBlank { "（还没有小结，按原话对上的）" } }
         return ToolStep(0, AUTO, "想起之前聊过的", detail, done = true)
     }
 
@@ -144,7 +147,7 @@ object Recall {
         val from = if (at == null) maxOf(0, c.msgs.size - 30) else maxOf(0, at - 6)
         val to = minOf(c.msgs.size, from + 30)
         val lines = (from until to).filter { c.msgs[it].text.isNotBlank() }.map { i -> "第 ${i + 1} 句 " + who(c.msgs[i].role) + "：" + c.msgs[i].text.take(800) }
-        if (c.gist.isBlank()) Reflect.digestLater(c.id)
+        if (gist(c).isBlank()) Reflect.digestLater(c.id)
         lastOpen = "${c.title} · 第 ${from + 1}–$to 句" + (if (at == null && words.isNotEmpty()) "（没找到「$q」，看的是最后一段）" else "") +
             "\n\n" + (from until to).filter { c.msgs[it].text.isNotBlank() }.joinToString("\n") { i -> (if (c.msgs[i].role == "user") Memory.userCall else (Memory.get(c.who)?.name ?: "她")) + "：" + c.msgs[i].text.replace("\n", " ").take(300) }
         return ToolOut(
@@ -163,14 +166,14 @@ object Recall {
         if (words.isEmpty()) {
             convs.take(6).forEach { c ->
                 out.put(JSONObject().put("id", c.id).put("date", day(c.updated)).put("title", c.title)
-                    .apply { if (c.gist.isNotBlank()) put("gist", c.gist) }
+                    .apply { if (gist(c).isNotBlank()) put("gist", gist(c)) }
                     .put("last", c.msgs.takeLast(2).joinToString(" / ") { who(it.role) + "：" + it.text.take(120) }))
             }
         } else {
             for (c in convs) {
                 val hits = c.msgs.indices.filter { i -> words.any { w -> c.msgs[i].text.contains(w, ignoreCase = true) } }
                 // 小结、标题里有也算：原话里的说法和他现在问的不一样时，小结常常能接上
-                val inGist = words.any { w -> c.gist.contains(w, ignoreCase = true) || c.title.contains(w, ignoreCase = true) }
+                val inGist = words.any { w -> gist(c).contains(w, ignoreCase = true) || c.title.contains(w, ignoreCase = true) }
                 if (hits.isEmpty() && !inGist) continue
                 val lines = hits.take(3).joinToString(" … ") { i ->
                     (maxOf(0, i - 1)..minOf(c.msgs.lastIndex, i + 1)).joinToString(" / ") { k ->
@@ -178,7 +181,7 @@ object Recall {
                     }
                 }
                 out.put(JSONObject().put("id", c.id).put("date", day(c.updated)).put("title", c.title)
-                    .apply { if (c.gist.isNotBlank()) put("gist", c.gist); if (lines.isNotEmpty()) put("found", lines) })
+                    .apply { if (gist(c).isNotBlank()) put("gist", gist(c)); if (lines.isNotEmpty()) put("found", lines) })
                 if (out.length() >= 6) break
             }
             if (out.length() == 0) return ToolOut("以前的聊天里没找到「${query.trim()}」。")

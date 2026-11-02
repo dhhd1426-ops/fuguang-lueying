@@ -146,7 +146,8 @@ update 只写要改的字段；正文分段用换行。没什么要变就返回 
 
     /** 聊完回头看这一段：新开、更新，或者不动。失败就算了，不打扰用户。 */
     suspend fun run(her: Persona, window: List<ChatMsg>, conv: String, convTitle: String) {
-        lock.withLock {
+        // 停用了记忆（第 375 版）：不回看，只看要不要写摘要
+        if (her.noteOn) lock.withLock {
             val who = Memory.userCall
             val talk = window.joinToString("\n") { (if (it.role == "user") "$who：" else "${her.name}：") + it.text.take(800) }.take(8000)
             val ask = """
@@ -166,7 +167,7 @@ $OPS
             MemModel.ask(sys(her), ask, 3000)?.let { raw -> apply(her, raw, conv, convTitle, emptySet()) }
         }
         // 小结不占记忆的锁：每天整理记忆时也能写（第 363 版）；关了「自动写摘要」就不写（第 365 版）
-        if (GistModel.auto) runCatching { digest(her, window, conv, convTitle) }
+        if (GistModel.auto && her.gistOn) runCatching { digest(her, window, conv, convTitle) }
     }
 
     /**
@@ -177,6 +178,8 @@ $OPS
         val store = Chats.current?.history ?: return
         val c = store.get(conv) ?: return
         if (c.msgs.none { it.role == "user" }) return
+        // 停用了聊天摘要（第 375 版）：补写、翻到时顺手补、聊完回看都不写
+        if (!her.gistOn) return
         val mine = conv !in writing
         if (mine) writing += conv
         try {
@@ -223,6 +226,7 @@ ${if (c.gist.isBlank()) "把这段聊天写成一份摘要。" else "把后来�
     fun place(p: Persona, m: Mem) { scope.launch { runCatching { placeNow(p, m) } } }
 
     private suspend fun placeNow(p: Persona, m: Mem) {
+        if (!p.noteOn) return
         lock.withLock {
             if (p.items.none { it.id == m.id }) return
             val ask = """
@@ -250,7 +254,7 @@ $OPS
      */
     fun daily(p: Persona) {
         val today = MemTree.dayKey(System.currentTimeMillis())
-        if (p.tidyDay == today || p.id in tidying) return
+        if (!p.noteOn || p.tidyDay == today || p.id in tidying) return
         // 理完才标「今天理过」；中途失败的，今天之后发消息再试，一天最多 3 次（第 357 版）
         val key = p.id + today
         val n = tries[key] ?: 0

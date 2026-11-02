@@ -15,6 +15,8 @@ import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
@@ -211,15 +213,31 @@ private fun Field(
     )
 }
 
+/**
+ * 开关（第 375 版，原型 VDAUMyKCSFbcBhmTNZ4M4W 第 2 版）：滑块走 snappy 弹簧（k520，阻尼 0.745）；
+ * 轨道、滑块颜色走 soft 弹簧（k180，阻尼 0.894，Oklab 插值不发灰）；按住时滑块拉长 6dp、轨道缩到 0.96，松手弹回。
+ * pad 是开关四周额外的可点范围。
+ */
 @Composable
-private fun Switch(on: Boolean, label: String, onChange: (Boolean) -> Unit) {
-    Pressable({ onChange(!on) }, label = label) { _ ->
-        Box(
-            Modifier.width(48.dp).height(28.dp)
-                .background(if (on) Skin.accent.copy(alpha = .85f) else veil(.12f), RoundedCornerShape(50))
-                .padding(3.dp),
-            contentAlignment = if (on) Alignment.CenterEnd else Alignment.CenterStart,
-        ) { Box(Modifier.size(22.dp).background(if (on) Skin.onAccent else Page.ink.copy(alpha = .7f), CircleShape)) }
+private fun Switch(on: Boolean, label: String, pad: PaddingValues = PaddingValues(0.dp), onChange: (Boolean) -> Unit) {
+    Pressable({ onChange(!on) }, label = label) { pr ->
+        val snappy = androidx.compose.animation.core.spring<Float>(dampingRatio = .745f, stiffness = 520f)
+        val soft = androidx.compose.animation.core.spring<Color>(dampingRatio = .894f, stiffness = 180f)
+        val x by androidx.compose.animation.core.animateFloatAsState(if (on) 1f else 0f, snappy, label = "swX")
+        val press by androidx.compose.animation.core.animateFloatAsState(if (pr) 1f else 0f, snappy, label = "swPress")
+        val track by androidx.compose.animation.animateColorAsState(if (on) Skin.accent.copy(alpha = .85f) else veil(.12f), soft, label = "swTrack")
+        val knob by androidx.compose.animation.animateColorAsState(if (on) Skin.onAccent else Page.ink.copy(alpha = .7f), soft, label = "swKnob")
+        Box(Modifier.padding(pad)) {
+            Box(
+                Modifier.width(48.dp).height(28.dp)
+                    .graphicsLayer { val k = 1f - .04f * press; scaleX = k; scaleY = k }
+                    .background(track, RoundedCornerShape(50))
+                    .padding(3.dp),
+            ) {
+                val w = 22.dp + 6.dp * press
+                Box(Modifier.offset(x = (42.dp - w) * x).width(w).height(22.dp).background(knob, RoundedCornerShape(50)))
+            }
+        }
     }
 }
 
@@ -781,48 +799,20 @@ private val infoIc = Ic("M12 11v5.5M12 7.6v.4", circles = listOf(floatArrayOf(12
 private fun ColumnScope.MemoryTab(p: Persona, blur: Dp, onDigests: () -> Unit, onBook: () -> Unit) {
     val days = if (p.firstAt <= 0) 0 else ((System.currentTimeMillis() - p.firstAt) / 86_400_000L).toInt() + 1
     Txt(if (days == 0) "${p.name} 还在认识你" else "${p.name} 认识你 $days 天了", Page.ink, 19.sp, Modifier.padding(start = 4.dp, top = 2.dp, bottom = 16.dp), family = Serif, lineHeight = 30.sp)
-    // 记忆入口：折角纸图标 + 记忆 + 一行小字
-    Pressable(onBook, Modifier.fillMaxWidth().spot("memory"), label = "记忆") { pr ->
-        Row(
-            Modifier.fillMaxWidth().glass(RoundedCornerShape(20.dp), blur, fill = glassFill).background(veil(if (pr) .06f else 0f))
-                .padding(horizontal = 18.dp, vertical = 16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            MemIcon(pr)
-            Spacer(Modifier.width(14.dp))
-            Column(Modifier.weight(1f)) {
-                Txt("记忆", Page.ink, 16.sp, maxLines = 1)
-                Spacer(Modifier.height(3.dp))
-                Txt(
-                    listOfNotNull("聊过 ${p.chats} 次", "记得 ${p.items.size} 件".takeIf { p.items.isNotEmpty() }, ago(p.lastAt).takeIf { it.isNotEmpty() }?.let { "上次是$it" }).joinToString(" · "),
-                    Page.muted, 12.5.sp, maxLines = 1,
-                )
-            }
-            SvgIcon(MineIcons.next, Page.muted, 18.dp)
-        }
-    }
+    // 记忆入口：折角纸图标 + 记忆 + 一行小字；右边开关停用整个记忆（第 375 版）
+    SwitchCard(
+        p.noteOn, "记忆", "memory", blur, onBook, { pr -> MemIcon(pr) },
+        listOfNotNull("聊过 ${p.chats} 次", "记得 ${p.items.size} 件".takeIf { p.items.isNotEmpty() }, ago(p.lastAt).takeIf { it.isNotEmpty() }?.let { "上次是$it" }).joinToString(" · "),
+        "已停用 · 她不记也不翻记忆",
+    ) { p.noteOn = it; Memory.save() }
     Spacer(Modifier.height(12.dp))
-    // 聊天摘要（第 363 版，原型 9wcvNyRWC8mbSBUexNC7FF 第 2 版）：每段聊天聊了什么，她翻以前的聊天时先看这些
-    Pressable(onDigests, Modifier.fillMaxWidth().spot("digests"), label = "聊天摘要") { pr ->
-        Row(
-            Modifier.fillMaxWidth().glass(RoundedCornerShape(20.dp), blur, fill = glassFill).background(veil(if (pr) .06f else 0f))
-                .padding(horizontal = 18.dp, vertical = 16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            DigestIcon(pr)
-            Spacer(Modifier.width(14.dp))
-            Column(Modifier.weight(1f)) {
-                Txt("聊天摘要", Page.ink, 16.sp, maxLines = 1)
-                Spacer(Modifier.height(3.dp))
-                val convs = Chats.current?.history?.of(p.id).orEmpty().filter { c -> c.msgs.any { it.role == "user" } }
-                Txt(
-                    if (convs.isEmpty()) "还没有聊天 · 她翻以前的聊天时看" else "${convs.size} 段聊天 · ${convs.count { it.gist.isNotBlank() }} 段有摘要 · 她翻以前的聊天时看",
-                    Page.muted, 12.5.sp, maxLines = 1,
-                )
-            }
-            SvgIcon(MineIcons.next, Page.muted, 18.dp)
-        }
-    }
+    // 聊天摘要（第 363 版，原型 9wcvNyRWC8mbSBUexNC7FF 第 2 版）：每段聊天聊了什么，她翻以前的聊天时先看这些；右边开关停用（第 375 版）
+    val convs = Chats.current?.history?.of(p.id).orEmpty().filter { c -> c.msgs.any { it.role == "user" } }
+    SwitchCard(
+        p.gistOn, "聊天摘要", "digests", blur, onDigests, { pr -> DigestIcon(pr) },
+        if (convs.isEmpty()) "还没有聊天 · 她翻以前的聊天时看" else "${convs.size} 段聊天 · ${convs.count { it.gist.isNotBlank() }} 段有摘要 · 她翻以前的聊天时看",
+        "已停用 · 不写摘要，翻聊天时也不看",
+    ) { p.gistOn = it; Memory.save() }
     Spacer(Modifier.height(12.dp))
     // 跨聊天回忆（不管记录，只管她能不能翻以前的聊天）
     Row(
@@ -835,6 +825,41 @@ private fun ColumnScope.MemoryTab(p: Persona, blur: Dp, onDigests: () -> Unit, o
             Txt("她能翻以前的聊天", Page.muted, 12.5.sp, maxLines = 1)
         }
         Switch(p.memOn, "跨聊天回忆") { p.memOn = it; Memory.save() }
+    }
+}
+
+/**
+ * 记忆页带开关的入口卡（第 375 版，原型 VDAUMyKCSFbcBhmTNZ4M4W 第 2 版）：左边点进详情，一道细竖线，右边开关。
+ * 关掉时图标和字淡到 50%、小字换成停用说明——这几处由同一个值（soft 弹簧）驱动，小字旧的下移淡出、新的上移淡入。
+ */
+@Composable
+private fun SwitchCard(on: Boolean, title: String, spotKey: String, blur: Dp, onOpen: () -> Unit, icon: @Composable (Boolean) -> Unit, sub: String, offSub: String, onChange: (Boolean) -> Unit) {
+    val t by androidx.compose.animation.core.animateFloatAsState(if (on) 1f else 0f, androidx.compose.animation.core.spring(dampingRatio = .894f, stiffness = 180f), label = "cardOn")
+    Row(
+        Modifier.fillMaxWidth().spot(spotKey).glass(RoundedCornerShape(20.dp), blur, fill = glassFill).clip(RoundedCornerShape(20.dp)),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Pressable(onOpen, Modifier.weight(1f), label = title) { pr ->
+            Row(
+                Modifier.fillMaxWidth().background(veil(if (pr) .06f else 0f)).padding(start = 18.dp, end = 10.dp, top = 16.dp, bottom = 16.dp)
+                    .graphicsLayer { alpha = .5f + .5f * t.coerceIn(0f, 1f) },
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                icon(pr)
+                Spacer(Modifier.width(14.dp))
+                Column(Modifier.weight(1f)) {
+                    Txt(title, Page.ink, 16.sp, maxLines = 1)
+                    Spacer(Modifier.height(3.dp))
+                    Box {
+                        val u = t.coerceIn(0f, 1f)
+                        Txt(sub, Page.muted, 12.5.sp, Modifier.graphicsLayer { alpha = u; translationY = (1f - u) * 6.dp.toPx() }, maxLines = 2, lineHeight = 19.sp)
+                        Txt(offSub, Page.muted, 12.5.sp, Modifier.graphicsLayer { alpha = 1f - u; translationY = u * -6.dp.toPx() }, maxLines = 2, lineHeight = 19.sp)
+                    }
+                }
+            }
+        }
+        Box(Modifier.width(1.dp).height(32.dp).background(veil(.08f)))
+        Switch(on, title, pad = PaddingValues(start = 14.dp, end = 16.dp, top = 20.dp, bottom = 20.dp), onChange = onChange)
     }
 }
 

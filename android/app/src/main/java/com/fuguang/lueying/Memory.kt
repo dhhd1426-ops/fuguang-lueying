@@ -55,6 +55,10 @@ class Persona(val id: String, name: String, sys: String) {
     var memOn by mutableStateOf(true)
     /** 记做事经验：出了岔子她自己记一句、下次想起来（Lessons.kt）。关掉就不记也不想起。 */
     var lessonsOn by mutableStateOf(true)
+    /** 记忆功能（第 375 版，记忆页「记忆」卡上的开关）：关掉就停用——不带目录、不给记忆工具、聊完不回看、每天不整理。记得的不删。 */
+    var noteOn by mutableStateOf(true)
+    /** 聊天摘要功能（第 375 版，记忆页「聊天摘要」卡上的开关）：关掉就停用——不写摘要，翻以前的聊天时也不看已有的。写好的不删。 */
+    var gistOn by mutableStateOf(true)
     val items = mutableStateListOf<Mem>()
     var firstAt by mutableLongStateOf(0L)
     var lastAt by mutableLongStateOf(0L)
@@ -151,6 +155,7 @@ object Memory {
 
     private fun read(o: JSONObject) = Persona(o.optString("id"), o.optString("name", "Amor"), o.optString("sys", DEFAULT_SYS).let { if (it.trim() == OLD_DEFAULT_SYS) DEFAULT_SYS else it }).apply {
         memOn = o.optBoolean("on", true); lessonsOn = o.optBoolean("lesson", true)
+        noteOn = o.optBoolean("note", true); gistOn = o.optBoolean("gist", true)
         firstAt = o.optLong("first"); lastAt = o.optLong("last"); chats = o.optInt("chats")
         temp = o.optDouble("temp", .7).toFloat(); topOn = o.optBoolean("topOn", false); top = o.optDouble("top", .9).toFloat(); limit = o.optInt("limit", 40)
         o.optJSONArray("m")?.let { m -> for (i in 0 until m.length()) items += mem(m.getJSONObject(i)) }
@@ -164,7 +169,7 @@ object Memory {
             p.items.forEach { m.put(JSONObject().put("id", it.id).put("t", it.text).put("d", it.detail).put("at", it.at).put("c", it.conv).put("ct", it.convTitle).put("k", it.kind).put("b", it.by)
                 .apply { if (it.diary.isNotBlank()) put("w", it.diary); if (it.moment) put("mo", true); if (it.pin) put("pin", true); if (it.done) put("ok", true); if (it.under.isNotEmpty()) put("up", it.under); if (it.till > 0) put("till", it.till) }
                 .apply { if (it.kind == Lessons.KIND) put("pv", it.pv).put("sc", it.scene).put("u", it.used).put("f", it.failed).put("ua", it.usedAt) }) }
-            a.put(JSONObject().put("id", p.id).put("name", p.name).put("sys", p.sys).put("on", p.memOn).put("lesson", p.lessonsOn)
+            a.put(JSONObject().put("id", p.id).put("name", p.name).put("sys", p.sys).put("on", p.memOn).put("lesson", p.lessonsOn).put("note", p.noteOn).put("gist", p.gistOn)
                 .put("first", p.firstAt).put("last", p.lastAt).put("chats", p.chats)
                 .put("temp", p.temp.toDouble()).put("topOn", p.topOn).put("top", p.top.toDouble()).put("limit", p.limit).put("m", m).put("e", Entries.write(p.entries)).put("tidyAt", p.tidyAt).put("tidyChats", p.tidyChats).put("tidyDay", p.tidyDay))
         }

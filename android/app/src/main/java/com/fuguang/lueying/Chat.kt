@@ -287,11 +287,11 @@ class ChatState(val history: ConvStore) {
                 val native = store.search()
                 val web = WebSearch.usable && !native
                 val skills = Skills.specs()
-                val specs = Memory.toolSpecs + Works.specs.filter { it.name != Works.MAKE } + WorkJobs.spec + SentFiles.spec + Pacts.specs + Materials.specs + VideoParse.specs + PanTools.specs + ClockTools.specs + skills + (if (web) listOf(WebSearch.spec) else emptyList()) + (if (yu) Yu.tools else emptyList()) + (if (recall) listOf(Recall.spec, Recall.openSpec) else emptyList()) + mcp
+                val specs = (if (who.noteOn) Memory.toolSpecs else emptyList()) + Works.specs.filter { it.name != Works.MAKE } + WorkJobs.spec + SentFiles.spec + Pacts.specs + Materials.specs + VideoParse.specs + PanTools.specs + ClockTools.specs + skills + (if (web) listOf(WebSearch.spec) else emptyList()) + (if (yu) Yu.tools else emptyList()) + (if (recall) listOf(Recall.spec, Recall.openSpec) else emptyList()) + mcp
                 val convTitle0 = store0.get(cur)?.title ?: firstSentence(question, 18)
                 val extra = buildString {
                     append("\n\n你手边还有这些东西，需要时再用，不需要就不用：")
-                    append("\n").append(Memory.toolRule())
+                    if (who.noteOn) append("\n").append(Memory.toolRule())
                     append("\n").append(Works.system(Memory.userCall, history, who.id))
                     append("\n").append(SentFiles.system(Memory.userCall))
                     append("\n").append(Pacts.system(who, Memory.userCall))
@@ -388,7 +388,7 @@ class ChatState(val history: ConvStore) {
                     // 做事经验：想起过的这一轮算不算用上；出了岔子就请帮手给她记一句，挂在这条回复下面
                     slips += ChatApi.slips
                     Lessons.settle(who, shownLessons, slips, happened)
-                    if (slips.isNotEmpty() && who.lessonsOn) {
+                    if (slips.isNotEmpty() && who.lessonsOn && who.noteOn) {
                         val win = messages.toList(); val at = win.last().at; val s = slips.toSet()
                         scope.launch { Lessons.learn(who, store, win, s, pv, cid, title)?.let { m -> attachLesson(cid, at, m.id) } }
                     }
