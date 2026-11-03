@@ -197,6 +197,12 @@ object Memory {
         save()
     }
 
+    /** 助理列表编辑态里拖动排序（第 381 版）：from 挪到 to，松手时才存。 */
+    fun move(from: Int, to: Int, persist: Boolean = false) {
+        if (from != to && from in all.indices && to in all.indices) all.add(to, all.removeAt(from))
+        if (persist) save()
+    }
+
     /** 撤销删除：放回原位，原来正在用的话也换回来。 */
     fun restore(p: Persona, i: Int, wasActive: Boolean) {
         if (p in all) return

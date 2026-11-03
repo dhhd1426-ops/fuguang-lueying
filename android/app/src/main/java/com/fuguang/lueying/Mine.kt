@@ -10,6 +10,8 @@ import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.background
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -64,6 +66,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -192,8 +195,11 @@ private fun Field(
     secret: Boolean = false,
     keyboard: KeyboardType = KeyboardType.Text,
     modifier: Modifier = Modifier,
+    trailing: (@Composable () -> Unit)? = null,
 ) {
     val shape = RoundedCornerShape(14.dp)
+    var focused by remember { mutableStateOf(false) }
+    val ring by androidx.compose.animation.animateColorAsState(if (focused) Skin.accent.copy(alpha = .5f) else Skin.accent.copy(alpha = 0f), tween(200), label = "fieldRing")
     BasicTextField(
         value = value,
         onValueChange = onChange,
@@ -202,13 +208,19 @@ private fun Field(
         cursorBrush = SolidColor(Page.accent),
         visualTransformation = if (secret) PasswordVisualTransformation() else VisualTransformation.None,
         keyboardOptions = KeyboardOptions(keyboardType = keyboard),
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth().onFocusChanged { focused = it.isFocused },
         decorationBox = { inner ->
-            Box(
-                Modifier.fillMaxWidth().background(Skin.well(.18f), shape).border(1.dp, Page.line, shape).padding(horizontal = 16.dp, vertical = 14.dp),
+            // 第 381 版：去描边，凹下去的暗色块；正在输入时描一圈淡点缀色。trailing 放在框里右边（Key 的眼睛）
+            Row(
+                Modifier.fillMaxWidth().heightIn(min = 50.dp).background(wellFill, shape).border(1.5.dp, ring, shape)
+                    .padding(start = 16.dp, end = if (trailing != null) 4.dp else 16.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                if (value.isEmpty()) Txt(placeholder, Page.muted.copy(alpha = .45f), 15.sp, maxLines = 1)
-                inner()
+                Box(Modifier.weight(1f).padding(vertical = 14.dp)) {
+                    if (value.isEmpty()) Txt(placeholder, Page.muted.copy(alpha = .45f), 15.sp, maxLines = 1)
+                    inner()
+                }
+                trailing?.invoke()
             }
         },
     )
@@ -307,129 +319,15 @@ private val warm: Color get() = Skin.accent
 
 /** 头像：宋体首字，杏色。 */
 @Composable
-private fun Initial(name: String, size: Dp) {
+internal fun Initial(name: String, size: Dp) {
     Box(Modifier.size(size).background(Skin.accent.copy(alpha = .14f), CircleShape), contentAlignment = Alignment.Center) {
         Txt(name.trim().take(1).ifEmpty { "?" }, warm, (size.value * .42f).sp, family = Serif)
     }
 }
 
+/** 助理列表：色块卡片、长按编辑 / 排序 / 勾选 / 删除，见 PersonaList.kt（第 381 版）。 */
 @Composable
-private fun ColumnScope.AssistantScreen(compact: Boolean, blur: Dp, nav: MineNav) {
-    Title("助理", compact, onBack = { nav.back() }) {
-        Pressable({ val n = Memory.create(); nav.open(n.id, 0) }, label = "新建助理") { p ->
-            Box(Modifier.size(36.dp).background(Skin.accent.copy(alpha = if (p) .28f else .14f), CircleShape), contentAlignment = Alignment.Center) {
-                SvgIcon(Ic("M12 6v12M6 12h12"), warm, 18.dp, stroke = 1.7f)
-            }
-        }
-    }
-    var undo by remember { mutableStateOf<Triple<Persona, Int, Boolean>?>(null) }
-    LaunchedEffect(undo) { if (undo != null) { kotlinx.coroutines.delay(4000); undo = null } }
-    Box(Modifier.weight(1f).fillMaxWidth()) {
-        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-            Memory.all.toList().forEach { p ->
-                androidx.compose.runtime.key(p.id) {
-                    PersonaRow(p, blur, canDelete = Memory.all.size > 1, onOpen = { nav.open(p.id, 2) }) {
-                        val i = Memory.all.indexOf(p)
-                        val was = p.id == Memory.activeId
-                        Memory.delete(p)
-                        undo = Triple(p, i, was)
-                    }
-                }
-            }
-            Spacer(Modifier.height(8.dp))
-        }
-        androidx.compose.animation.AnimatedVisibility(
-            undo != null,
-            Modifier.align(Alignment.BottomCenter).padding(bottom = 8.dp),
-            enter = androidx.compose.animation.slideInVertically { it } + androidx.compose.animation.fadeIn(),
-            exit = androidx.compose.animation.slideOutVertically { it } + androidx.compose.animation.fadeOut(),
-        ) {
-            Row(
-                Modifier.widthIn(max = 520.dp).fillMaxWidth().background(Skin.toast, RoundedCornerShape(16.dp))
-                    .padding(start = 16.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Txt("已删除 ${undo?.first?.name.orEmpty()} 和她的对话", Skin.toastInk, 13.5.sp, Modifier.weight(1f), maxLines = 1)
-                Pressable({ undo?.let { (p, i, was) -> Memory.restore(p, i, was) }; undo = null }, label = "撤销") { pr ->
-                    Txt("撤销", warm, 13.5.sp, Modifier.background(if (pr) Skin.toastInk.copy(alpha = .1f) else Color.Transparent, RoundedCornerShape(12.dp)).padding(horizontal = 12.dp, vertical = 9.dp))
-                }
-            }
-        }
-    }
-}
-
-/**
- * 一位助理。点一下进去；按住不放，红色从左往右蓄满就删掉（轻震一下，向左收拢），中途松手就弹回去。
- */
-@Composable
-private fun PersonaRow(p: Persona, blur: Dp, canDelete: Boolean, onOpen: () -> Unit, onDelete: () -> Unit) {
-    val on = p.id == Memory.activeId
-    val fill = remember { androidx.compose.animation.core.Animatable(0f) }
-    var pressed by remember { mutableStateOf(false) }
-    var gone by remember { mutableStateOf(false) }
-    val scope = rememberCoroutineScope()
-    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
-    LaunchedEffect(gone) { if (gone) { kotlinx.coroutines.delay(340); onDelete() } }
-    androidx.compose.animation.AnimatedVisibility(
-        !gone,
-        exit = androidx.compose.animation.shrinkVertically(tween(320)) + androidx.compose.animation.fadeOut(tween(220)) +
-            androidx.compose.animation.slideOutHorizontally(tween(320)) { -it / 6 },
-    ) {
-        Box(
-            Modifier.fillMaxWidth().padding(bottom = 10.dp)
-                .glass(RoundedCornerShape(20.dp), blur, fill = if (pressed) veil(.08f) else glassFill)
-                .pointerInput(p.id, canDelete) {
-                    detectTapGestures(onPress = {
-                        pressed = true
-                        val t0 = System.currentTimeMillis()
-                        // 稍等一下再开始蓄，轻点不会闪红
-                        val charge = if (canDelete) scope.launch {
-                            kotlinx.coroutines.delay(160)
-                            fill.animateTo(1f, tween(800, easing = androidx.compose.animation.core.LinearEasing))
-                            haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
-                            gone = true
-                        } else null
-                        val up = tryAwaitRelease()
-                        pressed = false
-                        if (!gone) {
-                            charge?.cancel()
-                            if (fill.value > 0f) scope.launch { fill.animateTo(0f, androidx.compose.animation.core.spring(dampingRatio = .7f, stiffness = 400f)) }
-                            if (up && System.currentTimeMillis() - t0 < 300) onOpen()
-                        }
-                    })
-                },
-        ) {
-            // 底下的红色，跟着按住的时间从左往右长
-            Box(
-                Modifier.matchParentSize().graphicsLayer {
-                    scaleX = fill.value; transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, .5f)
-                }.background(css("#8f4f4b").copy(alpha = .85f), RoundedCornerShape(20.dp)),
-            )
-            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-                Initial(p.name, 44.dp)
-                Spacer(Modifier.width(14.dp))
-                Column(Modifier.weight(1f)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Txt(p.name, Page.ink, 16.sp, maxLines = 1, family = Serif)
-                        if (on) {
-                            Spacer(Modifier.width(8.dp))
-                            Box(Modifier.size(5.dp).background(warm, CircleShape))
-                            Spacer(Modifier.width(5.dp))
-                            Txt("正在陪你", warm, 11.5.sp, maxLines = 1)
-                        }
-                    }
-                    Spacer(Modifier.height(4.dp))
-                    Txt(
-                        if (fill.value > .05f) "按住，松手就取消"
-                        else listOfNotNull(if (p.memOn) "记得 ${p.items.size} 件事" else "记忆已关", if (p.chats > 0) "聊过 ${p.chats} 次" else null).joinToString(" · "),
-                        if (fill.value > .05f) css("#f6e3e1") else Page.muted, 12.5.sp, maxLines = 1,
-                    )
-                }
-                SvgIcon(MineIcons.next, Page.muted, 18.dp)
-            }
-        }
-    }
-}
+private fun ColumnScope.AssistantScreen(compact: Boolean, blur: Dp, nav: MineNav) = AssistantList(compact, blur, nav)
 
 /** 分段标签：底下一块色块，跟着手指在标签之间滑。 */
 @Composable
@@ -437,7 +335,7 @@ private fun SegTabs(tabs: List<String>, pager: androidx.compose.foundation.pager
     var w by remember { mutableStateOf(0f) }
     Box(
         Modifier.fillMaxWidth().padding(bottom = 16.dp)
-            .glass(RoundedCornerShape(16.dp), blur, fill = glassFill)
+            .background(wellFill, RoundedCornerShape(16.dp))
             .padding(4.dp)
             .onSizeChanged { w = it.width.toFloat() },
     ) {
@@ -519,10 +417,10 @@ private fun ColumnScope.PersonaScreen(store: AssistantStore, p: Persona, compact
 private fun ColumnScope.BasicTab(store: AssistantStore, p: Persona, blur: Dp, nav: MineNav) {
     Column(Modifier.spot("name")) { NameCard(p, blur) }
     Spacer(Modifier.height(10.dp))
-    Box(Modifier.fillMaxWidth().spot("model").glass(RoundedCornerShape(20.dp), blur, fill = glassFill)) {
-        Pressable({ nav.screen = "providers" }, Modifier.fillMaxWidth(), label = "模型与供应商") { pressed ->
+    Pressable({ nav.screen = "providers" }, Modifier.fillMaxWidth().spot("model"), label = "模型与供应商") { pressed ->
+        val f by androidx.compose.animation.animateColorAsState(if (pressed) blockPress else blockFill, tween(if (pressed) 80 else 220), label = "modelRow")
             Row(
-                Modifier.fillMaxWidth().background(if (pressed) veil(.04f) else Color.Transparent).padding(horizontal = 18.dp, vertical = 18.dp),
+                Modifier.fillMaxWidth().block(RoundedCornerShape(20.dp), blur, f).padding(horizontal = 18.dp, vertical = 18.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Txt("模型与供应商", Page.ink, 15.sp, Modifier.weight(1f))
@@ -530,12 +428,15 @@ private fun ColumnScope.BasicTab(store: AssistantStore, p: Persona, blur: Dp, na
                 Spacer(Modifier.width(6.dp))
                 SvgIcon(MineIcons.next, Page.muted, 18.dp)
             }
-        }
     }
     Txt("回 答 的 手 感", Page.muted, 11.sp, Modifier.padding(start = 4.dp, top = 24.dp, bottom = 10.dp), spacing = ls(1f, 11f))
-    Column(Modifier.fillMaxWidth().glass(RoundedCornerShape(20.dp), blur, fill = glassFill)) {
+    // 第 381 版：三段拆成三块色块，中间 3dp 缝代替分割线；头尾两块外角 20、里角 8
+    val top = RoundedCornerShape(20.dp, 20.dp, 8.dp, 8.dp)
+    val mid = RoundedCornerShape(8.dp)
+    val bot = RoundedCornerShape(8.dp, 8.dp, 20.dp, 20.dp)
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(3.dp)) {
         // 温度
-        Column(Modifier.fillMaxWidth().spot("temp").padding(horizontal = 18.dp, vertical = 16.dp)) {
+        Column(Modifier.fillMaxWidth().spot("temp").block(top, blur).padding(horizontal = 18.dp, vertical = 16.dp)) {
             Row(verticalAlignment = Alignment.Bottom) {
                 Txt("温度", Page.ink, 15.sp, Modifier.weight(1f))
                 Txt(String.format(java.util.Locale.US, "%.2f", p.temp), warm, 18.sp, family = Serif)
@@ -544,9 +445,8 @@ private fun ColumnScope.BasicTab(store: AssistantStore, p: Persona, blur: Dp, na
             FeelSlider(p.temp, 0f, 2f, .05f, onDone = { Memory.save() }) { p.temp = it }
             Ends("稳重、可预期", "随性、跳脱")
         }
-        Divider()
         // Top P
-        Column(Modifier.fillMaxWidth().spot("topp").padding(horizontal = 18.dp, vertical = 16.dp).animateContentSize()) {
+        Column(Modifier.fillMaxWidth().spot("topp").block(mid, blur).padding(horizontal = 18.dp, vertical = 16.dp).animateContentSize()) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Txt("Top P", Page.ink, 15.sp, Modifier.weight(1f))
                 ChoiceChip("用供应商默认", !p.topOn) { p.topOn = false; Memory.save() }
@@ -563,9 +463,8 @@ private fun ColumnScope.BasicTab(store: AssistantStore, p: Persona, blur: Dp, na
                 Ends("只挑最稳的词", "放开挑")
             }
         }
-        Divider()
         // 上下文消息限制：10–200 条，最右边是「不限」
-        Column(Modifier.fillMaxWidth().spot("limit").padding(horizontal = 18.dp, vertical = 16.dp)) {
+        Column(Modifier.fillMaxWidth().spot("limit").block(bot, blur).padding(horizontal = 18.dp, vertical = 16.dp)) {
             val v = if (p.limit <= 0) 210f else p.limit.toFloat()
             Row(verticalAlignment = Alignment.Bottom) {
                 Txt("上下文消息限制", Page.ink, 15.sp, Modifier.weight(1f))
@@ -606,7 +505,7 @@ private fun NameCard(p: Persona, blur: Dp) {
             launch { tag.snapTo(0f); tag.animateTo(1f, tween(240)); kotlinx.coroutines.delay(900); tag.animateTo(0f, tween(400)) }
         }
     }
-    Box(Modifier.fillMaxWidth().glass(RoundedCornerShape(20.dp), blur, fill = glassFill)) {
+    Box(Modifier.fillMaxWidth().block(RoundedCornerShape(20.dp), blur)) {
         NamePair(p, a, u, { a = it.take(16) }, { u = it.take(16) })
         // 保存：杏色细线从左划到右，然后淡掉
         Box(
@@ -1406,29 +1305,34 @@ private fun ColumnScope.ProvidersScreen(store: AssistantStore, compact: Boolean,
     Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         store.ordered().filter { q.isBlank() || it.name.contains(q.trim(), ignoreCase = true) }.forEach { p ->
             val c = store.config(p.id)
+            // 第 381 版：色块卡片；首字放进小方块；状态、模型数变小色块标签；正在用的那家整块透一层点缀色
+            val live = store.activeProvider == p.id
             Pressable({ nav.screen = "provider/${p.id}" }, Modifier.fillMaxWidth(), label = p.name) { pressed ->
+                val base = if (live) lerp(blockFill, Skin.accent.copy(alpha = blockFill.alpha), .14f) else blockFill
+                val f by androidx.compose.animation.animateColorAsState(if (pressed) blockPress else base, tween(if (pressed) 80 else 220), label = "prov")
                 Row(
-                    Modifier.fillMaxWidth().glass(RoundedCornerShape(20.dp), blur, fill = if (pressed) veil(.08f) else glassFill)
-                        .padding(horizontal = 18.dp, vertical = 16.dp),
+                    Modifier.fillMaxWidth().block(RoundedCornerShape(20.dp), blur, f).padding(horizontal = 16.dp, vertical = 14.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Box(Modifier.width(44.dp), contentAlignment = Alignment.CenterStart) {
-                        Txt(p.letter, Page.ink, 24.sp, family = Serif)
-                    }
+                    Box(
+                        Modifier.size(44.dp).background(if (live) Skin.accent.copy(alpha = .2f) else veil(.07f), RoundedCornerShape(14.dp)),
+                        contentAlignment = Alignment.Center,
+                    ) { Txt(p.letter, if (live) Skin.accent else Page.ink, 20.sp, family = Serif) }
+                    Spacer(Modifier.width(14.dp))
                     Column(Modifier.weight(1f)) {
-                        Txt(c.name, Page.ink, 17.sp, weight = FontWeight.Medium, maxLines = 1)
-                        Spacer(Modifier.height(8.dp))
-                        Row(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Txt(c.name, Page.ink, 16.5.sp, weight = FontWeight.Medium, maxLines = 1)
+                        Spacer(Modifier.height(7.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                             when {
                                 c.enabled && c.configured -> Chip("启用", fill = Page.ink.copy(alpha = .92f), ink = Skin.onInk)
-                                c.configured -> Chip("未启用")
-                                else -> Chip("未配置")
+                                c.configured -> Chip("未启用", fill = veil(.07f))
+                                else -> Chip("未配置", fill = veil(.07f))
                             }
-                            Chip("${c.models.size} 个模型")
-                            store.balances[p.id]?.let { Chip(it.substringBefore(" ·")) } ?: run { if (p.note.isNotEmpty()) Chip(p.note) }
+                            Chip("${c.models.size} 个模型", fill = veil(.07f))
+                            store.balances[p.id]?.let { Chip(it.substringBefore(" ·"), fill = veil(.07f)) } ?: run { if (p.note.isNotEmpty()) Chip(p.note, fill = veil(.07f)) }
                         }
                     }
-                    SvgIcon(MineIcons.next, Page.ink, 20.dp)
+                    SvgIcon(MineIcons.next, Page.muted, 18.dp)
                 }
             }
         }
@@ -1441,234 +1345,256 @@ private fun ColumnScope.ProvidersScreen(store: AssistantStore, compact: Boolean,
 @Composable
 private fun ColumnScope.ProviderScreen(store: AssistantStore, p: Provider, compact: Boolean, blur: Dp, nav: MineNav) {
     val saved = store.config(p.id)
-    Title(saved.name, compact, onBack = { nav.back() })
-    var tab by remember(p.id) { mutableStateOf("配置") }
-    Row(Modifier.fillMaxWidth().padding(bottom = 16.dp)) {
-        listOf("配置", "模型").forEach { t ->
-            Pressable({ tab = t }, Modifier.weight(1f), label = t) { _ ->
-                Box(
-                    Modifier.fillMaxWidth().background(if (tab == t) Skin.well(.28f) else Color.Transparent, RoundedCornerShape(14.dp)).padding(vertical = 13.dp),
-                    contentAlignment = Alignment.Center,
-                ) { Txt(t, if (tab == t) Page.ink else Page.muted, 15.sp, spacing = ls(2f, 15f)) }
-            }
-        }
-    }
+    // 第 381 版：去掉「配置 / 模型」两个标签，模型连上后直接长在 Key 下面；余额放在标题右边
+    Title(saved.name, compact, onBack = { nav.back() }) { BalanceTag(store.balances[p.id]) }
     Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState())) {
-        if (tab == "配置") ConfigTab(store, p, blur) else ModelsTab(store, p, blur)
+        ConfigTab(store, p, blur)
         Spacer(Modifier.height(12.dp))
     }
 }
 
+/** 标题右边的余额：没有色块底，小字「余额」+ 点缀色宋体数字；点一下换成「赠送 / 充值」两行，再点换回来。 */
 @Composable
-private fun ConfigTab(store: AssistantStore, p: Provider, blur: Dp) {
-    val saved = store.config(p.id)
-    var draft by remember(p.id, saved) { mutableStateOf(saved) }
-    var showKey by remember { mutableStateOf(false) }
-    val testMorph = remember(p.id) { Morph() }
-    val resetMorph = remember(p.id) { Morph() }
-    var result by remember(p.id) { mutableStateOf<Pair<Boolean, String>?>(null) }
-    val scope = rememberCoroutineScope()
-
-    // 打开余额开关、且已填密钥时，查一次余额
-    LaunchedEffect(p.id, saved.key, saved.balance) {
-        if (p.hasBalance && saved.balance && saved.configured) {
-            AssistantApi.balance(p, saved).onSuccess { store.balances[p.id] = it }
-        }
-    }
-
-    Column(Modifier.fillMaxWidth().glass(RoundedCornerShape(22.dp), blur, fill = glassFill).padding(18.dp)) {
-        @Composable
-        fun Label(t: String) = Txt(t, Page.ink, 14.sp, Modifier.padding(bottom = 10.dp), weight = FontWeight.Medium)
-
-        Label("名称")
-        Field(draft.name, { draft = draft.copy(name = it) }, p.name)
-        Spacer(Modifier.height(18.dp))
-        Label("API Key")
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.weight(1f)) { Field(draft.key, { draft = draft.copy(key = it.trim()) }, "sk-…", secret = !showKey, keyboard = KeyboardType.Password) }
-            Pressable({ showKey = !showKey }, label = if (showKey) "隐藏密钥" else "显示密钥") { _ ->
-                SvgIcon(if (showKey) MineIcons.eye else MineIcons.eyeOff, Page.ink, 22.dp, modifier = Modifier.padding(start = 14.dp, end = 4.dp))
-            }
-        }
-        Spacer(Modifier.height(18.dp))
-        Label("API Base Url")
-        Field(draft.base, { draft = draft.copy(base = it.trim()) }, p.base, keyboard = KeyboardType.Uri)
-        Spacer(Modifier.height(18.dp))
-        Label("API 路径")
-        Field(draft.path, { draft = draft.copy(path = it.trim()) }, p.path, keyboard = KeyboardType.Uri)
-        Spacer(Modifier.height(18.dp))
-        Divider()
-        Row(Modifier.fillMaxWidth().padding(vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-            Txt("是否启用", Page.ink, 15.sp, Modifier.weight(1f))
-            Switch(draft.enabled, "是否启用") { draft = draft.copy(enabled = it) }
-        }
-        if (p.hasBalance) {
-            Divider()
-            Row(Modifier.fillMaxWidth().padding(vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-                Txt("获取账户余额", Page.ink, 15.sp, Modifier.weight(1f))
-                Switch(draft.balance, "获取账户余额") { draft = draft.copy(balance = it) }
-            }
-            if (draft.balance) store.balances[p.id]?.let { Txt(it, Page.muted, 13.sp, Modifier.padding(bottom = 10.dp)) }
-        }
-        Spacer(Modifier.height(8.dp))
-        // 测试连接（第 379 版，原型 V8FnfRLAXjmBryEUQTd4cT 第 2 版）：按钮自己变形——插头换成转圈、走毫秒数 →
-        // 「已连接 · N 个模型」或「Key 不对 · 点我重试」；详细的那句照旧写在下面
-        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-            MorphPill(testMorph, "测试连接", MineIcons.plug, onClick = {
-                result = null
-                scope.launch {
-                    testMorph.run("正在连接", clock = true) {
-                        val r = AssistantApi.models(p, draft)
-                        r.onSuccess { result = true to "连接成功，可用 ${it.size} 个模型" }
-                            .onFailure {
-                                val k = draft.key.trim()
-                                result = false to (
-                                    if (p.id == "deepseek" && k.isNotEmpty() && !k.startsWith("sk-")) "密钥应以 sk- 开头，好像少了这几个字符"
-                                    else it.message ?: "连接失败"
-                                )
-                            }
-                        if (p.hasBalance && draft.balance && result?.first == true) {
-                            AssistantApi.balance(p, draft).onSuccess { store.balances[p.id] = it }
-                        }
-                        r.fold(
-                            { Morph.Ok("已连接", "${it.size} 个模型") },
-                            { e ->
-                                val k = draft.key.trim()
-                                Morph.Bad(
-                                    when {
-                                        k.isEmpty() -> "先填 Key"
-                                        p.id == "deepseek" && !k.startsWith("sk-") -> "Key 格式不对"
-                                        e.message.orEmpty().contains("401") || e.message.orEmpty().contains("auth", ignoreCase = true) -> "Key 不对"
-                                        else -> "连不上"
-                                    },
-                                )
-                            },
-                        )
-                    }
+private fun BalanceTag(bal: String?) {
+    var last by remember { mutableStateOf("") }
+    if (bal != null) last = bal
+    var alt by remember { mutableStateOf(false) }
+    androidx.compose.animation.AnimatedVisibility(
+        bal != null,
+        enter = androidx.compose.animation.fadeIn(tween(220, 200)) + androidx.compose.animation.slideInHorizontally(tween(380, 200, Curves.decel)) { it / 4 } +
+            androidx.compose.animation.scaleIn(spring(dampingRatio = .7f, stiffness = 380f), .9f, androidx.compose.ui.graphics.TransformOrigin(1f, .5f)),
+        exit = androidx.compose.animation.fadeOut(tween(140)),
+    ) {
+        val parts = last.split(" · ")
+        val main = parts.first().removePrefix("余额").trim()
+        val rest = parts.drop(1)
+        Pressable({ if (rest.isNotEmpty()) alt = !alt }, Modifier.padding(start = 8.dp), label = "账户余额 $last") { _ ->
+            androidx.compose.animation.AnimatedContent(
+                alt && rest.isNotEmpty(),
+                transitionSpec = {
+                    (androidx.compose.animation.fadeIn(tween(200)) + androidx.compose.animation.slideInVertically(tween(260, easing = Curves.standard)) { it / 3 }) togetherWith
+                        (androidx.compose.animation.fadeOut(tween(140)) + androidx.compose.animation.slideOutVertically(tween(200, easing = Curves.accel)) { -it / 3 })
+                },
+                contentAlignment = Alignment.CenterEnd, label = "bal",
+            ) { a ->
+                if (a) Column(Modifier.height(40.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.End) {
+                    rest.take(2).forEach { Txt(it, Skin.accent, 10.5.sp, maxLines = 1) }
+                } else Row(Modifier.height(40.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Txt("余额", Page.muted, 11.sp)
+                    Spacer(Modifier.width(5.dp))
+                    Txt(main, Skin.accent, 19.sp, family = Serif, maxLines = 1)
                 }
-            })
-        }
-        result?.let { (ok, msg) ->
-            Txt(msg, if (ok) Page.accent else rose, 13.sp, Modifier.padding(top = 12.dp, start = 4.dp))
-        }
-        Spacer(Modifier.height(16.dp))
-        Divider()
-        Row(Modifier.fillMaxWidth().padding(top = 14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.End) {
-            // ↻ 恢复默认地址（第 379 版）：不用等，图标原地长成「已恢复默认 · 保存后生效」，本来就是默认的写「已经是默认地址」
-            MorphPill(resetMorph, "恢复默认地址", MineIcons.reset, onClick = {
-                val next = ProviderConfig.default(p).copy(key = draft.key, models = draft.models)
-                val changed = next != draft
-                draft = next; result = null
-                scope.launch { if (changed) resetMorph.flash("已恢复默认", "保存后生效") else resetMorph.flash("已经是默认地址", info = true) }
-            }, quiet = true)
-            Spacer(Modifier.width(10.dp))
-            PillButton("保存", null, primary = true, enabled = draft != saved) { store.update(p.id, draft) }
+            }
         }
     }
 }
 
+/**
+ * 供应商配置（第 381 版，原型 Bvvrc1FEaNqjXgG43Zr65Q 第 5 版）：
+ * 顺序 Base Url → Key → 路径；去掉名称、「是否启用」「获取账户余额」两个开关，改动停手 0.6 秒自动存。
+ * Key 框里右边是眼睛，框外一块方形测试按钮：插头 → 转圈 → 成功变点缀色实心勾 / 失败淡红「!」并晃一下，1.6 秒后变回插头。
+ * 连上就自动启用这家、顺手查余额（标题右边），可用模型以一块块凹下去的长条直接长在 Key 下面；
+ * 「已连接，N 个模型」那行是折叠开关，选好一个模型列表自己折成只剩正在用的那条。
+ */
 @Composable
-private fun ModelsTab(store: AssistantStore, p: Provider, blur: Dp) {
-    val c = store.config(p.id)
+private fun ConfigTab(store: AssistantStore, p: Provider, blur: Dp) {
+    val saved = store.config(p.id)
+    var draft by remember(p.id) { mutableStateOf(saved) }
+    var showKey by remember { mutableStateOf(false) }
+    var state by remember(p.id) { mutableStateOf(0) } // 0 插头，1 转圈，2 成功，3 失败
+    var fail by remember(p.id) { mutableStateOf<String?>(null) }
+    var fresh by remember(p.id) { mutableStateOf(false) }
+    var open by remember(p.id) { mutableStateOf(false) }
+    val resetMorph = remember(p.id) { Morph() }
+    val shake = remember { androidx.compose.animation.core.Animatable(0f) }
+    val density = LocalDensity.current
     val scope = rememberCoroutineScope()
-    var status by remember(p.id) { mutableStateOf<Pair<Boolean, String>?>(null) }
-    // 每个模型的插头各自一颗会变形的按钮（第 379 版）
-    val plugs = remember(p.id) { mutableMapOf<String, Morph>() }
-    val fetchMorph = remember(p.id) { Morph() }
-    var adding by remember(p.id) { mutableStateOf(false) }
-    var newModel by remember(p.id) { mutableStateOf("") }
 
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        c.models.forEach { m ->
-            val inUse = store.activeProvider == p.id && store.activeModel == m
-            Pressable({ store.use(p.id, m) }, Modifier.fillMaxWidth(), label = "让 ${Memory.active.name} 用 $m") { pressed ->
-                Row(
-                    Modifier.fillMaxWidth()
-                        .glass(RoundedCornerShape(20.dp), blur, fill = if (pressed) veil(.08f) else glassFill, border = if (inUse) rose.copy(alpha = .7f) else Page.glassBorder)
-                        .padding(start = 18.dp, end = 6.dp, top = 14.dp, bottom = 14.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    SvgIcon(Icons.spark, Page.ink.copy(alpha = .8f), 20.dp, stroke = 1.2f)
-                    Spacer(Modifier.width(16.dp))
-                    Column(Modifier.weight(1f)) {
-                        Txt(m, Page.ink, 16.sp, weight = FontWeight.Medium, maxLines = 1)
-                        Spacer(Modifier.height(8.dp))
-                        // 插头长出来时，下面这排小字退开（名字留着）
-                        val dim = morphDim(plugs.getOrPut(m) { Morph() })
-                        Row(Modifier.graphicsLayer { alpha = dim }, horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                            if (inUse) Chip("${Memory.active.name} 在用", fill = rose.copy(alpha = .75f), ink = Page.ink)
-                            Chip("聊天")
-                            Chip("文本 → 文本")
-                        }
+    // 停手 0.6 秒自动存（没有保存按钮了）
+    LaunchedEffect(draft) {
+        if (draft != store.config(p.id)) { kotlinx.coroutines.delay(600); store.update(p.id, draft) }
+    }
+    // 已经配好的，进来查一次余额
+    LaunchedEffect(p.id) {
+        if (p.hasBalance && saved.configured) AssistantApi.balance(p, saved).onSuccess { store.balances[p.id] = it }
+    }
+
+    fun test() {
+        if (state == 1) return
+        state = 1; fail = null
+        scope.launch {
+            val k = draft.key.trim()
+            AssistantApi.models(p, draft).fold(
+                { list ->
+                    draft = draft.copy(enabled = true, balance = p.hasBalance, models = list.ifEmpty { draft.models })
+                    store.update(p.id, draft)
+                    fresh = true; open = true; state = 2
+                    if (p.hasBalance) AssistantApi.balance(p, draft).onSuccess { store.balances[p.id] = it }
+                    Unit
+                },
+                { e ->
+                    val msg = e.message.orEmpty()
+                    fail = when {
+                        k.isEmpty() -> "先填 Key"
+                        p.id == "deepseek" && !k.startsWith("sk-") -> "Key 应该以 sk- 开头"
+                        msg.contains("401") || msg.contains("auth", ignoreCase = true) -> "Key 不对，检查一下再点测试"
+                        else -> "连不上：${msg.ifBlank { "没有回应" }}"
                     }
-                    // 测这个模型（第 379 版）：插头原地变转圈，往左长成「测试中 · ms」→「能用 · ms」/「余额不足 · 点我重试」，盖在小字上，不挤名字
-                    val pm = plugs.getOrPut(m) { Morph() }
-                    MorphPill(pm, "测试 $m", MineIcons.plug, onClick = {
-                        status = null
-                        scope.launch {
-                            pm.run("测试中", clock = true) {
-                                val t0 = System.currentTimeMillis()
-                                AssistantApi.ping(p, store.config(p.id), m).fold(
-                                    { status = true to "$m 可以正常使用"; Morph.Ok("能用", "${System.currentTimeMillis() - t0} ms") },
-                                    { e ->
-                                        status = false to "$m：${e.message}"
-                                        val msg = e.message.orEmpty()
-                                        Morph.Bad(
-                                            when {
-                                                msg.contains("Balance", ignoreCase = true) || msg.contains("余额") -> "余额不足"
-                                                msg.contains("401") || msg.contains("auth", ignoreCase = true) -> "Key 不对"
-                                                msg.contains("404") || msg.contains("not exist", ignoreCase = true) || msg.contains("not found", ignoreCase = true) -> "没有这个模型"
-                                                else -> "不能用"
-                                            },
-                                        )
-                                    },
-                                )
+                    state = 3
+                    val d = density.density
+                    launch {
+                        shake.animateTo(0f, androidx.compose.animation.core.keyframes {
+                            durationMillis = 360
+                            -5f * d at 72
+                            4f * d at 144
+                            -3f * d at 216
+                            2f * d at 288
+                        })
+                    }
+                    Unit
+                },
+            )
+            kotlinx.coroutines.delay(1600)
+            state = 0
+        }
+    }
+
+    Column(Modifier.fillMaxWidth().block(RoundedCornerShape(22.dp), blur).padding(18.dp)) {
+        @Composable
+        fun Label(t: String) = Txt(t, Page.muted, 13.5.sp, Modifier.padding(bottom = 8.dp))
+
+        Label("API Base Url")
+        Field(draft.base, { draft = draft.copy(base = it.trim()) }, p.base, keyboard = KeyboardType.Uri)
+        Spacer(Modifier.height(16.dp))
+        Label("API Key")
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.weight(1f)) {
+                Field(draft.key, { draft = draft.copy(key = it.trim()) }, "sk-…", secret = !showKey, keyboard = KeyboardType.Password, trailing = {
+                    Pressable({ showKey = !showKey }, label = if (showKey) "隐藏密钥" else "显示密钥") { pr ->
+                        SvgIcon(if (showKey) MineIcons.eye else MineIcons.eyeOff, if (pr) Page.ink else Page.muted, 20.dp, modifier = Modifier.padding(10.dp))
+                    }
+                })
+            }
+            Spacer(Modifier.width(8.dp))
+            TestButton(state, Modifier.graphicsLayer { translationX = shake.value }) { test() }
+        }
+        // 失败的原因；成功时这里是模型列表
+        androidx.compose.animation.AnimatedVisibility(
+            fail != null && state != 2,
+            enter = androidx.compose.animation.expandVertically(tween(240, easing = Curves.standard)) + androidx.compose.animation.fadeIn(tween(200)),
+            exit = androidx.compose.animation.shrinkVertically(tween(200, easing = Curves.accel)) + androidx.compose.animation.fadeOut(tween(140)),
+        ) {
+            var last by remember { mutableStateOf("") }
+            fail?.let { last = it }
+            Txt(last, Skin.danger, 12.5.sp, Modifier.padding(top = 10.dp, start = 2.dp))
+        }
+        val models = draft.models
+        val showList = (fresh || (saved.enabled && saved.configured)) && models.isNotEmpty() && fail == null
+        androidx.compose.animation.AnimatedVisibility(
+            showList,
+            enter = androidx.compose.animation.expandVertically(tween(380, easing = Curves.standard)) + androidx.compose.animation.fadeIn(tween(240, 120)),
+            exit = androidx.compose.animation.shrinkVertically(tween(260, easing = Curves.accel)) + androidx.compose.animation.fadeOut(tween(160)),
+        ) {
+            ModelFold(store, p, models, fresh, open, onOpen = { open = it })
+        }
+        Spacer(Modifier.height(16.dp))
+        Label("API 路径")
+        Field(draft.path, { draft = draft.copy(path = it.trim()) }, p.path, keyboard = KeyboardType.Uri)
+        Row(Modifier.fillMaxWidth().padding(top = 10.dp), horizontalArrangement = Arrangement.End) {
+            // ↻ 恢复默认地址：图标原地长成「已恢复默认」，本来就是默认的写「已经是默认地址」
+            MorphPill(resetMorph, "恢复默认地址", MineIcons.reset, onClick = {
+                val next = draft.copy(base = p.base, path = p.path)
+                val changed = next != draft
+                draft = next
+                scope.launch { if (changed) resetMorph.flash("已恢复默认") else resetMorph.flash("已经是默认地址", info = true) }
+            }, quiet = true)
+        }
+    }
+}
+
+/** Key 框外的测试按钮：48dp 方块，插头 / 转圈 / 勾 / ! 原地换（缩放 + 淡入淡出，弹簧阻尼 .5）。 */
+@Composable
+private fun TestButton(state: Int, modifier: Modifier, onClick: () -> Unit) {
+    val bg by androidx.compose.animation.animateColorAsState(
+        when (state) { 2 -> Skin.accent.copy(alpha = .9f); 3 -> Skin.danger.copy(alpha = .2f); else -> Skin.accent.copy(alpha = .16f) }, tween(260), label = "testBg",
+    )
+    val ink by androidx.compose.animation.animateColorAsState(
+        when (state) { 2 -> Skin.onAccent; 3 -> Skin.danger; else -> Skin.accent }, tween(260), label = "testInk",
+    )
+    val spin = androidx.compose.animation.core.rememberInfiniteTransition(label = "spin")
+    val turn by spin.animateFloat(0f, 360f, androidx.compose.animation.core.infiniteRepeatable(tween(800, easing = androidx.compose.animation.core.LinearEasing)), label = "turn")
+    Pressable(onClick, modifier, label = when (state) { 1 -> "正在连接"; else -> "测试连接" }) { pr ->
+        val k by androidx.compose.animation.core.animateFloatAsState(if (pr) .92f else 1f, if (pr) tween(70) else spring(dampingRatio = .5f, stiffness = 600f), label = "testPress")
+        Box(Modifier.size(48.dp).graphicsLayer { scaleX = k; scaleY = k }.background(bg, RoundedCornerShape(14.dp)), contentAlignment = Alignment.Center) {
+            @Composable
+            fun Slot(on: Boolean, content: @Composable (Modifier) -> Unit) {
+                val v by androidx.compose.animation.core.animateFloatAsState(if (on) 1f else 0f, spring(dampingRatio = .5f, stiffness = 500f), label = "slot")
+                content(Modifier.graphicsLayer { alpha = v.coerceIn(0f, 1f); val s = .5f + .5f * v; scaleX = s; scaleY = s })
+            }
+            Slot(state == 0) { m -> SvgIcon(MineIcons.plug, ink, 20.dp, stroke = 1.7f, modifier = m) }
+            Slot(state == 1) { m ->
+                androidx.compose.foundation.Canvas(m.size(22.dp).graphicsLayer { rotationZ = turn }) {
+                    drawArc(ink, -90f, 270f, false, style = androidx.compose.ui.graphics.drawscope.Stroke(2.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round))
+                }
+            }
+            Slot(state == 2) { m -> SvgIcon(Ic("M5 12.5l4.5 4.5L19 7.5"), ink, 20.dp, stroke = 2.2f, modifier = m) }
+            Slot(state == 3) { m -> SvgIcon(Ic("M12 6v8M12 18h.01"), ink, 20.dp, stroke = 2.2f, modifier = m) }
+        }
+    }
+}
+
+/** 可用模型（方案 B 列表）：凹下去的长条拼在一起，左边名字、右边圆勾；折起来只剩正在用的那条。 */
+@Composable
+private fun ModelFold(store: AssistantStore, p: Provider, models: List<String>, fresh: Boolean, open: Boolean, onOpen: (Boolean) -> Unit) {
+    val scope = rememberCoroutineScope()
+    val using = if (store.activeProvider == p.id) store.activeModel.takeIf { it in models } else null
+    Column(Modifier.padding(top = 10.dp)) {
+        Pressable({ onOpen(!open) }, label = if (open) "收起模型" else "展开模型") { pr ->
+            val r by androidx.compose.animation.core.animateFloatAsState(if (open) 0f else -90f, spring(dampingRatio = .6f, stiffness = 420f), label = "chev")
+            Row(Modifier.background(if (pr) veil(.06f) else Color.Transparent, RoundedCornerShape(10.dp)).padding(horizontal = 2.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Txt("${if (fresh) "已连接" else "已配置"}，${models.size} 个模型", Skin.accent, 12.5.sp, maxLines = 1)
+                if (!open) Txt(if (using != null) " · 正在用 $using" else " · 点开选一个", Page.muted, 12.5.sp, Modifier.weight(1f, fill = false), maxLines = 1)
+                Spacer(Modifier.width(4.dp))
+                SvgIcon(Ic("M6 9.5l6 6 6-6"), Skin.accent, 14.dp, stroke = 2f, modifier = Modifier.graphicsLayer { rotationZ = r })
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        val shown = models.filter { open || it == using }
+        Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            models.forEach { m ->
+                androidx.compose.runtime.key(m) {
+                    val inUse = m == using
+                    androidx.compose.animation.AnimatedVisibility(
+                        open || inUse,
+                        enter = androidx.compose.animation.expandVertically(tween(320, easing = Curves.standard)) + androidx.compose.animation.fadeIn(tween(220, 80)),
+                        exit = androidx.compose.animation.shrinkVertically(tween(320, easing = Curves.standard)) + androidx.compose.animation.fadeOut(tween(180)),
+                    ) {
+                        val i = shown.indexOf(m)
+                        val big = 14.dp; val small = 6.dp
+                        val shape = when {
+                            shown.size <= 1 -> RoundedCornerShape(big)
+                            i == 0 -> RoundedCornerShape(big, big, small, small)
+                            i == shown.lastIndex -> RoundedCornerShape(small, small, big, big)
+                            else -> RoundedCornerShape(small)
+                        }
+                        val s by androidx.compose.animation.core.animateFloatAsState(if (inUse) 1f else 0f, spring(dampingRatio = .6f, stiffness = 500f), label = "pick")
+                        Pressable({
+                            if (!open) onOpen(true)
+                            else { store.use(p.id, m); scope.launch { kotlinx.coroutines.delay(260); onOpen(false) } }
+                        }, Modifier.fillMaxWidth(), label = "让 ${Memory.active.name} 用 $m") { pr ->
+                            val f by androidx.compose.animation.animateColorAsState(
+                                when { pr -> Skin.well(.34f); inUse -> Skin.accent.copy(alpha = .14f); else -> wellFill }, tween(if (pr) 80 else 220), label = "mrow",
+                            )
+                            Row(Modifier.fillMaxWidth().height(50.dp).background(f, shape).padding(start = 14.dp, end = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Txt(m, Page.ink, 14.sp, Modifier.weight(1f), family = androidx.compose.ui.text.font.FontFamily.Monospace, maxLines = 1)
+                                CheckDot(s, size = 22.dp)
                             }
                         }
-                    }, quiet = true, float = true)
-                    Pressable({
-                        store.update(p.id, c.copy(models = c.models - m))
-                        if (inUse) store.use(p.id, (c.models - m).firstOrNull() ?: "")
-                    }, label = "删除 $m") { _ ->
-                        SvgIcon(Icons.close, Page.ink, 20.dp, modifier = Modifier.padding(10.dp))
                     }
                 }
             }
         }
-        if (c.models.isEmpty()) Txt("还没有模型。点“获取模型”从供应商拉取，或手动添加。", Page.muted, 13.sp, Modifier.padding(4.dp), lineHeight = 22.sp)
-        status?.let { (ok, msg) -> Txt(msg, if (ok) Page.accent else rose, 13.sp, Modifier.padding(start = 4.dp)) }
-        Txt("点一个模型，${Memory.active.name} 就用它聊天。", Page.muted, 13.sp, Modifier.fillMaxWidth().padding(top = 6.dp), align = androidx.compose.ui.text.style.TextAlign.Center)
-        if (adding) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.weight(1f)) { Field(newModel, { newModel = it.trim() }, "模型名，例如 deepseek-flash") }
-                Spacer(Modifier.width(10.dp))
-                PillButton("添加", null, primary = true, enabled = newModel.isNotBlank()) {
-                    if (newModel !in c.models) store.update(p.id, c.copy(models = c.models + newModel))
-                    newModel = ""; adding = false
-                }
-            }
-        }
-        Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally)) {
-            // 获取模型（第 379 版）：按钮自己变形——「正在获取」→「新增 N 个」/「已经是最新的」/「获取失败 · 点我重试」，旁边的按钮顺着让开
-            MorphPill(fetchMorph, "获取模型", MineIcons.box, onClick = {
-                status = null
-                scope.launch {
-                    fetchMorph.run("正在获取") {
-                        AssistantApi.models(p, store.config(p.id)).fold(
-                            { list ->
-                                val now = store.config(p.id)
-                                val added = list.filter { it !in now.models }
-                                store.update(p.id, now.copy(models = now.models + added))
-                                status = true to if (added.isEmpty()) "没有新模型" else "新增 ${added.size} 个模型"
-                                if (added.isEmpty()) Morph.Ok("已经是最新的", info = true) else Morph.Ok("新增 ${added.size} 个")
-                            },
-                            { status = false to (it.message ?: "获取失败"); Morph.Bad("获取失败") },
-                        )
-                    }
-                }
-            })
-            PillButton("添加新模型", MineIcons.plus, primary = true) { adding = !adding }
-        }
+        if (open) Txt("点一个模型，${Memory.active.name} 就用它聊天", Page.muted, 12.sp, Modifier.fillMaxWidth().padding(top = 10.dp), align = androidx.compose.ui.text.style.TextAlign.Center)
     }
 }
 
