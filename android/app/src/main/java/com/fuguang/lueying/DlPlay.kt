@@ -35,6 +35,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -325,8 +326,9 @@ private fun PlayerSurface(d: Dl, pl: ExoPlayer, mini: Boolean) {
     val ctl = remember(pl) { DlPlay.Ctl(pl) }
     val scope = rememberCoroutineScope()
     val haptic = LocalHapticFeedback.current
-    LaunchedEffect(pl) { while (true) { p.sync(DlPlay.state(pl)); delay(250) } }
     val owner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    // 只在前台同步进度
+    LaunchedEffect(pl, owner) { owner.lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) { while (true) { p.sync(DlPlay.state(pl)); delay(250) } } }
     DisposableEffect(owner, pl) {
         val o = androidx.lifecycle.LifecycleEventObserver { _, e -> if (e == androidx.lifecycle.Lifecycle.Event.ON_STOP) pl.pause() }
         owner.lifecycle.addObserver(o); onDispose { owner.lifecycle.removeObserver(o) }

@@ -445,7 +445,8 @@ object ChatApi {
         // 你发来的照片、文件：最近两条带东西的原样带上，更早的只说一句
         val withFiles = history.indices.filter { history[it].role == "user" && history[it].files.isNotEmpty() }.takeLast(2).toSet()
         val sees = Attach.vision(p.id, model)
-        history.forEachIndexed { i, it ->
+        // 读照片、PDF 转 base64、渲染 PDF 页：放到后台线程（以前在主线程，发带图的消息时界面会顿一下）
+        withContext(Dispatchers.IO) { history.forEachIndexed { i, it ->
             if (it.role == "assistant" && it.text.isBlank()) return@forEachIndexed
             val body: Any = when {
                 it.role == "assistant" -> ToolText.clean(it.text)
@@ -455,7 +456,7 @@ object ChatApi {
             val m = JSONObject().put("role", it.role).put("content", body)
             if (echo && it.role == "assistant") m.put("reasoning_content", it.think)
             msgs.put(m)
-        }
+        } }
         var round = 0
         var worked = false
         var nudged = false

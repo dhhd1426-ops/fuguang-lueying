@@ -35,6 +35,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
@@ -74,7 +75,9 @@ internal fun FullPlayer(view: View, web: WebView?, title: String, from: Rect?, e
 
     // 每 250ms 问一次网页里的视频
     val ctl = remember(web) { VideoCtl.Web(web) }
-    LaunchedEffect(web) { while (true) { web?.evaluateJavascript(VideoCtl.STATE) { r -> VideoCtl.parse(r)?.let { p.sync(it) } }; delay(250) } }
+    // 只在前台问：切到后台不再每秒跑四次脚本
+    val life = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
+    LaunchedEffect(web, life) { life.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) { while (true) { web?.evaluateJavascript(VideoCtl.STATE) { r -> VideoCtl.parse(r)?.let { p.sync(it) } }; delay(250) } } }
     // 长出来；横视频再横过来
     LaunchedEffect(Unit) {
         k.animateTo(1f, tween(320, easing = Curves.decel))

@@ -7,6 +7,10 @@ import android.content.SharedPreferences
 class Prefs(context: Context) {
     private val sp: SharedPreferences =
         context.getSharedPreferences("fuguang", Context.MODE_PRIVATE)
+    private val filesDir: java.io.File = context.applicationContext.filesDir
+
+    /** 放在 files/ 下的大块数据（对话记录）：不塞进设置文件，免得每改一个设置都把它重写一遍。 */
+    fun file(name: String) = java.io.File(filesDir, name)
 
     var theme: String
         get() = sp.getString("fuguang-theme", "dark") ?: "dark"

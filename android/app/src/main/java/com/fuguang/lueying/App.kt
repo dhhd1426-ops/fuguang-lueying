@@ -58,6 +58,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import kotlinx.coroutines.launch
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalContext
@@ -71,6 +72,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -101,7 +103,7 @@ fun FuguangApp(prefs: Prefs, fullscreen: Boolean, setFullscreen: (Boolean) -> Un
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     DisposableEffect(lifecycle) {
         val obs = LifecycleEventObserver { _, e ->
-            if (e == Lifecycle.Event.ON_STOP) foreground = false
+            if (e == Lifecycle.Event.ON_STOP) { foreground = false; ConvStore.Saver.flush() }
             if (e == Lifecycle.Event.ON_START) foreground = true
         }
         lifecycle.addObserver(obs)
@@ -119,14 +121,21 @@ fun FuguangApp(prefs: Prefs, fullscreen: Boolean, setFullscreen: (Boolean) -> Un
     // 自动沉浸：停手 7 秒进；最后 2 秒界面先淡一点。有东西开着、她在回答时一直从头算。
     var soon by remember { mutableStateOf(false) }
     val held = Zen.held || chatState.busy || Chats.running.isNotEmpty() || MineCard.open || NoteCard.open || !foreground || InBrowser.url != null || Downloads.open || ClipLink.showing || PanLink.showing || ClipPlay.playing() != null
-    LaunchedEffect(held, Zen.touchedAt, zen) {
+    // touchedAt 不当 key 读：以前它当 key，开着东西时每次重启都 touch → 又改 key，整个 App 每帧重建；平时手指每动一下也重建一次。
+    // 现在只在 effect 里面跟着它重新计时，不碰界面。
+    LaunchedEffect(held, zen) {
         soon = false
-        if (held || zen) { if (held) Zen.touch(); return@LaunchedEffect }
-        val left = Zen.IDLE_MS - (System.currentTimeMillis() - Zen.touchedAt)
-        delay((left - Zen.WARN_MS).coerceAtLeast(0))
-        soon = true
-        delay(Zen.WARN_MS.coerceAtMost(left.coerceAtLeast(0)))
-        soon = false; zen = true
+        if (zen) return@LaunchedEffect
+        Zen.touch() // 开着东西时一直从头算：从放手那一刻起计
+        if (held) return@LaunchedEffect
+        snapshotFlow { Zen.touchedAt }.collectLatest { at ->
+            soon = false
+            val left = Zen.IDLE_MS - (System.currentTimeMillis() - at)
+            delay((left - Zen.WARN_MS).coerceAtLeast(0))
+            soon = true
+            delay(Zen.WARN_MS.coerceAtMost(left.coerceAtLeast(0)))
+            soon = false; zen = true
+        }
     }
     // 沉浸时连状态栏、底部横条一起收起
     LaunchedEffect(zen) { setFullscreen(zen) }

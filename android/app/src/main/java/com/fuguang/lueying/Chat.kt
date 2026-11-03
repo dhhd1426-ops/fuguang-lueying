@@ -36,6 +36,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -82,9 +83,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlin.math.ceil
 import kotlin.math.max
 import kotlin.math.min
@@ -308,7 +311,7 @@ class ChatState(val history: ConvStore) {
                     if (mcp.isNotEmpty()) append("\n").append(Mcp.system())
                 }
                 // 跨聊天回忆：拿他这句话对一下以前的聊天，对上的把小结放到她眼前，时间线上记一步「想起之前聊过的」（第 363 版）
-                val hits = if (recall) runCatching { Recall.match(store0, cur, question) }.getOrDefault(emptyList()) else emptyList()
+                val hits = if (recall) runCatching { withContext(Dispatchers.Default) { Recall.match(store0, cur, question) } }.getOrDefault(emptyList()) else emptyList() // 翻所有旧聊天：放后台算
                 if (hits.isNotEmpty()) liveSteps.add(0, Recall.step(hits))
                 var searchedOnce = false
                 ChatApi.stream(
@@ -561,11 +564,14 @@ fun ChatPage(
     var editFly by remember { mutableStateOf<Pair<String, androidx.compose.ui.geometry.Rect>?>(null) }
     var flyHost by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
     androidx.activity.compose.BackHandler(enabled = menu) { menu = false }
-    val menuT by androidx.compose.animation.core.animateFloatAsState(
+    // 侧栏滑出 320ms：值只在 graphicsLayer 里读，整页只在「开始露出 / 完全收起」时重组
+    val menuA = androidx.compose.animation.core.animateFloatAsState(
         if (menu) 1f else 0f, tween(320, easing = androidx.compose.animation.core.CubicBezierEasing(.2f, .8f, .2f, 1f)), label = "menu",
     )
+    val menuOn by remember { derivedStateOf { menuA.value > 0f } }
     val density = LocalDensity.current
-    val imeOpen = WindowInsets.ime.getBottom(density) > 0
+    val ime = WindowInsets.ime
+    val imeOpen by remember(density) { derivedStateOf { ime.getBottom(density) > 0 } }
     // 内置浏览器里「让她看看这页」：写进输入框
     androidx.compose.runtime.DisposableEffect(chat) {
         InBrowser.ask = { t -> if (chat.busy) chat.draft = t else { chat.draft = t }; chat.focusTick++ }
@@ -574,8 +580,10 @@ fun ChatPage(
         TgPill.ask = ClipLink.ask
         onDispose { InBrowser.ask = null; ClipLink.ask = null; TgPill.ask = null }
     }
-    androidx.compose.runtime.SideEffect {
-        Zen.held = menu || shelf || boards || workOpen != null || thinkOpen || picker || press != null || viewing != null || selectText != null || chat.draft.isNotBlank() || imeOpen || plus.open || chat.atts.isNotEmpty()
+    // 以前在 SideEffect 里读 chat.draft：每打一个字整页重组。现在在后台跟着这些值，变了才写
+    LaunchedEffect(chat) {
+        snapshotFlow { menu || shelf || boards || workOpen != null || thinkOpen || picker || press != null || viewing != null || selectText != null || chat.draft.isNotBlank() || imeOpen || plus.open || chat.atts.isNotEmpty() }
+            .collect { Zen.held = it }
     }
     val menuW = min(width.value * .86f, 340f).dp
     val menuPx = with(density) { menuW.toPx() }
@@ -608,18 +616,18 @@ fun ChatPage(
             }
         }
         SendFlightLayer(flight)
-        if (menuT > 0f) {
+        if (menuOn) {
             Box(
-                Modifier.fillMaxSize().alpha(menuT).background(Skin.scrim(.68f))
+                Modifier.fillMaxSize().graphicsLayer { alpha = menuA.value }.background(Skin.scrim(.68f))
                     .pointerInput(Unit) { detectTapGestures { menu = false } },
             )
         }
       }
-        if (menuT > 0f) {
+        if (menuOn) {
             // 菜单本体：对话记录
             Box(
                 Modifier.fillMaxHeight().width(menuW)
-                    .graphicsLayer { translationX = (menuT - 1f) * menuPx }
+                    .graphicsLayer { translationX = (menuA.value - 1f) * menuPx }
                     .then(if (Skin.glass) Modifier.frost(RectangleShape, Skin.panel) else Modifier.background(Skin.panel))
                     .pointerInput(Unit) { detectTapGestures { } }
                     .windowInsetsPadding(WindowInsets.safeDrawing),
@@ -645,15 +653,8 @@ fun ChatPage(
                 if (i in chat.messages.indices && (chat.messages[i].think.isNotBlank() || chat.messages[i].steps.isNotEmpty())) thinkOf = i else thinkOpen = false
             }
         }
-        val liveThink = thinkOf < 0 || thinkOf >= chat.messages.size
-        ThinkDrawer(
-            open = thinkOpen,
-            raw = if (liveThink) chat.thinkText else chat.messages[thinkOf].think,
-            steps = if (liveThink) chat.liveSteps.toList() else chat.messages[thinkOf].steps,
-            live = liveThink && chat.busy && (chat.partial.isEmpty() || chat.liveSteps.any { !it.done }),
-            summary = ThinkTidy.summaryStyle(if (liveThink) chat.turnPid.ifEmpty { store.activeProvider } else chat.messages[thinkOf].pid.ifEmpty { store.activeProvider }),
-            onClose = { thinkOpen = false },
-        )
+        // 思考原文、正文每来一个字都在变：放进自己的小范围里读，不让整个聊天页跟着重组
+        LiveThinkDrawer(chat, store, thinkOpen, thinkOf) { thinkOpen = false }
         WorksShelf(shelf, onClose = { shelf = false }) { shelf = false; workOpen = it }
         BoardShelf(boards, onClose = { boards = false }, onOpen = { workOpen = it }) {
             // 「让她搭一块」：新开一个对话，输入框里写好开头
@@ -738,6 +739,39 @@ private fun ChatHeader(compact: Boolean, empty: Boolean, busy: Boolean, conv: Co
 
 /* ---------------- 对话区 ---------------- */
 
+/** 正在写的这一轮：思考那一行、正文、图片、视频卡。 */
+@Composable
+private fun LiveTurn(chat: ChatState, store: AssistantStore, compact: Boolean, onThink: (Int) -> Unit, onImage: (String) -> Unit, onWork: (String) -> Unit) {
+    // 思考、用工具、开始回答都在同一行：进行中三点 + 最新一句，结束换时钟
+    // 列表拷贝只在内容真变了时换一份：每帧都换新的，下面的思考行、图片行、视频卡就没法跳过
+    val steps by remember(chat) { derivedStateOf { chat.liveSteps.toList() } }
+    val works by remember(chat) { derivedStateOf { chat.pendingWorks.toList() } }
+    val workAt by remember(chat) { derivedStateOf { chat.pendingWorkAt.toList() } }
+    val imgs by remember(chat) { derivedStateOf { chat.pendingImgs.toList() } }
+    val clips by remember(chat) { derivedStateOf { chat.pendingClips.toList() } }
+    val trailLive = chat.partial.isEmpty() || steps.any { !it.done }
+    if (chat.thinkText.isBlank() && steps.isEmpty()) {
+        if (chat.partial.isEmpty()) ThinkingMotion("", Modifier.padding(start = 2.dp, top = 6.dp))   // 没开深度思考也没用工具：只有三点
+    } else ThinkRow(chat.thinkText, steps, trailLive, summary = ThinkTidy.summaryStyle(chat.turnPid.ifEmpty { store.activeProvider }), fetch = true) { onThink(-1) }
+    SkillAskHost(compact)
+    ReplyFlow(chat.partial.take(ceil(chat.shown).toInt()), works, workAt, chat.workDraft, chat.shown < chat.partial.length + 1, onWork) { t, f -> Reply(t, compact, f) }
+    NoteImageRow(imgs, onImage)
+    ClipCards(clips)
+}
+
+@Composable
+private fun LiveThinkDrawer(chat: ChatState, store: AssistantStore, open: Boolean, thinkOf: Int, onClose: () -> Unit) {
+    val liveThink = thinkOf < 0 || thinkOf >= chat.messages.size
+    ThinkDrawer(
+        open = open,
+        raw = if (liveThink) chat.thinkText else chat.messages[thinkOf].think,
+        steps = if (liveThink) chat.liveSteps.toList() else chat.messages[thinkOf].steps,
+        live = liveThink && chat.busy && (chat.partial.isEmpty() || chat.liveSteps.any { !it.done }),
+        summary = ThinkTidy.summaryStyle(if (liveThink) chat.turnPid.ifEmpty { store.activeProvider } else chat.messages[thinkOf].pid.ifEmpty { store.activeProvider }),
+        onClose = onClose,
+    )
+}
+
 @Composable
 private fun Conversation(
     chat: ChatState, store: AssistantStore, compact: Boolean, flight: SendFlight, onSetup: () -> Unit, onRetry: () -> Unit,
@@ -815,18 +849,8 @@ private fun Conversation(
                     }
                     }
                 }
-                if (chat.busy) {
-                    // 思考、用工具、开始回答都在同一行：进行中三点 + 最新一句，结束换时钟
-                    val steps = chat.liveSteps.toList()
-                    val trailLive = chat.partial.isEmpty() || steps.any { !it.done }
-                    if (chat.thinkText.isBlank() && steps.isEmpty()) {
-                        if (chat.partial.isEmpty()) ThinkingMotion("", Modifier.padding(start = 2.dp, top = 6.dp))   // 没开深度思考也没用工具：只有三点
-                    } else ThinkRow(chat.thinkText, steps, trailLive, summary = ThinkTidy.summaryStyle(chat.turnPid.ifEmpty { store.activeProvider }), fetch = true) { onThink(-1) }
-                    SkillAskHost(compact)
-                    ReplyFlow(chat.partial.take(ceil(chat.shown).toInt()), chat.pendingWorks.toList(), chat.pendingWorkAt.toList(), chat.workDraft, chat.shown < chat.partial.length + 1, onWork) { t, f -> Reply(t, compact, f) }
-                    NoteImageRow(chat.pendingImgs.toList(), onImage)
-                    ClipCards(chat.pendingClips.toList())
-                }
+                // 正在写的这一轮单独成一块：每帧推进的字、思考原文只让这一块重组，前面的对话不跟着动
+                if (chat.busy) LiveTurn(chat, store, compact, onThink, onImage, onWork)
                 if (chat.queue.isNotEmpty()) QueuedBubbles(chat, compact) { chat.sendNow(scope, store) }
                 chat.error?.let { err ->
                     Column(Modifier.padding(top = 6.dp, start = 2.dp)) {
@@ -842,7 +866,8 @@ private fun Conversation(
             }
         }
         // 内容（不算末尾空白）还在屏幕下面时，显示「↓ 回到最新」
-        val below = endY - (scroll.value + viewport) > with(density) { 60.dp.toPx() }
+        // 以前直接读 scroll.value：滚一个像素整段对话重组一次。现在只在跨过门槛那一下变
+        val below by remember(density) { derivedStateOf { endY - (scroll.value + viewport) > with(density) { 60.dp.toPx() } } }
         if (below) {
             Pressable(
                 { scope.launch { scroll.animateScrollTo((endY - viewport + with(density) { 40.dp.toPx() }).toInt().coerceAtLeast(0)) } },
@@ -896,13 +921,14 @@ private val replyStyle get() = TextStyle(fontFamily = Sans, color = Page.ink.cop
 
 @Composable
 private fun Reply(raw: String, compact: Boolean, fadeTail: Boolean) {
+    // 两个正则编好一次反复用（以前写着时每帧都新编一遍）
     var text = raw
     if (fadeTail) {
         // 写到一半的 **粗体** 或 `代码`，先不露出符号
-        if (Regex("\\*\\*").findAll(text).count() % 2 == 1) text = text.substring(0, text.lastIndexOf("**")) + text.substring(text.lastIndexOf("**") + 2)
+        if (BoldMark.findAll(text).count() % 2 == 1) text = text.substring(0, text.lastIndexOf("**")) + text.substring(text.lastIndexOf("**") + 2)
         if (text.replace("```", "").count { it == '`' } % 2 == 1) text = text.substring(0, text.lastIndexOf('`')) + text.substring(text.lastIndexOf('`') + 1)
     }
-    val blocks = text.split(Regex("\\n{2,}")).filter { it.isNotBlank() }
+    val blocks = text.split(ParaBreak).filter { it.isNotBlank() }
     Column(Modifier.fillMaxWidth().padding(start = 2.dp, bottom = 4.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         blocks.forEachIndexed { bi, block ->
             val last = bi == blocks.lastIndex
@@ -914,11 +940,17 @@ private fun Reply(raw: String, compact: Boolean, fadeTail: Boolean) {
                     style = replyStyle.copy(fontFamily = FontFamily.Monospace, fontSize = 13.sp, lineHeight = 21.sp),
                 )
             } else {
-                BasicText(inline(block, if (fadeTail && last) 8 else 0), style = replyStyle)
+                // 写着的时候每帧都会进来：只有还在长的最后一段重新排，前面写好的段落沿用（颜色跟主题走，换主题也会重排）
+                val fade = if (fadeTail && last) 8 else 0
+                val styled = remember(block, fade, Page.ink, Skin.accent) { inline(block, fade) }
+                BasicText(styled, style = replyStyle)
             }
         }
     }
 }
+
+private val BoldMark = Regex("\\*\\*")
+private val ParaBreak = Regex("\\n{2,}")
 
 /** 一段文字转成带样式的文字；fade > 0 时最后几个字由淡到实。 */
 private fun inline(block: String, fade: Int): AnnotatedString {

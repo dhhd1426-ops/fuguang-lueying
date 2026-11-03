@@ -34,6 +34,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -271,7 +272,8 @@ fun ThinkingDots(color: Color = Page.muted, size: androidx.compose.ui.unit.TextU
 fun ThinkRow(raw: String, steps: List<ToolStep>, live: Boolean, summary: Boolean, thinkMs: Long = 0L, fetch: Boolean = false, onClick: () -> Unit) {
     if (raw.isBlank() && steps.isEmpty()) return
     if (summary && fetch) LaunchedEffect(raw, steps.size, live) { requestTidy(raw, steps, live, AttachLook.store) }
-    val items = if (summary) summaryItems(raw, steps, live) else emptyList()
+    // 原文变了才重新切段（以前每次重组都切一遍）；整理结果到了 derivedStateOf 自己会更新
+    val items by remember(raw, steps, live, summary) { derivedStateOf { if (summary) summaryItems(raw, steps, live) else emptyList() } }
     // 旧消息还没整理过（这一行不负责整理）：先用原文最后一段的第一句，点开抽屉时才整理
     val stale = summary && !live && !fetch && items.any { it.placeholder }
     val pending = summary && !stale && items.any { it.placeholder }
@@ -326,12 +328,12 @@ fun ThinkDrawer(open: Boolean, raw: String, steps: List<ToolStep>, live: Boolean
             else -> go(half, 300)
         }
         LaunchedEffect(open) {
-            if (open) { visible = true; off = sheetPx; go(half, 320) }
+            if (open) { off = sheetPx; visible = true; go(half, 320) }
             else if (visible) go(sheetPx, 220) { visible = false }
         }
-        if (!visible || off.isNaN()) return@BoxWithConstraints
-        val scrim = ((sheetPx - off) / (sheetPx - half)).coerceIn(0f, 1f)
-        Box(Modifier.fillMaxSize().graphicsLayer { alpha = scrim }.background(Skin.scrim(.5f)).pointerInput(Unit) { detectTapGestures { onClose() } })
+        // off 每帧都在变：只在 graphicsLayer 里读，拖动时不重建整个抽屉（以前每拖一帧都把思考全文重新切段、重排一遍，按住拖会卡住）
+        if (!visible) return@BoxWithConstraints
+        Box(Modifier.fillMaxSize().graphicsLayer { alpha = ((sheetPx - off) / (sheetPx - half)).coerceIn(0f, 1f) }.background(Skin.scrim(.5f)).pointerInput(Unit) { detectTapGestures { onClose() } })
         val nested = remember(half) {
             object : NestedScrollConnection {
                 override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
@@ -352,7 +354,10 @@ fun ThinkDrawer(open: Boolean, raw: String, steps: List<ToolStep>, live: Boolean
         }
         // 摘要型：打开着就把想完的段请帮手整理（旧消息第一次打开时才整理）
         if (summary) LaunchedEffect(open, raw, steps.size, live) { if (open) requestTidy(raw, steps, live, AttachLook.store) }
-        val items = if (summary) summaryItems(raw, steps, live) else proseItems(raw, steps, live)
+        // 内容变了才重新切段；derivedStateOf 跟着整理结果（ThinkTidy 的 state map）自己更新
+        val items by remember(raw, steps, live, summary) {
+            derivedStateOf { if (summary) summaryItems(raw, steps, live) else proseItems(raw, steps, live) }
+        }
         Column(
             Modifier.align(Alignment.BottomCenter).widthIn(max = 640.dp).fillMaxWidth().height(maxHeight * .92f)
                 .graphicsLayer { translationY = off }

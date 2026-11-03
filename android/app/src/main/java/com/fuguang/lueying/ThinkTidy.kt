@@ -36,15 +36,28 @@ object ThinkTidy {
     private val busy = mutableSetOf<String>()
     var dir: File? = null
 
-    private fun key(unit: String) = MessageDigest.getInstance("SHA-1").digest(unit.trim().toByteArray())
-        .joinToString("") { "%02x".format(it) }.take(20)
+    /** 段原文 → hash，最近 256 段：思考每来一个字都要查一遍，不用每次重算 SHA-1。 */
+    private val keys = object : LinkedHashMap<String, String>(64, .75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, String>?) = size > 256
+    }
+    /** 磁盘上确定没有的段：不用每次 File.exists()。写好的会先进 done，查不到这里。 */
+    private val miss = HashSet<String>()
+
+    private fun key(unit: String) = synchronized(keys) {
+        keys.getOrPut(unit) {
+            MessageDigest.getInstance("SHA-1").digest(unit.trim().toByteArray())
+                .joinToString("") { "%02x".format(it) }.take(20)
+        }
+    }
 
     /** 这一段整理好的步骤；还没好 null。 */
     fun get(unit: String): List<TidyStep>? {
         val k = key(unit)
         done[k]?.let { return it }
         disk[k]?.let { return it }
-        val f = dir?.let { File(it, "$k.json") }?.takeIf { it.exists() } ?: return null
+        val d = dir ?: return null
+        if (synchronized(miss) { k in miss }) return null
+        val f = File(d, "$k.json").takeIf { it.exists() } ?: run { synchronized(miss) { miss += k }; return null }
         return runCatching { parse(JSONObject(f.readText()).getJSONArray("steps")) }.getOrNull()?.also { disk[k] = it }
     }
 

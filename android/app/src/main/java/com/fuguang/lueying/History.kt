@@ -31,10 +31,12 @@ data class Conv(
 /** 对话记录：只存在这台手机上。 */
 class ConvStore(private val prefs: Prefs) {
     val all = mutableStateListOf<Conv>()
+    private val file = prefs.file(FILE)
 
     init {
         runCatching {
-            val arr = JSONArray(prefs.string(KEY) ?: return@runCatching)
+            // 第 381 版起存在 files/chat-history.json；还没搬过来的从设置里读
+            val arr = JSONArray(file.takeIf { it.exists() }?.readText() ?: prefs.string(KEY) ?: return@runCatching)
             for (i in 0 until arr.length()) {
                 val o = arr.getJSONObject(i)
                 val ms = o.optJSONArray("m") ?: JSONArray()
@@ -139,14 +141,58 @@ class ConvStore(private val prefs: Prefs) {
         persist()
     }
 
+    /** 存盘：主线程只拍一份快照（都是不可变数据），转 JSON、写文件在后台一条线上做，连着几次只写最后一份。
+     *  以前整段记录塞在设置文件里，每存一次主线程转一遍 JSON，系统还要把整个设置文件重写；收尾时关通知会让主线程等它写完。 */
     private fun persist() {
-        val arr = JSONArray()
-        all.sortedByDescending { it.updated }.forEach { c ->
-            val ms = JSONArray()
-            c.msgs.forEach { m -> ms.put(JSONObject().put("r", m.role).put("x", m.text).apply { if (m.think.isNotEmpty()) put("k", m.think); if (m.imgs.isNotEmpty()) put("i", JSONArray(m.imgs)); if (m.works.isNotEmpty()) put("w", JSONArray(m.works)); if (m.workAt.isNotEmpty()) put("wa", JSONArray(m.workAt)); if (m.clips.isNotEmpty()) put("v", JSONArray(m.clips)); if (m.files.isNotEmpty()) put("f", JSONArray(m.files)); if (m.steps.isNotEmpty()) put("s", JSONArray(m.steps.map { s -> JSONObject().put("a", s.at).put("n", s.name).put("t", s.title).put("d", s.detail) })); if (m.at > 0) put("t", m.at); if (m.pid.isNotEmpty()) put("pv", m.pid); if (m.thinkMs > 0) put("tm", m.thinkMs); if (m.lesson.isNotEmpty()) put("ls", m.lesson); if (m.pact.isNotEmpty()) put("pc", m.pact) }) }
-            arr.put(JSONObject().put("id", c.id).put("t", c.title).put("c", c.created).put("u", c.updated).put("p", c.pinned).put("a", c.who).put("m", ms).apply { if (c.gist.isNotEmpty()) put("g", c.gist).put("ga", c.gistAt) })
+        val snap = all.toList()
+        val f = file
+        val first = !migrated
+        migrated = true
+        Saver.put(f) {
+            val arr = JSONArray()
+            snap.sortedByDescending { it.updated }.forEach { c ->
+                val ms = JSONArray()
+                c.msgs.forEach { m -> ms.put(JSONObject().put("r", m.role).put("x", m.text).apply { if (m.think.isNotEmpty()) put("k", m.think); if (m.imgs.isNotEmpty()) put("i", JSONArray(m.imgs)); if (m.works.isNotEmpty()) put("w", JSONArray(m.works)); if (m.workAt.isNotEmpty()) put("wa", JSONArray(m.workAt)); if (m.clips.isNotEmpty()) put("v", JSONArray(m.clips)); if (m.files.isNotEmpty()) put("f", JSONArray(m.files)); if (m.steps.isNotEmpty()) put("s", JSONArray(m.steps.map { s -> JSONObject().put("a", s.at).put("n", s.name).put("t", s.title).put("d", s.detail) })); if (m.at > 0) put("t", m.at); if (m.pid.isNotEmpty()) put("pv", m.pid); if (m.thinkMs > 0) put("tm", m.thinkMs); if (m.lesson.isNotEmpty()) put("ls", m.lesson); if (m.pact.isNotEmpty()) put("pc", m.pact) }) }
+                arr.put(JSONObject().put("id", c.id).put("t", c.title).put("c", c.created).put("u", c.updated).put("p", c.pinned).put("a", c.who).put("m", ms).apply { if (c.gist.isNotEmpty()) put("g", c.gist).put("ga", c.gistAt) })
+            }
+            arr.toString()
         }
-        prefs.putString(KEY, arr.toString())
+        // 第一次写进文件后，把设置里的旧副本清掉（写成功才清，见 Saver）
+        if (first) Saver.after(f) { prefs.putString(KEY, null) }
+    }
+
+    /** 对话记录在后台写文件：同一个文件排着的只留最新一份；写到临时文件再改名，不会写坏一半。 */
+    object Saver {
+        private val pool = java.util.concurrent.Executors.newSingleThreadExecutor { r -> Thread(r, "conv-save").apply { isDaemon = true } }
+        private val pending = HashMap<java.io.File, () -> String>()
+        private var last: java.util.concurrent.Future<*>? = null
+
+        fun put(f: java.io.File, make: () -> String) {
+            val run = synchronized(pending) { val had = f in pending; pending[f] = make; !had }
+            if (run) synchronized(this) { last = pool.submit { write(f) } }
+        }
+
+        /** 前面排着的都写完以后在主线程做一件事（写失败就不做）。 */
+        fun after(f: java.io.File, then: () -> Unit) {
+            synchronized(this) { last = pool.submit { if (f.exists()) android.os.Handler(android.os.Looper.getMainLooper()).post { then() } } }
+        }
+
+        private fun write(f: java.io.File) {
+            val make = synchronized(pending) { pending.remove(f) } ?: return
+            runCatching {
+                val text = make()
+                f.parentFile?.mkdirs()
+                val tmp = java.io.File(f.path + ".tmp")
+                tmp.writeText(text)
+                if (!tmp.renameTo(f)) { f.delete(); tmp.renameTo(f) }
+            }
+        }
+
+        /** 切到后台时等排着的写完（最多 2 秒），和以前设置文件的保证一样。 */
+        fun flush() {
+            val f = synchronized(this) { last } ?: return
+            runCatching { f.get(2, java.util.concurrent.TimeUnit.SECONDS) }
+        }
     }
 
     /** 按天分组，新的在上；每组里新的在上。 */
@@ -164,6 +210,9 @@ class ConvStore(private val prefs: Prefs) {
 
     companion object {
         private const val KEY = "chat-history"
+        private const val FILE = "chat-history.json"
+        /** 这次打开以来写过一次文件了：设置里的旧副本只清一次。 */
+        @Volatile private var migrated = false
         fun clock(t: Long): String = SimpleDateFormat("HH:mm", Locale.CHINA).format(Date(t))
     }
 }
