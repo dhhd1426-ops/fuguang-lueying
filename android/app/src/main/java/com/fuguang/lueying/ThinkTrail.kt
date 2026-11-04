@@ -78,6 +78,7 @@ object Trail {
         Materials.OPEN -> "正在打开网页"; Materials.LOOK -> "正在看素材"; VideoParse.TOOL -> "正在解析抖音"; VideoParse.SAVE -> "正在存视频"
         PanTools.OPEN -> "正在打开网盘分享"; PanTools.GET -> "正在下网盘里的文件"
         in ClockTools.names -> ClockTools.liveTitle(n)
+        in WebHand.names -> WebHand.liveTitle(n)
         SentFiles.TOOL -> "正在打包文件"; SentPics.TOOL -> "正在拿图"; Pacts.SET -> "正在记约定"; Pacts.DROP -> "正在取消约定"; Works.MAKE -> "正在动手做"; WorkJobs.START -> "正在交代"; Works.EDIT -> "正在改作品"; Works.READ -> "正在看原稿"; "list_todos" -> "正在查看羽的待办"; "read_note" -> "正在读羽的笔记"
         else -> if (Mcp.owns(n)) Mcp.note(n).trimEnd('…') else "正在查阅羽的笔记"
     }
@@ -98,6 +99,7 @@ object Trail {
         VideoParse.TOOL, VideoParse.SAVE -> VideoParse.doneTitle(n, a)
         PanTools.OPEN, PanTools.GET -> PanTools.doneTitle(n, a)
         in ClockTools.names -> ClockTools.doneTitle(n, a)
+        in WebHand.names -> WebHand.doneTitle(n, a)
         Materials.LOOK -> "看了 ${a.optJSONArray("urls")?.length() ?: 0} 件素材"
         Works.READ -> "看了原稿"; "list_todos" -> "看了羽的待办"; "read_note" -> "读了一篇羽的笔记"
         else -> if (Mcp.owns(n)) Mcp.note(n).replace("正在用", "用了").trimEnd('…') else "查了羽的笔记"
@@ -133,6 +135,7 @@ object Trail {
         Works.MAKE, Works.EDIT -> shapes; Works.READ, SentFiles.TOOL -> page; Pacts.SET, Pacts.DROP -> alarmIcon; "list_todos" -> todo
         ClockTools.ALARM, ClockTools.NEXT, ClockTools.OFF -> alarmIcon
         in ClockTools.names -> calIcon
+        in WebHand.names -> globe
         else -> if (Mcp.owns(n)) plug else feather
     }
 

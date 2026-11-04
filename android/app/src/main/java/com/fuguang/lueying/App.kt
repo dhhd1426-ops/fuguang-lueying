@@ -120,7 +120,7 @@ fun FuguangApp(prefs: Prefs, fullscreen: Boolean, setFullscreen: (Boolean) -> Un
 
     // 自动沉浸：停手 7 秒进；最后 2 秒界面先淡一点。有东西开着、她在回答时一直从头算。
     var soon by remember { mutableStateOf(false) }
-    val held = Zen.held || chatState.busy || Chats.running.isNotEmpty() || MineCard.open || NoteCard.open || !foreground || InBrowser.url != null || Downloads.open || ClipLink.showing || PanLink.showing || ClipPlay.playing() != null
+    val held = Zen.held || chatState.busy || Chats.running.isNotEmpty() || MineCard.open || NoteCard.open || !foreground || InBrowser.url != null || WebHand.active || WebHand.choice != null || Downloads.open || ClipLink.showing || PanLink.showing || ClipPlay.playing() != null
     // touchedAt 不当 key 读：以前它当 key，开着东西时每次重启都 touch → 又改 key，整个 App 每帧重建；平时手指每动一下也重建一次。
     // 现在只在 effect 里面跟着它重新计时，不碰界面。
     LaunchedEffect(held, zen) {
@@ -239,6 +239,8 @@ fun FuguangApp(prefs: Prefs, fullscreen: Boolean, setFullscreen: (Boolean) -> Un
         // 「这次用了」里点一样本事：去「我的 → 功能 → 技能」看它
         Skills.show = { id -> mineNav.screen = "skills/$id"; MineCard.open = true }
         // 内置浏览器、下载页：盖在最上面
+        // 她替你点网页：在内置浏览器之下，聊天页之上
+        WebHandLayer()
         InBrowserLayer()
         DownloadsLayer()
         // 聊天里放抖音：小窗、全屏
