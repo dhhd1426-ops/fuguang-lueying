@@ -481,7 +481,7 @@ class ChatState(val history: ConvStore) {
     private fun replyMsg(text: String): ChatMsg {
         val lead = partial.length - partial.trimStart().length
         landed = messages.size
-        return ChatMsg("assistant", text, thinkText, pendingImgs.toList(), works = pendingWorks.toList(), steps = doneSteps(), clips = pendingClips.toList(),
+        return ChatMsg("assistant", text, thinkText, pendingImgs.filter { SentPics.fail(it) == null }, works = pendingWorks.toList(), steps = doneSteps(), clips = pendingClips.toList(),
             workAt = pendingWorkAt.map { (it - lead).coerceIn(0, text.length) }, pid = turnPid,
             thinkMs = if (thinkAt > 0L) (thinkEnd - thinkAt).coerceAtLeast(0L) else 0L).also { thinkAt = 0L; thinkEnd = 0L }
     }

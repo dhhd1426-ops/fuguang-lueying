@@ -41,6 +41,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -79,37 +80,93 @@ fun NoteImageRow(refs: List<String>, onOpen: (String) -> Unit) {
     }
 }
 
-/**
- * 她发的图（原型 MkwUcuJbKmQhytTfb2GNvE）：一张占 76% 宽、按原图比例（夹在 1:2 到 2:1 之间），下面一行说明；
- * 两张以上 86% 宽两列方块，外角 18、里角 8、缝 6，单数时最后一张占整行（2:1）。
+/*
+ * 她发的图（第 387 版，原型 MkwUcuJbKmQhytTfb2GNvE 第 5 版）：
+ * - 每张先占一格（还不知道尺寸，方块），格子里是文件卡那个变形弹跳（Toy，f 0.45、跳高压一半）；
+ * - 拿到一张，那一格 320ms 减速变成原图比例：一张时 76% 宽按原图长宽；多张时两张一行一样高、宽按比例分（weight = 比例），不裁成方块；
+ * - 跳满一拍、比例变完后，下一次落地：小球变圆从底部往上弹（560ms，三次方减速），走过的地方把图一寸寸带出来，最后 25% 淡掉；
+ * - 拿不到的那格 220ms 淡出缩到 .92 后拿掉，回复收进聊天记录时也不存（Chat.kt 收尾时过滤）；
+ * - 透明底的图（四个角透明）垫浅色纸底、整张放下留 14% 边；普通图铺满裁边。
+ * 时钟记在 SentPics（born / ready / gone）上，格子重画也接着来；带出来以后就从 fresh 里拿掉，之后是静止的图。
  */
+private const val RATIO_MS = 320L
+private const val REVEAL_MS = 560L
+private const val GONE_MS = 220L
+internal val Paper = Color(0xFFF3F1EC)
+
+private fun ease3(x: Float): Float { val t = x.coerceIn(0f, 1f); return 1f - (1f - t) * (1f - t) * (1f - t) }
+
+/** 一格的节拍（毫秒，从 born 起算）。null = 不用动（以前发的，或已经带出来了）。 */
+private class Plan(val ready: Long?, val gone: Long?, val reveal: Long?)
+
+private fun plan(ref: String): Plan? {
+    if (ref !in SentPics.fresh) return null
+    val b = SentPics.born[ref] ?: return null
+    val r = SentPics.ready[ref]?.let { (it - b) / 1_000_000L }
+    val g = SentPics.gone[ref]?.let { (it - b) / 1_000_000L }
+    // 第一次「跳满一拍、比例也变完」之后的落地点（落地在每拍的正中）
+    val rv = r?.let { rr -> val from = maxOf(Toy.PERIOD, rr + RATIO_MS); ((from - Toy.PERIOD / 2 + Toy.PERIOD - 1) / Toy.PERIOD) * Toy.PERIOD + Toy.PERIOD / 2 }
+    return Plan(r, g, rv)
+}
+
 @Composable
-private fun SentPicBlock(refs: List<String>, onOpen: (String) -> Unit) {
+private fun SentPicBlock(all: List<String>, onOpen: (String) -> Unit) {
+    val anim = all.any { it in SentPics.fresh }
+    val now = remember { androidx.compose.runtime.mutableLongStateOf(System.nanoTime()) }
+    if (anim) LaunchedEffect(Unit) { while (true) androidx.compose.runtime.withFrameNanos { now.longValue = it } }
+    // 以前发的图的比例：从缓存或文件头读一次
+    val dims by produceState(emptyMap<String, Float>(), all) {
+        value = all.associateWith { r -> (SentPics.dims[r] ?: SentPics.size(r))?.let { (w, h) -> w.toFloat() / h.coerceAtLeast(1) } ?: 1f }
+    }
+    val t = now.longValue
+    fun ms(r: String): Long = SentPics.born[r]?.let { ((t - it) / 1_000_000L).coerceAtLeast(0L) } ?: 0L
+    val plans = all.associateWith { plan(it) }
+    // 带出来了 / 缩完了：从 fresh 拿掉
+    androidx.compose.runtime.SideEffect {
+        plans.forEach { (r, p) ->
+            if (p == null) return@forEach
+            val m = ms(r)
+            if ((p.reveal != null && m >= p.reveal + REVEAL_MS) || (p.gone != null && m >= p.gone + GONE_MS)) SentPics.fresh.remove(r)
+        }
+    }
+    val shown = all.filter { r ->
+        val p = plans[r]
+        when {
+            p?.gone != null -> ms(r) < p.gone + GONE_MS
+            p != null -> true
+            else -> SentPics.fail(r) == null
+        }
+    }
+    if (shown.isEmpty()) return
+    fun ratio(r: String, lo: Float): Float {
+        val real = (SentPics.dims[r]?.let { (w, h) -> w.toFloat() / h.coerceAtLeast(1) } ?: dims[r] ?: 1f).coerceIn(lo, 2.2f)
+        val p = plans[r] ?: return real
+        val rd = p.ready ?: return 1f
+        return 1f + (real - 1f) * ease3((ms(r) - rd) / RATIO_MS.toFloat())
+    }
+    val big = 18.dp; val small = 8.dp
     Column(Modifier.padding(start = 2.dp, top = 4.dp, bottom = 12.dp)) {
-        if (refs.size == 1) {
-            val ref = refs[0]
-            val wh by produceState<Pair<Int, Int>?>(null, ref, SentPics.ok(ref)) { value = SentPics.size(ref) }
-            val ratio = wh?.let { (w, h) -> (w.toFloat() / h).coerceIn(.5f, 2f) } ?: (4f / 3f)
-            PicTile(ref, RoundedCornerShape(18.dp), Modifier.fillMaxWidth(.76f).aspectRatio(ratio), onOpen)
-            val cap = remember(ref) { SentPics.caption(ref) }
-            if (cap.isNotEmpty()) Txt(cap, Page.muted, 12.sp, Modifier.padding(start = 2.dp, top = 6.dp), maxLines = 2)
+        if (all.size == 1) {
+            val r = shown[0]
+            PicCell(r, RoundedCornerShape(big), Modifier.fillMaxWidth(.76f).aspectRatio(ratio(r, .6f)), plans[r], ms(r), onOpen)
+            val cap = remember(r) { SentPics.caption(r) }
+            val p = plans[r]
+            if (cap.isNotEmpty() && (p == null || (p.reveal != null && ms(r) >= p.reveal + REVEAL_MS))) Txt(cap, Page.muted, 12.sp, Modifier.padding(start = 2.dp, top = 6.dp), maxLines = 2)
             return@Column
         }
-        val big = 18.dp; val small = 8.dp
-        val rows = refs.chunked(2)
+        val rows = shown.chunked(2)
         Column(Modifier.fillMaxWidth(.86f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             rows.forEachIndexed { ri, row ->
                 val top = ri == 0; val bottom = ri == rows.lastIndex
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    if (row.size == 1) {
-                        PicTile(row[0], RoundedCornerShape(if (top) big else small, if (top) big else small, big, big), Modifier.weight(1f).aspectRatio(2f), onOpen)
-                    } else row.forEachIndexed { ci, ref ->
-                        val left = ci == 0
+                    row.forEachIndexed { ci, r ->
+                        val left = ci == 0; val right = ci == row.lastIndex
                         val shape = RoundedCornerShape(
-                            topStart = if (top && left) big else small, topEnd = if (top && !left) big else small,
-                            bottomEnd = if (bottom && !left) big else small, bottomStart = if (bottom && left) big else small,
+                            topStart = if (top && left) big else small, topEnd = if (top && right) big else small,
+                            bottomEnd = if (bottom && right) big else small, bottomStart = if (bottom && left) big else small,
                         )
-                        PicTile(ref, shape, Modifier.weight(1f).aspectRatio(1f), onOpen)
+                        val k = ratio(r, if (row.size == 1) .75f else .5f)
+                        PicCell(r, shape, Modifier.weight(k).aspectRatio(k), plans[r], ms(r), onOpen)
                     }
                 }
             }
@@ -117,26 +174,59 @@ private fun SentPicBlock(refs: List<String>, onOpen: (String) -> Unit) {
     }
 }
 
-/** 一格图：拿到之前淡色块一明一暗地闪；拿到后 260ms 淡入、460ms 从 1.04 收到 1；没拿到写一句。按下缩到 .97。 */
+/** 一格：弹跳 → 小球往上带出图 → 静止的图；拿不到时淡出缩小。按下缩到 .97。 */
 @Composable
-private fun PicTile(ref: String, shape: Shape, modifier: Modifier, onOpen: (String) -> Unit) {
-    val ready = SentPics.ok(ref)
-    val fail = SentPics.fail(ref)
-    val bmp by produceState<android.graphics.Bitmap?>(null, ref, ready) { if (ready) value = SentPics.bitmap(ref, 1080) }
-    val a by animateFloatAsState(if (bmp != null) 1f else 0f, tween(260), label = "pic")
-    val sc by animateFloatAsState(if (bmp != null) 1f else 1.04f, tween(460, easing = Curves.decel), label = "picScale")
-    val pulse = if (bmp == null && fail == null) {
-        val t = rememberInfiniteTransition(label = "wait")
-        t.animateFloat(.05f, .1f, infiniteRepeatable(tween(700), RepeatMode.Reverse), label = "pulse").value
-    } else .06f
-    Pressable({ if (bmp != null) onOpen(ref) }, modifier, enabled = true, label = "看大图") { pressed ->
-        val ps by animateFloatAsState(if (pressed && bmp != null) .97f else 1f, tween(if (pressed) 80 else 200), label = "picPress")
-        Box(
-            Modifier.fillMaxSize().graphicsLayer { scaleX = ps; scaleY = ps }.clip(shape).background(veil(pulse)),
-            contentAlignment = Alignment.Center,
-        ) {
-            bmp?.let { Image(it.asImageBitmap(), null, Modifier.fillMaxSize().graphicsLayer { alpha = a; scaleX = sc; scaleY = sc }, contentScale = ContentScale.Crop) }
-            if (fail != null) Txt("这张图没拿到", Page.muted, 12.sp, Modifier.padding(8.dp), align = TextAlign.Center)
+private fun PicCell(ref: String, shape: Shape, modifier: Modifier, p: Plan?, ms: Long, onOpen: (String) -> Unit) {
+    val ok = SentPics.ok(ref)
+    val bmp by produceState(SentPics.cached(ref, 1080), ref, ok) { if (ok && value == null) value = SentPics.bitmap(ref, 1080) }
+    val img = remember(bmp) { bmp?.asImageBitmap() }
+    val clear = ok && SentPics.clear(ref)
+    val still = Toy.still()
+    val path = remember { androidx.compose.ui.graphics.Path() }
+    val accent = Skin.accent
+    val done = p == null || (p.reveal != null && ms >= p.reveal + REVEAL_MS)
+    val gk = if (p?.gone != null) ((ms - p.gone) / GONE_MS.toFloat()).coerceIn(0f, 1f) else 0f
+    Pressable({ if (done && img != null) onOpen(ref) }, modifier.graphicsLayer { alpha = 1f - gk; val s = 1f - .08f * gk; scaleX = s; scaleY = s }, label = "看大图") { pressed ->
+        val ps by animateFloatAsState(if (pressed && done) .97f else 1f, tween(if (pressed) 80 else 200), label = "picPress")
+        androidx.compose.foundation.Canvas(Modifier.fillMaxSize().graphicsLayer { scaleX = ps; scaleY = ps }.clip(shape).background(veil(.07f))) {
+            fun pic() {
+                val im = img ?: return
+                if (clear) {
+                    drawRect(Paper)
+                    val pad = minOf(size.width, size.height) * .14f
+                    val k = minOf((size.width - 2 * pad) / im.width, (size.height - 2 * pad) / im.height)
+                    val w = im.width * k; val h = im.height * k
+                    drawImage(im, dstOffset = androidx.compose.ui.unit.IntOffset(((size.width - w) / 2).toInt(), ((size.height - h) / 2).toInt()),
+                        dstSize = androidx.compose.ui.unit.IntSize(w.toInt(), h.toInt()), filterQuality = androidx.compose.ui.graphics.FilterQuality.Medium)
+                } else {
+                    // 铺满裁边：取原图中间和格子同比例的一块
+                    val k = maxOf(size.width / im.width, size.height / im.height)
+                    val sw = (size.width / k).toInt().coerceIn(1, im.width); val sh = (size.height / k).toInt().coerceIn(1, im.height)
+                    drawImage(im, srcOffset = androidx.compose.ui.unit.IntOffset((im.width - sw) / 2, (im.height - sh) / 2), srcSize = androidx.compose.ui.unit.IntSize(sw, sh),
+                        dstSize = androidx.compose.ui.unit.IntSize(size.width.toInt(), size.height.toInt()), filterQuality = androidx.compose.ui.graphics.FilterQuality.Medium)
+                }
+            }
+            val f = .45f * density
+            val cx = size.width / 2f
+            val gy = size.height - 16.dp.toPx()
+            val rv = p?.reveal
+            when {
+                done -> pic()
+                p?.gone != null -> Unit
+                rv != null && ms >= rv && img != null -> {
+                    val u = ((ms - rv) / REVEAL_MS.toFloat()).coerceIn(0f, 1f)
+                    val e = ease3(u)
+                    val rad = 15.5f * f
+                    val by = gy - (gy + rad * 2f) * e
+                    val top = (by - rad * .2f).coerceAtLeast(0f)
+                    clipRect(top = top) { pic() }
+                    val a = 1f - ((u - .75f) / .25f).coerceIn(0f, 1f)
+                    val rx = rad * (.9f + .1f * u); val ry = rad * (1.15f - .15f * u)
+                    drawOval(accent, androidx.compose.ui.geometry.Offset(cx - rx, by - ry), androidx.compose.ui.geometry.Size(rx * 2f, ry * 2f), alpha = a)
+                }
+                still -> with(Toy) { rest(path, cx, gy, f, accent) }
+                else -> with(Toy) { bounce(path, ms, cx, gy, f, .5f, accent) }
+            }
         }
     }
 }
@@ -171,8 +261,9 @@ fun NoteImageViewer(ref: String?, onClose: () -> Unit) {
             val fade = (1f - abs(drag.value) / 900f).coerceIn(.25f, 1f)
             Box(Modifier.fillMaxSize().alpha(shown * fade).background(rgba(6, 7, 9, .94f)))
             bmp?.let {
-                Image(
-                    it.asImageBitmap(), "图片",
+                // 透明底的图（她发的 logo 这类）垫浅色纸底，不然黑色的图在深色底上看不见
+                val clear = SentPics.isRef(cur) && SentPics.clear(cur)
+                Box(
                     Modifier.fillMaxSize().padding(start = 18.dp, end = 18.dp, top = 18.dp, bottom = if (SentPics.isRef(cur)) 120.dp else 18.dp)
                         .graphicsLayer {
                             alpha = shown
@@ -180,8 +271,13 @@ fun NoteImageViewer(ref: String?, onClose: () -> Unit) {
                             val sc = (.94f + .06f * shown) * (1f - abs(drag.value) / 4000f)
                             scaleX = sc; scaleY = sc
                         },
-                    contentScale = ContentScale.Fit,
-                )
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Box(
+                        Modifier.aspectRatio(it.width.toFloat() / it.height.coerceAtLeast(1))
+                            .then(if (clear) Modifier.background(Paper, RoundedCornerShape(12.dp)).padding(22.dp) else Modifier),
+                    ) { Image(it.asImageBitmap(), "图片", Modifier.fillMaxSize(), contentScale = ContentScale.Fit) }
+                }
             }
         }
         if (SentPics.isRef(cur)) PicActions(cur, shown, Modifier.align(Alignment.BottomCenter))
