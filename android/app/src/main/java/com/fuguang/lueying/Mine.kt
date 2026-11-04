@@ -604,19 +604,25 @@ internal fun FeelSlider(value: Float, min: Float, max: Float, step: Float, ticks
     }
 }
 
-/* 提示词：她是谁，写在这里的就是她自己。改完点保存；没保存就离开，也替你存好。 */
+/* 提示词：她是谁，写在这里的就是她自己。改完点保存；没保存就离开，也替你存好。
+ * 有没保存的改动时，下面一排左边露出 ↶ ↷（PromptUndo.kt）；一保存就收起、历史清掉。 */
 @Composable
 private fun ColumnScope.PromptTab(p: Persona, blur: Dp) {
-    var draft by remember(p.id) { mutableStateOf(p.sys) }
+    var field by remember(p.id) { mutableStateOf(androidx.compose.ui.text.input.TextFieldValue(p.sys)) }
+    val draft = field.text
+    val undo = remember(p.id) { PromptUndo(p.sys) }
+    fun put(s: String, cursor: Int = s.length) { field = androidx.compose.ui.text.input.TextFieldValue(s, androidx.compose.ui.text.TextRange(cursor)) }
+    fun swap(s: String) { undo.replaced(field.text, s); put(s) }
     val latest = androidx.compose.runtime.rememberUpdatedState(draft)
     androidx.compose.runtime.DisposableEffect(p.id) {
         onDispose { if (latest.value != p.sys) { p.sys = latest.value; Memory.save() } }
     }
     BasicTextField(
-        value = draft,
-        onValueChange = { draft = it },
+        value = field,
+        onValueChange = { undo.typed(field.text, it.text); field = it },
         textStyle = TextStyle(fontFamily = Sans, color = Page.ink, fontSize = 14.5.sp, lineHeight = 24.sp),
         cursorBrush = SolidColor(Page.accent),
+        visualTransformation = rememberUndoFlash(undo, warm),
         modifier = Modifier.fillMaxWidth(),
         decorationBox = { inner ->
             Box(Modifier.fillMaxWidth().spot("sys").heightIn(min = 280.dp).glass(RoundedCornerShape(20.dp), blur, fill = glassFill).padding(18.dp)) {
@@ -625,16 +631,19 @@ private fun ColumnScope.PromptTab(p: Persona, blur: Dp) {
             }
         },
     )
-    Row(Modifier.fillMaxWidth().padding(start = 6.dp, top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-        Txt("写在这里的，就是她自己。她的名字和你的称呼会先告诉她；文中可以写 {char}、{name}、{model}、{date}。", Page.muted, 12.5.sp, Modifier.weight(1f), lineHeight = 20.sp)
+    Row(Modifier.fillMaxWidth().padding(start = 2.dp, top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.weight(1f)) {
+            UndoPair(undo, draft != p.sys, warm, Skin.onAccent) { d -> undo.go(d, field.text)?.let { (s, c) -> put(s, c) } }
+        }
         if (draft.trim() != Memory.DEFAULT_SYS) {
-            Pressable({ draft = Memory.DEFAULT_SYS }, Modifier.padding(end = 8.dp), label = "恢复默认") { pr ->
+            Pressable({ swap(Memory.DEFAULT_SYS) }, Modifier.padding(end = 8.dp), label = "恢复默认") { pr ->
                 Txt("恢复默认", Page.muted, 12.5.sp, Modifier.background(veil(if (pr) .1f else .05f), RoundedCornerShape(50)).padding(horizontal = 12.dp, vertical = 8.dp))
             }
         }
-        SaveButton(dirty = draft != p.sys) { p.sys = draft; Memory.save() }
+        SaveButton(dirty = draft != p.sys) { p.sys = draft; Memory.save(); undo.reset(draft) }
     }
-    IdentityHint(draft) { draft = it }
+    Txt("写在这里的，就是她自己。她的名字和你的称呼会先告诉她；文中可以写 {char}、{name}、{model}、{date}。", Page.muted, 12.5.sp, Modifier.padding(start = 6.dp, top = 8.dp), lineHeight = 20.sp)
+    IdentityHint(draft) { swap(it) }
     Column(Modifier.spot("entries")) { EntriesSection(p, blur) }
 }
 
