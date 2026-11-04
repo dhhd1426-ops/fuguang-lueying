@@ -290,7 +290,7 @@ class ChatState(val history: ConvStore) {
                 val native = store.search()
                 val web = WebSearch.usable && !native
                 val skills = Skills.specs()
-                val specs = (if (who.noteOn) Memory.toolSpecs else emptyList()) + Works.specs.filter { it.name != Works.MAKE } + WorkJobs.spec + SentFiles.spec + SentPics.spec + Pacts.specs + Materials.specs + VideoParse.specs + PanTools.specs + ClockTools.specs + skills + (if (web) listOf(WebSearch.spec) else emptyList()) + (if (yu) Yu.tools else emptyList()) + (if (recall) listOf(Recall.spec, Recall.openSpec) else emptyList()) + mcp
+                val specs = (if (who.noteOn) Memory.toolSpecs else emptyList()) + Works.specs.filter { it.name != Works.MAKE } + WorkJobs.spec + SentFiles.spec + SentPics.spec + Pacts.specs + Materials.specs + VideoParse.specs + PanTools.specs + ClockTools.specs + WebHand.specs + skills + (if (web) listOf(WebSearch.spec) else emptyList()) + (if (yu) Yu.tools else emptyList()) + (if (recall) listOf(Recall.spec, Recall.openSpec) else emptyList()) + mcp
                 val convTitle0 = store0.get(cur)?.title ?: firstSentence(question, 18)
                 // 对方发来的照片，最近的在前：send_image / send_file 里 photo:1 就是最近那张
                 fun photos(): List<java.io.File> = history.filter { it.role == "user" }.flatMap { it.files }.filter { Attach.isImage(it) }.reversed().map { Attach.file(it) }
@@ -305,6 +305,7 @@ class ChatState(val history: ConvStore) {
                     append("\n").append(VideoParse.system(Memory.userCall))
                     append("\n").append(PanTools.system(Memory.userCall))
                     append("\n").append(ClockTools.system(Memory.userCall))
+                    append("\n").append(WebHand.system(Memory.userCall))
                     append("\n\n").append(Craft.system())
                     if (skills.isNotEmpty()) append("\n").append(Skills.system())
                     if (web) append("\n").append(WebSearch.system())
@@ -345,6 +346,7 @@ class ChatState(val history: ConvStore) {
                             else if (n == SentPics.TOOL) SentPics.run(a, photos()) { r -> if (r !in pendingImgs) pendingImgs.add(r) }
                             else if (n == WorkJobs.START) WorkJobs.start(a, this@ChatState, store, who.id, history) { ref -> pendingWorks.add(ref); pendingWorkAt.add(partial.length) }
                             else if (n == Works.MAKE || n == Works.READ || n == Works.EDIT) Works.run(n, a, who.id) { id -> made = true; if (id !in pendingWorks) { pendingWorks.add(id); pendingWorkAt.add(workDraft?.at ?: partial.length) } }
+                            else if (n in WebHand.names) WebHand.run(n, a)
                             else if (Mcp.owns(n)) Mcp.run(n, a)
                             else Yu.run(n, a, Yu.vision(p.id)) { refs -> refs.forEach { r -> if (r !in pendingImgs) pendingImgs.add(r) } }
                             } catch (e: kotlinx.coroutines.CancellationException) {
