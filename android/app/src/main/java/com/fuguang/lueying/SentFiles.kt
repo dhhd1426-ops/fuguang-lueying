@@ -87,7 +87,7 @@ object SentFiles {
     val spec get() = ToolSpec(
         TOOL,
         "直接发文件给对方：Word（docx）、PDF、纯文本（txt）、Markdown（md），可以一次发几份（比如同一份要 Word 和 PDF 就写两项）。" +
-            "马上在你这条回复下面出现文件卡，对方点开能打开、分享、存到手机。content 写正文：docx / pdf 用 Markdown（# 标题、- 列表、1. 编号、> 引用、| 表格 |、**加粗**），txt 和 md 照原样写进文件。" +
+            "马上在你这条回复下面出现文件卡，对方点开能打开、分享、存到手机。content 写正文：docx / pdf 用 Markdown（# 标题、- 列表、1. 编号、> 引用、| 表格 |、**加粗**、![说明](图片地址) 放图），txt 和 md 照原样写进文件。图片地址写真实拿到过的网页图片地址，或 photo:1（对方最近发来的那张照片），图会下载下来放进文件，说明写在图下面。" +
             "对方要什么就写什么，别自己加没要的标题和寒暄。",
         JSONObject().put("type", "object").put(
             "properties",
@@ -113,7 +113,7 @@ object SentFiles {
             "发了就说一两句，不用把内容再贴进回复，也别说「卡上点导出」。"
 
     /** 跑工具：先把卡片放上（正在打包），再生成文件。onCard 拿到要记进消息的引用。 */
-    suspend fun run(a: JSONObject, onCard: (String) -> Unit): ToolOut {
+    suspend fun run(a: JSONObject, photos: List<File> = emptyList(), onCard: (String) -> Unit): ToolOut {
         val d = root ?: return ToolOut("文件没地方存。")
         val arr = a.optJSONArray("files") ?: return ToolOut("files 是空的：每份写清 name、format、content 再发一次。")
         val items = (0 until arr.length()).mapNotNull { arr.optJSONObject(it) }
@@ -137,15 +137,23 @@ object SentFiles {
             withContext(Dispatchers.Main) { state[ref] = null; fresh.add(ref); born[ref] = System.nanoTime(); onCard(ref) }
             Triple(ref, f, o.optString("content"))
         }
-        val done = ArrayList<String>(); val bad = ArrayList<String>()
+        val done = ArrayList<String>(); val bad = ArrayList<String>(); val noPic = ArrayList<String>()
+        // Word / PDF 里的 ![说明](地址)：先把图都拿下来（每个地址拿一次，最多 20 张），拿不到的那张在文件里写「（图：说明，没拿到）」
+        val urls = jobs.filter { it.second == "docx" || it.second == "pdf" }
+            .flatMap { (_, _, body) -> Md.parse(body).filterIsInstance<Block.Image>().map { it.url.trim() } }.filter { it.isNotEmpty() }.distinct().take(20)
+        val pics = HashMap<String, SentPics.DocPic>()
+        urls.forEach { u ->
+            val p = runCatching { val b = SentPics.fetch(u, photos); withContext(Dispatchers.IO) { SentPics.prepare(b) } }.getOrNull()
+            if (p != null) pics[u] = p else noPic += u.substringAfterLast('/').take(30)
+        }
         jobs.forEach { (ref, f, body) ->
             val nm = name(ref)
             val err = withContext(Dispatchers.IO) {
                 runCatching {
                     if (body.isBlank()) error("内容是空的")
                     val bytes = when (f) {
-                        "docx" -> Docx.build("", body)
-                        "pdf" -> PdfOut.build(body)
+                        "docx" -> Docx.build("", body, pics)
+                        "pdf" -> PdfOut.build(body, pics)
                         "md" -> body.toByteArray()
                         else -> plain(body).toByteArray()
                     }
@@ -160,6 +168,7 @@ object SentFiles {
         return ToolOut(
             (if (done.isEmpty()) "" else "发好了：" + done.joinToString("、") + "。文件卡在你这条回复里，不用把内容再贴一遍，说一两句就好。") +
                 (if (bad.isEmpty()) "" else "没打包成：" + bad.joinToString("、") + "。可以改一改再发，或如实告诉对方。") +
+                (if (noPic.isEmpty()) "" else "有 ${noPic.size} 张图没拿到（" + noPic.joinToString("、") + "），文件里那个位置写着「没拿到」，如实告诉对方。") +
                 (if (again.isEmpty()) "" else again.joinToString("、") + " 刚才已经发过了，卡片就在你这条回复里，不用再发。") +
                 (if (items.size > 6) "一次最多 6 份，后面的没发。" else ""),
         )
@@ -219,7 +228,7 @@ object PdfOut {
     private val mutedC = android.graphics.Color.rgb(110, 110, 104)
     private val lineC = android.graphics.Color.rgb(217, 213, 205)
 
-    fun build(md: String): ByteArray {
+    fun build(md: String, pics: Map<String, SentPics.DocPic> = emptyMap()): ByteArray {
         val doc = PdfDocument()
         val width = (W - 2 * M).toInt()
         var page: PdfDocument.Page? = null
@@ -277,7 +286,28 @@ object PdfOut {
                 }
                 is Block.Quote -> { place(layout(spans(b.runs), 11.5f, mutedC, (width - 16).toInt()), 16f, bar = true); y += 8f }
                 is Block.Rule -> { need(14f); y += 6f; cv!!.drawLine(M, y, W - M, y, Paint().apply { color = lineC; strokeWidth = .8f }); y += 8f }
-                is Block.Image -> { place(layout("（图：" + b.alt.ifBlank { "图片" } + "）", 10.5f, mutedC, width), 0f); y += 6f }
+                is Block.Image -> {
+                    // 图：宽最多占满正文，高最多半页多一点，居中；说明一行小字在下面。拿不到写一行字
+                    val pic = pics[b.url.trim()]
+                    val bmp = pic?.let { android.graphics.BitmapFactory.decodeByteArray(it.bytes, 0, it.bytes.size) }
+                    if (bmp == null) { place(layout("（图：" + b.alt.ifBlank { "图片" } + "，没拿到）", 10.5f, mutedC, width), 0f); y += 6f }
+                    else {
+                        val k = minOf(width.toFloat() / bmp.width, (H - 2 * M) * .6f / bmp.height, 1.4f)
+                        val w = bmp.width * k; val h = bmp.height * k
+                        if (idx > 0) y += 4f
+                        need(h)
+                        val x = M + (width - w) / 2f
+                        cv!!.drawBitmap(bmp, null, android.graphics.RectF(x, y, x + w, y + h), Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG))
+                        bmp.recycle()
+                        y += h + 6f
+                        if (b.alt.isNotBlank()) {
+                            val l = StaticLayout.Builder.obtain(b.alt, 0, b.alt.length, TextPaint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 9.5f; color = mutedC }, width)
+                                .setAlignment(Layout.Alignment.ALIGN_CENTER).setLineSpacing(0f, 1.3f).build()
+                            place(l, 0f)
+                        }
+                        y += 10f
+                    }
+                }
                 is Block.Table -> {
                     val cols = b.rows.maxOf { it.size }.coerceAtLeast(1)
                     val cw = width / cols

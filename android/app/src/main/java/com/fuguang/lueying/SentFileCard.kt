@@ -23,6 +23,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -216,7 +219,8 @@ fun SentFileLayer() {
                 Column(Modifier.padding(horizontal = 4.dp).fillMaxWidth().background(Skin.cardFill(.9f), RoundedCornerShape(14.dp)).padding(horizontal = 16.dp, vertical = 12.dp)) {
                     Txt(SentFiles.name(ref), Page.muted, 11.5.sp, maxLines = 1)
                     Spacer(Modifier.height(4.dp))
-                    Txt(pv.trim().ifEmpty { "（没有预览）" }, Page.ink, 13.sp, lineHeight = 21.sp, maxLines = 5)
+                    if (SentFiles.fmt(ref) == "pdf") PdfPages(ref)
+                    else Txt(pv.trim().ifEmpty { "（没有预览）" }, Page.ink, 13.sp, lineHeight = 21.sp, maxLines = 5)
                 }
                 Spacer(Modifier.height(6.dp))
                 listOf<Triple<String, String, () -> Unit>>(
@@ -237,5 +241,45 @@ fun SentFileLayer() {
             }
         }
         BoxToast(toast, Modifier.align(Alignment.BottomCenter).windowInsetsPadding(WindowInsets.navigationBars).padding(bottom = 28.dp)) { toast = null }
+    }
+}
+
+/** PDF 的预览（第 385 版）：前 4 页缩略图横着排，可以滑；读出来之前是淡色纸，读到后淡入。图片放进 PDF 以后，看页面比看几行字清楚。 */
+@Composable
+private fun PdfPages(ref: String) {
+    val pages by androidx.compose.runtime.produceState<List<android.graphics.Bitmap>?>(null, ref) {
+        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            runCatching {
+                val f = SentFiles.file(ref)!!
+                android.os.ParcelFileDescriptor.open(f, android.os.ParcelFileDescriptor.MODE_READ_ONLY).use { fd ->
+                    android.graphics.pdf.PdfRenderer(fd).use { r ->
+                        (0 until minOf(r.pageCount, 4)).map { i ->
+                            r.openPage(i).use { pg ->
+                                val w = 300; val h = (w.toFloat() * pg.height / pg.width).toInt().coerceAtLeast(1)
+                                val bmp = android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.ARGB_8888)
+                                bmp.eraseColor(android.graphics.Color.WHITE)
+                                pg.render(bmp, null, null, android.graphics.pdf.PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                                bmp
+                            }
+                        }
+                    }
+                }
+            }.getOrNull() ?: emptyList()
+        }
+    }
+    val a by animateFloatAsState(if (pages != null) 1f else 0f, tween(260), label = "pdfPages")
+    Row(
+        Modifier.fillMaxWidth().horizontalScroll(androidx.compose.foundation.rememberScrollState()).padding(top = 4.dp, bottom = 2.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        val list = pages
+        if (list == null) repeat(2) { Box(Modifier.width(96.dp).aspectRatio(595f / 842f).clip(RoundedCornerShape(5.dp)).background(veil(.08f))) }
+        else if (list.isEmpty()) Txt("（没有预览）", Page.muted, 13.sp)
+        else list.forEach { b ->
+            androidx.compose.foundation.Image(
+                b.asImageBitmap(), null,
+                Modifier.width(96.dp).aspectRatio(b.width.toFloat() / b.height).clip(RoundedCornerShape(5.dp)).graphicsLayer { alpha = a },
+            )
+        }
     }
 }

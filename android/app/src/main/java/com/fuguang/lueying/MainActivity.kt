@@ -30,6 +30,7 @@ class MainActivity : ComponentActivity() {
         Yu.init(this)
         Works.init(this)
         SentFiles.init(this)
+        SentPics.init(this)
         MaterialStore.init(this)
         PageGrab.init(this)
         Illust.init(this)

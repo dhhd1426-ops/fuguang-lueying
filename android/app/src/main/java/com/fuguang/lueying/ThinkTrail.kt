@@ -78,7 +78,7 @@ object Trail {
         Materials.OPEN -> "正在打开网页"; Materials.LOOK -> "正在看素材"; VideoParse.TOOL -> "正在解析抖音"; VideoParse.SAVE -> "正在存视频"
         PanTools.OPEN -> "正在打开网盘分享"; PanTools.GET -> "正在下网盘里的文件"
         in ClockTools.names -> ClockTools.liveTitle(n)
-        SentFiles.TOOL -> "正在打包文件"; Pacts.SET -> "正在记约定"; Pacts.DROP -> "正在取消约定"; Works.MAKE -> "正在动手做"; WorkJobs.START -> "正在交代"; Works.EDIT -> "正在改作品"; Works.READ -> "正在看原稿"; "list_todos" -> "正在查看羽的待办"; "read_note" -> "正在读羽的笔记"
+        SentFiles.TOOL -> "正在打包文件"; SentPics.TOOL -> "正在拿图"; Pacts.SET -> "正在记约定"; Pacts.DROP -> "正在取消约定"; Works.MAKE -> "正在动手做"; WorkJobs.START -> "正在交代"; Works.EDIT -> "正在改作品"; Works.READ -> "正在看原稿"; "list_todos" -> "正在查看羽的待办"; "read_note" -> "正在读羽的笔记"
         else -> if (Mcp.owns(n)) Mcp.note(n).trimEnd('…') else "正在查阅羽的笔记"
     }
 
@@ -92,6 +92,7 @@ object Trail {
         Pacts.SET -> (if (a.optString("id").isNotBlank()) "改了约定" else "记下了一条约定") + "「${a.optString("title").trim().take(12)}」"
         Pacts.DROP -> "取消了一条约定"
         SentFiles.TOOL -> a.optJSONArray("files").let { arr -> val n = arr?.length() ?: 0; val first = arr?.optJSONObject(0)?.optString("name")?.trim().orEmpty().take(16); if (n > 1) "发了「$first」等 $n 份文件" else "发了文件「$first」" }
+        SentPics.TOOL -> "发了 ${a.optJSONArray("images")?.length() ?: 1} 张图"
         WorkJobs.START -> (if (a.optString("id").isNotBlank()) "交代了大改" else "交代了作品") + "「${a.optString("title").trim().ifEmpty { "未命名" }.take(20)}」，后台在写"
         Materials.OPEN -> Materials.doneTitle(a.optString("url"))
         VideoParse.TOOL, VideoParse.SAVE -> VideoParse.doneTitle(n, a)
@@ -119,6 +120,7 @@ object Trail {
         PanTools.OPEN, PanTools.GET -> Pan.link(a.optString("text"))?.link ?: a.optString("text")
         Works.EDIT -> "改 ${a.optJSONArray("edits")?.length() ?: 0} 处"
         SentFiles.TOOL -> a.optJSONArray("files")?.let { arr -> (0 until arr.length()).mapNotNull { arr.optJSONObject(it) }.joinToString("、") { o -> o.optString("name").trim() + "." + o.optString("format") } }.orEmpty()
+        SentPics.TOOL -> a.optJSONArray("images")?.let { arr -> (0 until arr.length()).mapNotNull { arr.optJSONObject(it) }.joinToString("、") { o -> o.optString("caption").trim().ifEmpty { o.optString("url").substringAfterLast('/').take(24) } } }.orEmpty()
         Works.MAKE -> when (a.optString("kind")) { "slides" -> "作品 · 幻灯片"; "doc" -> "作品 · 文档"; "board" -> "画板"; else -> "作品 · 网页" }
         else -> ""
     }.trim().replace('\n', ' ').take(80)
@@ -126,7 +128,7 @@ object Trail {
     /** 作品用和作品卡同一个图标（圆 + 方）。 */
     fun icon(n: String): Ic = when (n) {
         Lessons.STEP -> bulb
-        Memory.REMEMBER, Memory.READ -> bookmark; Memory.FORGET -> eraser; Recall.TOOL, Recall.AUTO -> bubble; Recall.OPEN -> folder; WebSearch.TOOL, Materials.OPEN, QwenSearch.STEP -> globe; Materials.LOOK -> picture; VideoParse.TOOL -> Icons.play; VideoParse.SAVE, PanTools.GET -> saveIcon; PanTools.OPEN -> globe
+        Memory.REMEMBER, Memory.READ -> bookmark; Memory.FORGET -> eraser; Recall.TOOL, Recall.AUTO -> bubble; Recall.OPEN -> folder; WebSearch.TOOL, Materials.OPEN, QwenSearch.STEP -> globe; Materials.LOOK, SentPics.TOOL -> picture; VideoParse.TOOL -> Icons.play; VideoParse.SAVE, PanTools.GET -> saveIcon; PanTools.OPEN -> globe
         Skills.OPEN, Skills.FIND, Skills.LEARN -> skillIcon
         Works.MAKE, Works.EDIT -> shapes; Works.READ, SentFiles.TOOL -> page; Pacts.SET, Pacts.DROP -> alarmIcon; "list_todos" -> todo
         ClockTools.ALARM, ClockTools.NEXT, ClockTools.OFF -> alarmIcon

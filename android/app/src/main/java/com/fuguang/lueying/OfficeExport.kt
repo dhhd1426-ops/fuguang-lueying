@@ -219,12 +219,17 @@ strong{color:var(--apricot);font-weight:600}
 
 /* ---------------- Office 文件 ---------------- */
 
-private fun zip(files: List<Pair<String, String>>): ByteArray {
+private fun zip(files: List<Pair<String, String>>, bins: List<Pair<String, ByteArray>> = emptyList()): ByteArray {
     val bos = ByteArrayOutputStream()
     ZipOutputStream(bos).use { z ->
         files.forEach { (path, body) ->
             z.putNextEntry(ZipEntry(path))
             z.write(body.toByteArray(Charsets.UTF_8))
+            z.closeEntry()
+        }
+        bins.forEach { (path, body) ->
+            z.putNextEntry(ZipEntry(path))
+            z.write(body)
             z.closeEntry()
         }
     }
@@ -251,8 +256,28 @@ object Docx {
             (if (numId > 0) "<w:numPr><w:ilvl w:val=\"$ilvl\"/><w:numId w:val=\"$numId\"/></w:numPr>" else "") +
             "</w:pPr>${runs(rs)}</w:p>"
 
-    fun build(title: String, md: String): ByteArray {
+    /** 图片段落：居中、等比缩到正文宽（9026 缇 = 5731510 EMU）以内、高不过 8.5 英寸；说明另起一段小字。 */
+    private fun picPara(no: Int, pic: SentPics.DocPic, alt: String): String {
+        val maxW = 5731510L; val maxH = 7772400L
+        var cx = pic.w * 9525L; var cy = pic.h * 9525L
+        if (cx > maxW) { cy = cy * maxW / cx; cx = maxW }
+        if (cy > maxH) { cx = cx * maxH / cy; cy = maxH }
+        val name = xml(alt.ifBlank { "图 $no" })
+        val drawing = "<w:p><w:pPr><w:jc w:val=\"center\"/><w:spacing w:before=\"120\" w:after=\"60\"/></w:pPr><w:r><w:drawing>" +
+            "<wp:inline distT=\"0\" distB=\"0\" distL=\"0\" distR=\"0\"><wp:extent cx=\"$cx\" cy=\"$cy\"/><wp:docPr id=\"$no\" name=\"$name\"/>" +
+            "<a:graphic xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\"><a:graphicData uri=\"http://schemas.openxmlformats.org/drawingml/2006/picture\">" +
+            "<pic:pic xmlns:pic=\"http://schemas.openxmlformats.org/drawingml/2006/picture\"><pic:nvPicPr><pic:cNvPr id=\"$no\" name=\"image$no\"/><pic:cNvPicPr/></pic:nvPicPr>" +
+            "<pic:blipFill><a:blip r:embed=\"rIdImg$no\"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>" +
+            "<pic:spPr><a:xfrm><a:off x=\"0\" y=\"0\"/><a:ext cx=\"$cx\" cy=\"$cy\"/></a:xfrm><a:prstGeom prst=\"rect\"><a:avLst/></a:prstGeom></pic:spPr></pic:pic>" +
+            "</a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>"
+        val cap = if (alt.isBlank()) "" else "<w:p><w:pPr><w:jc w:val=\"center\"/><w:spacing w:after=\"200\"/></w:pPr><w:r><w:rPr><w:color w:val=\"77766F\"/><w:sz w:val=\"18\"/></w:rPr><w:t xml:space=\"preserve\">${xml(alt)}</w:t></w:r></w:p>"
+        return drawing + cap
+    }
+
+    fun build(title: String, md: String, pics: Map<String, SentPics.DocPic> = emptyMap()): ByteArray {
         val blocks = Md.parse(md)
+        // 放进文件的图：word/media/imageN.jpg|png，rIdImgN
+        val media = ArrayList<Pair<Int, SentPics.DocPic>>()
         val numbered = blocks.filterIsInstance<Block.Numbered>().map { it.list }.distinct()
         // numId 1 = 圆点；每组编号列表一个自己的 numId，从 1 重新数
         val numIdOf = numbered.mapIndexed { i, l -> l to (i + 2) }.toMap()
@@ -267,7 +292,8 @@ object Docx {
                     is Block.Bullet -> p("ListParagraph", b.runs, 1, b.level)
                     is Block.Numbered -> p("ListParagraph", b.runs, numIdOf[b.list] ?: 2)
                     is Block.Quote -> p("Quote", b.runs)
-                    is Block.Image -> p(null, listOf(Run("（图：" + b.alt.ifBlank { "网页素材" } + "）", italic = true)))
+                    is Block.Image -> pics[b.url.trim()]?.let { pic -> val no = media.size + 1; media += no to pic; picPara(no, pic, b.alt) }
+                        ?: p(null, listOf(Run("（图：" + b.alt.ifBlank { "网页素材" } + "）", italic = true)))
                     is Block.Rule -> "<w:p><w:pPr><w:pBdr><w:bottom w:val=\"single\" w:sz=\"4\" w:space=\"1\" w:color=\"D9CFC4\"/></w:pBdr></w:pPr></w:p>"
                     is Block.Table -> {
                         val cols = b.rows.maxOf { it.size }
@@ -290,7 +316,7 @@ object Docx {
                 },
             )
         }
-        val document = "$XH<w:document xmlns:w=\"$W\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\"><w:body>$body" +
+        val document = "$XH<w:document xmlns:w=\"$W\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\" xmlns:wp=\"http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing\"><w:body>$body" +
             "<w:sectPr><w:pgSz w:w=\"11906\" w:h=\"16838\"/><w:pgMar w:top=\"1440\" w:right=\"1440\" w:bottom=\"1440\" w:left=\"1440\" w:header=\"708\" w:footer=\"708\" w:gutter=\"0\"/></w:sectPr></w:body></w:document>"
 
         val font = "<w:rFonts w:ascii=\"Georgia\" w:hAnsi=\"Georgia\" w:eastAsia=\"宋体\"/>"
@@ -322,6 +348,7 @@ object Docx {
             listOf(
                 "[Content_Types].xml" to "$XH<Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\">" +
                     "<Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/><Default Extension=\"xml\" ContentType=\"application/xml\"/>" +
+                    "<Default Extension=\"jpg\" ContentType=\"image/jpeg\"/><Default Extension=\"png\" ContentType=\"image/png\"/>" +
                     "<Override PartName=\"/word/document.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml\"/>" +
                     "<Override PartName=\"/word/styles.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml\"/>" +
                     "<Override PartName=\"/word/numbering.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml\"/>" +
@@ -332,11 +359,14 @@ object Docx {
                 "docProps/core.xml" to core(title),
                 "word/_rels/document.xml.rels" to "$XH<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">" +
                     "<Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles\" Target=\"styles.xml\"/>" +
-                    "<Relationship Id=\"rId2\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering\" Target=\"numbering.xml\"/></Relationships>",
+                    "<Relationship Id=\"rId2\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering\" Target=\"numbering.xml\"/>" +
+                    media.joinToString("") { (no, pic) -> "<Relationship Id=\"rIdImg$no\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/image\" Target=\"media/image$no.${if (pic.png) "png" else "jpg"}\"/>" } +
+                    "</Relationships>",
                 "word/document.xml" to document,
                 "word/styles.xml" to styles,
                 "word/numbering.xml" to numbering,
             ),
+            media.map { (no, pic) -> "word/media/image$no.${if (pic.png) "png" else "jpg"}" to pic.bytes },
         )
     }
 }

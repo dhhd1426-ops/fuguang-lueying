@@ -9,4 +9,6 @@
     <files-path name="attach" path="attach/" />
     <!-- 她发的文件（Word / PDF / txt / md）：打开、分享时交给别的 App -->
     <files-path name="sent" path="sent/" />
+    <!-- 她发的图片：看大图、分享时先复制到 cache/share/ 带上扩展名 -->
+    <files-path name="pics" path="pics/" />
 </paths>

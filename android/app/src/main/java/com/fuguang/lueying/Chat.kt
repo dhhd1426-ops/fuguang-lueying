@@ -290,13 +290,16 @@ class ChatState(val history: ConvStore) {
                 val native = store.search()
                 val web = WebSearch.usable && !native
                 val skills = Skills.specs()
-                val specs = (if (who.noteOn) Memory.toolSpecs else emptyList()) + Works.specs.filter { it.name != Works.MAKE } + WorkJobs.spec + SentFiles.spec + Pacts.specs + Materials.specs + VideoParse.specs + PanTools.specs + ClockTools.specs + skills + (if (web) listOf(WebSearch.spec) else emptyList()) + (if (yu) Yu.tools else emptyList()) + (if (recall) listOf(Recall.spec, Recall.openSpec) else emptyList()) + mcp
+                val specs = (if (who.noteOn) Memory.toolSpecs else emptyList()) + Works.specs.filter { it.name != Works.MAKE } + WorkJobs.spec + SentFiles.spec + SentPics.spec + Pacts.specs + Materials.specs + VideoParse.specs + PanTools.specs + ClockTools.specs + skills + (if (web) listOf(WebSearch.spec) else emptyList()) + (if (yu) Yu.tools else emptyList()) + (if (recall) listOf(Recall.spec, Recall.openSpec) else emptyList()) + mcp
                 val convTitle0 = store0.get(cur)?.title ?: firstSentence(question, 18)
+                // 对方发来的照片，最近的在前：send_image / send_file 里 photo:1 就是最近那张
+                fun photos(): List<java.io.File> = history.filter { it.role == "user" }.flatMap { it.files }.filter { Attach.isImage(it) }.reversed().map { Attach.file(it) }
                 val extra = buildString {
                     append("\n\n你手边还有这些东西，需要时再用，不需要就不用：")
                     if (who.noteOn) append("\n").append(Memory.toolRule())
                     append("\n").append(Works.system(Memory.userCall, history, who.id))
                     append("\n").append(SentFiles.system(Memory.userCall))
+                    append("\n").append(SentPics.system(Memory.userCall))
                     append("\n").append(Pacts.system(who, Memory.userCall))
                     append("\n").append(Materials.system())
                     append("\n").append(VideoParse.system(Memory.userCall))
@@ -326,7 +329,7 @@ class ChatState(val history: ConvStore) {
                             liveSteps.add(ToolStep(thinkText.length, n, Trail.liveTitle(n), Trail.detail(n, a), done = false))
                             var made = n != Works.MAKE && n != Works.EDIT
                             if (!made && workDraft == null) workDraft = WorkDraft(partial.length, n, 0, WorkDraft.title(n, a.toString()))
-                            when (n) { Works.MAKE, Works.EDIT, WorkJobs.START, SentFiles.TOOL -> happened += "work"; Materials.LOOK -> happened += "photo"; WebSearch.TOOL -> happened += "web" }
+                            when (n) { Works.MAKE, Works.EDIT, WorkJobs.START, SentFiles.TOOL -> happened += "work"; SentPics.TOOL -> happened += "photo"; Materials.LOOK -> happened += "photo"; WebSearch.TOOL -> happened += "web" }
                             try {
                             if (n == Memory.REMEMBER || n == Memory.FORGET || n == Memory.READ) Memory.runTool(who, n, a, cur.orEmpty(), convTitle0)
                             else if (n == Recall.TOOL) Recall.run(store0, cur, a.optString("query"))
@@ -338,7 +341,8 @@ class ChatState(val history: ConvStore) {
                             else if (n == Materials.OPEN || n == Materials.LOOK) Materials.run(n, a, Yu.vision(p.id))
                             else if (n == Skills.OPEN || n == Skills.FIND || n == Skills.LEARN) Skills.run(n, a)
                             else if (n == Pacts.SET || n == Pacts.DROP) Pacts.run(n, a, who) { ref -> pendingWorks.add(ref); pendingWorkAt.add(partial.length) }
-                            else if (n == SentFiles.TOOL) SentFiles.run(a) { ref -> pendingWorks.add(ref); pendingWorkAt.add(partial.length) }
+                            else if (n == SentFiles.TOOL) SentFiles.run(a, photos()) { ref -> pendingWorks.add(ref); pendingWorkAt.add(partial.length) }
+                            else if (n == SentPics.TOOL) SentPics.run(a, photos()) { r -> if (r !in pendingImgs) pendingImgs.add(r) }
                             else if (n == WorkJobs.START) WorkJobs.start(a, this@ChatState, store, who.id, history) { ref -> pendingWorks.add(ref); pendingWorkAt.add(partial.length) }
                             else if (n == Works.MAKE || n == Works.READ || n == Works.EDIT) Works.run(n, a, who.id) { id -> made = true; if (id !in pendingWorks) { pendingWorks.add(id); pendingWorkAt.add(workDraft?.at ?: partial.length) } }
                             else if (Mcp.owns(n)) Mcp.run(n, a)
@@ -1147,8 +1151,8 @@ private fun ChatInput(
 /* ---------------- 选择模型抽屉（方案 1：无边框，选中项淡暖色块） ---------------- */
 
 /**
- * 「更多模型」不再跳到「我的」，而是从按钮里长出一张浮动小卡片（ProviderCard.kt）。
- * 卡片开着时抽屉压暗；在卡片里选了模型，卡片和抽屉一起沉下去。
+ * 第 385 版：上面两页（ModelPicker.kt 的 ModelPages），下面深度思考钉住。「更多模型」按钮去掉了；
+ * 没填 Key 的那家点「去填 Key」，配置小卡片（ProviderCard.kt）从深度思考上沿往上长，开着时抽屉压暗。
  */
 @Composable
 private fun ModelDrawer(open: Boolean, store: AssistantStore, compact: Boolean, onClose: () -> Unit) {
@@ -1156,14 +1160,21 @@ private fun ModelDrawer(open: Boolean, store: AssistantStore, compact: Boolean, 
         if (open) 1f else 0f, tween(if (open) 320 else 220, easing = androidx.compose.animation.core.CubicBezierEasing(.2f, .8f, .2f, 1f)), label = "drawer",
     )
     val card = remember { ProviderCardState() }
-    // 找型号：面板收起就清空
+    // 第 385 版：两页（ModelPicker.kt 的 ModelPages）。view = 第一页列哪一家；more = 在「所有模型」页。
+    // 收起后等抽屉沉下去（260ms）再回到第一页、清空找型号，免得收的途中看见页面滑回去。
     var find by remember { mutableStateOf("") }
-    LaunchedEffect(open) { if (!open) find = "" }
+    var more by remember { mutableStateOf(false) }
+    var view by remember { mutableStateOf(store.activeProvider) }
+    LaunchedEffect(open) {
+        if (open) { if (!more) view = store.activeProvider }
+        else { kotlinx.coroutines.delay(260); find = ""; more = false; view = store.activeProvider }
+    }
     var host by remember { mutableStateOf<androidx.compose.ui.layout.LayoutCoordinates?>(null) }
     var moreAt by remember { mutableStateOf<androidx.compose.ui.layout.LayoutCoordinates?>(null) }
     var anchor by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
     val dim by androidx.compose.animation.core.animateFloatAsState(if (card.open || card.sink) 1f else 0f, tween(260), label = "dim")
     androidx.activity.compose.BackHandler(enabled = card.open) { if (card.pid != null) card.back(store) else card.dismiss(store) }
+    androidx.activity.compose.BackHandler(enabled = open && more && !card.open) { more = false }
     LaunchedEffect(open) { if (!open && card.open) card.dismiss(store) }
     LaunchedEffect(card.note) { if (card.note != null) { kotlinx.coroutines.delay(2200); card.note = null } }
     fun openCard() {
@@ -1194,32 +1205,17 @@ private fun ModelDrawer(open: Boolean, store: AssistantStore, compact: Boolean, 
                     .windowInsetsPadding(WindowInsets.safeDrawing.only(androidx.compose.foundation.layout.WindowInsetsSides.Bottom))
                     .heightIn(max = h * .88f),
             ) {
-                // 上：把手、标题、找型号
-                Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 10.dp, bottom = 6.dp)) {
-                    Box(Modifier.align(Alignment.CenterHorizontally).width(40.dp).height(4.dp).background(veil(.25f), RoundedCornerShape(2.dp)))
-                    Spacer(Modifier.height(14.dp))
-                    Box(Modifier.fillMaxWidth()) {
-                        Pressable(onClose, Modifier.align(Alignment.CenterStart), label = "关闭") { _ ->
-                            SvgIcon(Icons.close, Page.ink, 20.dp, modifier = Modifier.padding(6.dp))
-                        }
-                        Txt("选择模型", Page.ink, 16.sp, Modifier.align(Alignment.Center), weight = FontWeight.SemiBold)
-                    }
-                    Spacer(Modifier.height(12.dp))
-                    ModelFind(find) { find = it }
-                }
-                // 中：型号列表，只有这一段滚（ModelPicker.kt）
-                Column(
-                    // 列表变长变短（展开、找型号）时高度 320ms 减速过渡，不一下跳
-                    Modifier.weight(1f, fill = false)
-                        .then(Modifier.animateContentSize(tween(320, easing = androidx.compose.animation.core.CubicBezierEasing(.05f, .7f, .1f, 1f))))
-                        .verticalScroll(rememberScrollState())
-                        .padding(start = 16.dp, end = 16.dp, top = 2.dp, bottom = 10.dp),
-                ) {
-                    ModelList(store, find, onPick = { pid, m -> store.use(pid, m); onClose() }, onSetup = { id -> openCard(); if (id != null) card.openDetail(store, id) })
-                }
-                // 下：思考档、自带搜索、更多模型钉住不动
-                Box(Modifier.fillMaxWidth().height(1.dp).background(veil(.08f)))
-                Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 10.dp, bottom = 14.dp)) {
+                // 上：把手；下面两页（选择模型 ⇄ 所有模型），只有列表那一段滚
+                Box(Modifier.align(Alignment.CenterHorizontally).padding(top = 10.dp).width(40.dp).height(4.dp).background(veil(.25f), RoundedCornerShape(2.dp)))
+                ModelPages(
+                    store, more, view, find,
+                    onFind = { find = it }, onMore = { more = it }, onView = { view = it },
+                    onPick = { pid, m -> store.use(pid, m); onClose() },
+                    onSetup = { id -> openCard(); if (id != null) card.openDetail(store, id) },
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                // 下：思考档、自带搜索钉住不动（第 385 版去掉了上面那道线和「更多模型」按钮；没填 Key 的配置卡从这里往上长）
+                Column(Modifier.onGloballyPositioned { moreAt = it }.padding(start = 20.dp, end = 20.dp, top = 6.dp, bottom = 14.dp)) {
                 // 深度思考六档：液体色块，可点可拖
                 ThinkSegment(Effort.spec(store.activeProvider, store.activeModel), store.effort()) { store.setEffort(it) }
                 // 这个型号有自带搜索才长出开关（QwenSearch）：长出来 320ms 减速，收起 220ms 加速
@@ -1233,19 +1229,6 @@ private fun ModelDrawer(open: Boolean, store: AssistantStore, compact: Boolean, 
                 val note = card.note
                 val noteA by androidx.compose.animation.core.animateFloatAsState(if (note != null) 1f else 0f, tween(200), label = "note")
                 if (noteA > 0f) Txt(note ?: "", Page.accent, 12.sp, Modifier.fillMaxWidth().padding(top = 10.dp).alpha(noteA), align = androidx.compose.ui.text.style.TextAlign.Center)
-                Spacer(Modifier.height(10.dp))
-                Box(Modifier.align(Alignment.CenterHorizontally).onGloballyPositioned { moreAt = it }) {
-                    PressSurface(
-                        { openCard() }, shape = RoundedCornerShape(50),
-                        fill = if (card.open) veil(.09f) else Color.Transparent, label = "更多模型",
-                    ) {
-                        Row(Modifier.padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Txt("更多模型", if (card.open) Page.ink else Page.muted, 13.sp)
-                            Spacer(Modifier.width(4.dp))
-                            SvgIcon(Ic("M9.5 6l6 6-6 6"), Page.muted, 14.dp)
-                        }
-                    }
-                }
                 }
             }
         }

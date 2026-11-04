@@ -1,13 +1,17 @@
 package com.fuguang.lueying
 
-import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -17,41 +21,44 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateMapOf
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 /**
- * 选择模型面板的列表（原型 https://claude.ai/artifact/Bcgv6YLWtxKAqbXcTWkakn 第 3 版）。
- * 千问「获取模型」一下拉进来上百个，原来全摊在面板里，思考档和搜索开关要翻到底才看得到。现在：
- * - 最上面「最近用过」三个（跨供应商）；
- * - 按供应商分组，当前那家展开，别的收起只露名字和个数（收起的那家正在用，标题上写型号）；
- * - 同一型号的日期快照收在它下面「+N 个快照」；qwen1.5、qwen2、qwen-7b 这类老型号收进组底「更早的型号」；
- * - 语音、向量、画图、翻译这类不能聊天的不列（配置里还在），组底写一句「另有 N 个…没列」；
- * - 「图」= 能看图，「搜」= 千问自带搜索；顶上搜索框找型号，找的时候分层全摊开、对上的字标杏色。
- * 思考档、搜索开关、更多模型钉在面板底下，不跟着列表滚（在 Chat.kt 的 ModelDrawer）。
+ * 选择模型面板（第 385 版，原型 https://claude.ai/artifact/8XPa85PfhoFS5TkHg5VBdM 第 6 版，方案 B + 图标方案 1）。
+ * 用户：原来「最近用过」+ 各家分组卡太乱。现在两页：
+ * - 第一页：标题就是供应商（logo + 小字「选择模型」+ 名字 + ⌄），下面只列这一家的主型号，型号用等宽字。没有 ✕、没有「更多」、和底下深度思考之间没有线。
+ * - 点标题滑到第二页「所有模型」：每家一行（logo、名字、个数、正在用的型号），找型号的框在这一页；点一家滑回第一页换成那一家，点型号才真正切过去。
+ * 日期快照、qwen2 这类老型号第一页不列，第二页搜得到。不能聊天的型号（语音、向量、画图…）照旧不列。
  */
 object ModelSort {
     /** 不能拿来聊天的型号。 */
@@ -73,21 +80,195 @@ object ModelSort {
         models.forEach { map.getOrPut(base(it)) { mutableListOf() }.add(it) }
         return map.map { (b, all) -> val lead = if (b in all) b else all.first(); Family(lead, all - lead) }
     }
+
+    /** 第一页列的：主型号，去掉快照和老型号；全是老型号的那家就全列。正在用的不在里面也补上。 */
+    fun home(models: List<String>, active: String?): List<String> {
+        val chat = models.filter { chat(it) }
+        val leads = families(chat).map { it.lead }.filterNot { isOld(it) }.ifEmpty { chat }
+        return if (active != null && active.isNotEmpty() && active in models && active !in leads) leads + active else leads
+    }
 }
 
 private val decel = CubicBezierEasing(.05f, .7f, .1f, 1f)
 private val accel = CubicBezierEasing(.3f, 0f, .8f, .15f)
 private val chevron = Ic("M9.5 6l6 6-6 6")
+private val caret = Ic("M6 9.5l6 6 6-6")
+private val backArrow = Ic("M14.5 6l-6 6 6 6")
+private val tick = Ic("M5 12.5l4.5 4.5L19 7.5")
 private val magnifier = Ic("M16 16l4 4", circles = listOf(floatArrayOf(11f, 11f, 6.5f)))
+private val Mono = FontFamily.Monospace
 
+/**
+ * 各家的 logo（res/drawable-nodpi/logo_*.png，192px 透明底，取自 lobehub/lobe-icons，MIT）。
+ * OpenAI、Grok 牌子本身是黑白的：深色主题用白的，白色主题用黑的。没有 logo 的用原来的字。
+ */
+private fun logoRes(id: String): Int = when (id) {
+    "deepseek" -> R.drawable.logo_deepseek
+    "claude" -> R.drawable.logo_claude
+    "gemini" -> R.drawable.logo_gemini
+    "openai" -> if (Skin.light) R.drawable.logo_openai_light else R.drawable.logo_openai
+    "grok" -> if (Skin.light) R.drawable.logo_grok_light else R.drawable.logo_grok
+    "kimi" -> R.drawable.logo_kimi
+    "siliconflow" -> R.drawable.logo_siliconflow
+    "qwen" -> R.drawable.logo_qwen
+    else -> 0
+}
+
+private val gray = ColorFilter.colorMatrix(ColorMatrix().apply { setToSaturation(0f) })
+
+/** 一家的头像：有 logo 放 logo（淡色圆底），没有放字；dim = 还没填 Key，灰掉调淡。 */
 @Composable
-private fun Fold(open: Boolean, content: @Composable () -> Unit) = AnimatedVisibility(
-    open,
-    enter = expandVertically(tween(320, easing = decel)) + fadeIn(tween(240)),
-    exit = shrinkVertically(tween(220, easing = accel)) + fadeOut(tween(160)),
-) { Column { content() } }
+fun ProviderLogo(id: String, letter: String, size: Dp, dim: Boolean = false) {
+    val res = logoRes(id)
+    Box(
+        Modifier.size(size).background(if (res != 0) veil(.07f) else Skin.accent.copy(alpha = if (dim) .08f else .14f), CircleShape),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (res != 0) Image(painterResource(res), null, Modifier.size(size * .62f).alpha(if (dim) .45f else 1f), colorFilter = if (dim) gray else null)
+        else Txt(letter, if (dim) Page.muted else Page.accent, (size.value * .43f).sp, weight = FontWeight.Medium)
+    }
+}
 
-/** 顶上的搜索框。 */
+/**
+ * 面板的上半截（把手下面到深度思考上面）：两页左右滑。
+ * 进第二页：新的从右边 320ms 减速滑进来，旧的往左挪四分之一淡掉；回来反过来，走的那页 240ms 加速。高度跟着 320ms 减速变。
+ */
+@Composable
+fun ModelPages(
+    store: AssistantStore, more: Boolean, view: String, find: String,
+    onFind: (String) -> Unit, onMore: (Boolean) -> Unit, onView: (String) -> Unit,
+    onPick: (String, String) -> Unit, onSetup: (String?) -> Unit, modifier: Modifier = Modifier,
+) {
+    AnimatedContent(
+        targetState = more,
+        transitionSpec = {
+            val spec = if (targetState) {
+                (slideInHorizontally(tween(320, easing = decel)) { it } + fadeIn(tween(240))) togetherWith
+                    (slideOutHorizontally(tween(320, easing = decel)) { -it / 4 } + fadeOut(tween(180)))
+            } else {
+                (slideInHorizontally(tween(320, easing = decel)) { -it / 4 } + fadeIn(tween(240))) togetherWith
+                    (slideOutHorizontally(tween(240, easing = accel)) { it } + fadeOut(tween(180)))
+            }
+            spec.using(SizeTransform(clip = true) { _, _ -> tween(320, easing = decel) })
+        },
+        modifier = modifier,
+        label = "pages",
+    ) { b ->
+        Column {
+            if (!b) {
+                Box(Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 10.dp, bottom = 8.dp), contentAlignment = Alignment.Center) {
+                    ModelTitle(store, view) { onMore(true) }
+                }
+                Column(
+                    Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState())
+                        .padding(start = 16.dp, end = 16.dp, top = 2.dp, bottom = 6.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) { ModelHome(store, view, onPick) }
+            } else {
+                Column(Modifier.padding(start = 14.dp, end = 20.dp, top = 6.dp, bottom = 6.dp)) {
+                    Box(Modifier.fillMaxWidth()) {
+                        Pressable({ onMore(false) }, Modifier.align(Alignment.CenterStart), label = "返回") { _ ->
+                            SvgIcon(backArrow, Page.ink, 20.dp, modifier = Modifier.padding(8.dp))
+                        }
+                        Txt("所有模型", Page.ink, 16.sp, Modifier.align(Alignment.Center), weight = FontWeight.SemiBold)
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    Box(Modifier.padding(start = 6.dp)) { ModelFind(find, onFind) }
+                }
+                Column(
+                    Modifier.weight(1f, fill = false)
+                        .animateContentSize(tween(320, easing = decel))
+                        .verticalScroll(rememberScrollState())
+                        .padding(start = 16.dp, end = 16.dp, top = 2.dp, bottom = 10.dp),
+                ) {
+                    if (find.isBlank()) ProviderList(store, onGo = { onView(it); onMore(false) }, onSetup = onSetup)
+                    else ModelSearch(store, find, onPick, onSetup)
+                }
+            }
+        }
+    }
+}
+
+/** 第一页的标题：logo、小字「选择模型」、供应商名、⌄；点一下去所有模型。 */
+@Composable
+private fun ModelTitle(store: AssistantStore, pid: String, onClick: () -> Unit) {
+    val p = provider(pid)
+    val name = store.config(pid).name
+    Pressable(onClick, label = "$name，看所有模型") { pressed ->
+        val sc by animateFloatAsState(if (pressed) .97f else 1f, tween(if (pressed) 80 else 200), label = "title")
+        Row(
+            Modifier.graphicsLayer { scaleX = sc; scaleY = sc }
+                .background(if (pressed) veil(.07f) else Color.Transparent, RoundedCornerShape(14.dp))
+                .padding(horizontal = 10.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            ProviderLogo(pid, p.letter, 30.dp)
+            Column {
+                Txt("选择模型", Page.muted, 10.sp, spacing = ls(2f, 10f))
+                Txt(name, Page.ink, 18.sp, weight = FontWeight.SemiBold, maxLines = 1)
+            }
+            SvgIcon(caret, Page.muted, 14.dp)
+        }
+    }
+}
+
+/** 第一页的型号：这一家的主型号。 */
+@Composable
+private fun ModelHome(store: AssistantStore, pid: String, onPick: (String, String) -> Unit) {
+    val c = store.config(pid)
+    val cur = if (store.activeProvider == pid) store.activeModel else null
+    val ms = ModelSort.home(c.models, cur)
+    if (ms.isEmpty()) {
+        Txt(
+            if (!c.configured) "这一家还没填 Key，点上面的名字去所有模型里填" else "这一家还没有型号，去它的配置里点「获取模型」",
+            Page.muted, 13.sp, Modifier.fillMaxWidth().padding(vertical = 20.dp), align = TextAlign.Center,
+        )
+        return
+    }
+    ms.forEach { m -> PickRow(m, tags(pid, m), sel = m == cur, q = "", mono = true) { onPick(pid, m) } }
+}
+
+/** 第二页：每家一行；还没填 Key 的排在后面。 */
+@Composable
+private fun ProviderList(store: AssistantStore, onGo: (String) -> Unit, onSetup: (String?) -> Unit) {
+    val ready = store.ready()
+    val todo = store.ordered().filter { !store.config(it.id).configured }
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        ready.forEach { p ->
+            val c = store.config(p.id)
+            val cur = store.activeProvider == p.id
+            PressSurface({ onGo(p.id) }, Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), fill = veil(.05f), pressedFill = veil(.09f), pressScale = .985f, label = c.name) {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 11.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    ProviderLogo(p.id, p.letter, 32.dp)
+                    Txt(c.name, Page.ink, 14.5.sp, Modifier.weight(1f, fill = false), weight = FontWeight.Medium, maxLines = 1)
+                    Txt(c.models.count { ModelSort.chat(it) }.toString(), Page.muted, 11.sp, Modifier.background(veil(.06f), RoundedCornerShape(50)).padding(horizontal = 8.dp, vertical = 2.dp))
+                    Spacer(Modifier.weight(1f))
+                    if (cur) Txt(store.activeModel, Page.accent, 12.sp, Modifier.weight(1f, fill = false), family = Mono, maxLines = 1)
+                    SvgIcon(chevron, Page.muted, 14.dp)
+                }
+            }
+        }
+    }
+    if (todo.isNotEmpty()) {
+        Cap("还没填 KEY")
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            todo.forEach { p ->
+                val c = store.config(p.id)
+                Row(
+                    Modifier.fillMaxWidth().background(veil(.025f), RoundedCornerShape(16.dp)).padding(horizontal = 12.dp, vertical = 9.dp),
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    ProviderLogo(p.id, p.letter, 32.dp, dim = true)
+                    Txt(c.name, Page.muted, 14.5.sp, Modifier.weight(1f), maxLines = 1)
+                    KeyButton { onSetup(p.id) }
+                }
+            }
+        }
+    }
+}
+
+/** 顶上的搜索框（在第二页）。 */
 @Composable
 fun ModelFind(q: String, onChange: (String) -> Unit) {
     BasicTextField(
@@ -109,115 +290,32 @@ fun ModelFind(q: String, onChange: (String) -> Unit) {
     )
 }
 
-/**
- * 列表本体（放在可滚的那一段里）。第 4 版（同一原型第 4 版）：每家一张卡片（头像字 + 名字 + 个数），展开时型号收在卡片里、
- * 和标题隔一道线；「最近用过」没有卡片底；快照、更早的型号小一号、淡一点、左边一道细线。
- * 还没填 Key 的几家：平时在最下面虚线框里；找的时候对上名字或型号就列出来（灰的）+「去填 Key」。onSetup(供应商) 打开它的配置。
- */
+/** 第二页找型号：对上名字的那家全列，否则列对上的型号（快照、老型号也在）；没填 Key 的灰着，点了去填。 */
 @Composable
-fun ModelList(store: AssistantStore, q: String, onPick: (String, String) -> Unit, onSetup: (String?) -> Unit) {
-    val ready = store.ready()
-    val todo = store.ordered().filter { !store.config(it.id).configured }
-    val opened = remember { mutableStateMapOf<String, Boolean>() }
-    val snapsOpen = remember { mutableStateMapOf<String, Boolean>() }
-    val oldOpen = remember { mutableStateMapOf<String, Boolean>() }
+private fun ModelSearch(store: AssistantStore, q: String, onPick: (String, String) -> Unit, onSetup: (String?) -> Unit) {
     val query = q.trim().lowercase()
-    val nameHit = { p: Provider -> query.isNotEmpty() && (store.config(p.id).name.lowercase().contains(query) || p.id.contains(query) || p.note.lowercase().contains(query)) }
-    val isSel = { pid: String, m: String -> store.activeProvider == pid && store.activeModel == m }
-    val row = @Composable { pid: String, m: String, sub: String ->
-        PickRow(m, sub, tags(pid, m), isSel(pid, m), q = query) { onPick(pid, m) }
-    }
-    if (query.isEmpty()) {
-        val recent = store.recent.mapNotNull { k -> val pid = k.substringBefore('|'); val m = k.substringAfter('|'); ready.firstOrNull { it.id == pid }?.let { p -> Triple(p, m, store.config(p.id).name) }?.takeIf { m in store.config(pid).models } }
-        if (recent.isNotEmpty()) {
-            Cap("最近用过")
-            recent.forEach { (p, m, name) -> row(p.id, m, name) }
-        }
-    }
+    val nameHit = { p: Provider -> store.config(p.id).name.lowercase().contains(query) || p.id.contains(query) || p.note.lowercase().contains(query) }
     var any = false
-    ready.forEach { p ->
+    store.ordered().forEach { p ->
         val c = store.config(p.id)
-        val chat = c.models.filter { ModelSort.chat(it) }
-        val hidden = c.models.size - chat.size
-        val ms = when { query.isEmpty() -> chat; nameHit(p) -> c.models; else -> c.models.filter { query in it.lowercase() } }
-        if (query.isNotEmpty() && ms.isEmpty()) return@forEach
+        val ms = if (nameHit(p)) c.models else c.models.filter { query in it.lowercase() }
+        if (!nameHit(p) && ms.isEmpty()) return@forEach
         any = true
-        val cur = store.activeProvider == p.id
-        val open = query.isNotEmpty() || (opened[p.id] ?: cur)
-        GroupCard(p.letter, c.name, query, open, count = ms.size.toString(), cur = if (cur && !open) store.activeModel else null, onHead = { if (query.isEmpty()) opened[p.id] = !open }) {
-            if (query.isNotEmpty()) ms.forEach { row(p.id, it, "") }
-            else {
-                val fams = ModelSort.families(ms)
-                val (olds, leads) = fams.partition { ModelSort.isOld(it.lead) }
-                val fam = @Composable { f: ModelSort.Family ->
-                    row(p.id, f.lead, "")
-                    if (f.snaps.isNotEmpty()) {
-                        val k = p.id + "|" + f.lead
-                        val o = snapsOpen[k] ?: (cur && store.activeModel in f.snaps)
-                        SubFold("+${f.snaps.size} 个快照", o) { snapsOpen[k] = !o }
-                        Fold(o) { Level { f.snaps.forEach { SubRow(it, isSel(p.id, it), query) { onPick(p.id, it) } } } }
-                    }
-                }
-                leads.forEach { fam(it) }
-                if (olds.isNotEmpty()) {
-                    val o = oldOpen[p.id] ?: (cur && olds.any { f -> store.activeModel == f.lead || store.activeModel in f.snaps })
-                    SubFold("更早的型号 ${olds.size}", o) { oldOpen[p.id] = !o }
-                    Fold(o) { Level { olds.forEach { f -> (listOf(f.lead) + f.snaps).forEach { SubRow(it, isSel(p.id, it), query) { onPick(p.id, it) } } } } }
-                }
-                if (hidden > 0) Txt("另有 $hidden 个语音、向量、画图、翻译型号不能聊天，没列", Page.muted.copy(alpha = .75f), 11.5.sp, Modifier.padding(start = 12.dp, top = 6.dp, bottom = 2.dp))
-            }
+        val ready = c.configured
+        Row(Modifier.fillMaxWidth().padding(start = 4.dp, top = 12.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            ProviderLogo(p.id, p.letter, 22.dp, dim = !ready)
+            Hi(c.name, query, if (ready) Page.muted else Page.muted.copy(alpha = .7f), 12.5.sp, Modifier.weight(1f))
+            if (!ready) KeyButton { onSetup(p.id) }
+        }
+        if (ready && ms.isEmpty()) Txt("这一家还没有型号", Page.muted.copy(alpha = .75f), 12.sp, Modifier.padding(start = 12.dp, bottom = 4.dp))
+        if (!ready && ms.isEmpty()) Txt("填好 Key 后点「获取模型」拉型号", Page.muted.copy(alpha = .75f), 12.sp, Modifier.padding(start = 12.dp, bottom = 4.dp))
+        ms.forEach { m ->
+            val sel = store.activeProvider == p.id && store.activeModel == m
+            if (ready) PickRow(m, tags(p.id, m), sel, q = query, mono = true) { onPick(p.id, m) }
+            else PickRow(m, "", sel = false, dim = true, q = query, mono = true) { onSetup(p.id) }
         }
     }
-    if (query.isNotEmpty()) {
-        todo.forEach { p ->
-            val c = store.config(p.id)
-            val ms = if (nameHit(p)) c.models else c.models.filter { query in it.lowercase() }
-            if (!nameHit(p) && ms.isEmpty()) return@forEach
-            any = true
-            GroupCard(p.letter, c.name, query, true, dim = true, action = { KeyButton { onSetup(p.id) } }, onHead = { onSetup(p.id) }) {
-                if (ms.isEmpty()) Txt("填好 Key 后点「获取模型」拉型号", Page.muted.copy(alpha = .75f), 11.5.sp, Modifier.padding(start = 12.dp, top = 4.dp, bottom = 4.dp))
-                ms.forEach { m -> PickRow(m, "", "", sel = false, dim = true, q = query) { onSetup(p.id) } }
-            }
-        }
-        if (!any) Txt("没有叫「$q」的型号，也没有这一家", Page.muted, 13.sp, Modifier.fillMaxWidth().padding(vertical = 24.dp), align = androidx.compose.ui.text.style.TextAlign.Center)
-    } else if (todo.isNotEmpty()) {
-        TodoCard(todo.map { it.id to (it.letter to store.config(it.id).name) }, onSetup)
-    }
-}
-
-private val dashed = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(10f, 8f))
-
-/** 一家一张卡片：头像字、名字、个数（或右边一个按钮）；展开时内容收在卡片里，和标题隔一道线。 */
-@Composable
-private fun GroupCard(
-    letter: String, name: String, q: String, open: Boolean, count: String? = null, cur: String? = null, dim: Boolean = false,
-    action: (@Composable () -> Unit)? = null, onHead: () -> Unit, content: @Composable () -> Unit,
-) {
-    val fill by androidx.compose.animation.animateColorAsState(if (open) veil(.075f) else veil(.05f), tween(220), label = "card")
-    val turn by animateFloatAsState(if (open) 90f else 0f, tween(320, easing = decel), label = "chev")
-    Column(Modifier.fillMaxWidth().padding(top = 8.dp).background(fill, RoundedCornerShape(18.dp))) {
-        Pressable(onHead, Modifier.fillMaxWidth(), label = name) { pressed ->
-            Row(
-                Modifier.fillMaxWidth().background(if (pressed) veil(.04f) else Color.Transparent, RoundedCornerShape(18.dp)).padding(horizontal = 12.dp, vertical = 11.dp),
-                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                Box(Modifier.size(30.dp).background(Skin.accent.copy(alpha = if (dim) .08f else .14f), CircleShape), contentAlignment = Alignment.Center) {
-                    Txt(letter, if (dim) Page.muted else Page.accent, 13.sp, weight = FontWeight.Medium)
-                }
-                Hi(name, q, if (dim) Page.muted else Page.ink, 14.5.sp, Modifier.weight(1f, fill = false), FontWeight.Medium)
-                if (count != null) Txt(count, Page.muted, 11.sp, Modifier.background(veil(.06f), RoundedCornerShape(50)).padding(horizontal = 8.dp, vertical = 2.dp))
-                Spacer(Modifier.weight(1f))
-                if (cur != null) Txt(cur, Page.accent, 12.sp, Modifier.weight(1f, fill = false), maxLines = 1)
-                if (action != null) action() else SvgIcon(chevron, Page.muted, 14.dp, modifier = Modifier.rotate(turn))
-            }
-        }
-        Fold(open) {
-            Column(Modifier.padding(horizontal = 12.dp)) {
-                Box(Modifier.fillMaxWidth().height(1.dp).background(veil(.08f)))
-                Column(Modifier.padding(top = 6.dp, bottom = 8.dp)) { content() }
-            }
-        }
-    }
+    if (!any) Txt("没有叫「$q」的型号，也没有这一家", Page.muted, 13.sp, Modifier.fillMaxWidth().padding(vertical = 24.dp), align = TextAlign.Center)
 }
 
 @Composable
@@ -225,64 +323,16 @@ private fun KeyButton(onClick: () -> Unit) = PressSurface(onClick, shape = Round
     Txt("去填 Key", Skin.onAccent, 12.sp, Modifier.padding(horizontal = 11.dp, vertical = 5.dp))
 }
 
-/** 还没填 Key 的几家：虚线框，点一家去它的配置。 */
-@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
-@Composable
-private fun TodoCard(items: List<Pair<String, Pair<String, String>>>, onSetup: (String?) -> Unit) {
-    val line = veil(.14f)
-    Column(
-        Modifier.fillMaxWidth().padding(top = 12.dp)
-            .drawBehind { drawRoundRect(line, cornerRadius = androidx.compose.ui.geometry.CornerRadius(18.dp.toPx()), style = androidx.compose.ui.graphics.drawscope.Stroke(1.dp.toPx(), pathEffect = dashed)) }
-            .padding(horizontal = 12.dp, vertical = 10.dp),
-    ) {
-        Txt("还没填 Key 的 ${items.size} 家，点一下去填", Page.muted, 12.sp, Modifier.padding(start = 2.dp, bottom = 8.dp))
-        androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            items.forEach { (id, v) ->
-                val (letter, name) = v
-                PressSurface({ onSetup(id) }, shape = RoundedCornerShape(50), fill = veil(.06f), pressScale = .95f, label = name) {
-                    Row(Modifier.padding(start = 5.dp, end = 10.dp, top = 5.dp, bottom = 5.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Box(Modifier.size(22.dp).background(Skin.accent.copy(alpha = .14f), CircleShape), contentAlignment = Alignment.Center) { Txt(letter, Page.accent, 11.sp) }
-                        Spacer(Modifier.width(6.dp))
-                        Txt(name, Page.ink, 12.5.sp, maxLines = 1)
-                    }
-                }
-            }
-        }
-    }
-}
-
-/** 下一层（快照、更早的型号）：左边一道细线。 */
-@Composable
-private fun Level(content: @Composable () -> Unit) {
-    val line = veil(.1f)
-    Column(Modifier.padding(start = 14.dp).drawBehind { drawLine(line, Offset(0f, 0f), Offset(0f, size.height), 1.dp.toPx()) }.padding(start = 8.dp)) { content() }
-}
-
-/** 下一层的一行：小一号、淡一点。 */
-@Composable
-private fun SubRow(text: String, sel: Boolean, q: String, onClick: () -> Unit) {
-    Pressable(onClick, Modifier.fillMaxWidth().padding(bottom = 2.dp), label = text) { pressed ->
-        Row(
-            Modifier.fillMaxWidth().background(when { sel -> Skin.accent.copy(alpha = .16f); pressed -> veil(.05f); else -> Color.Transparent }, RoundedCornerShape(12.dp))
-                .padding(horizontal = 12.dp, vertical = 9.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Hi(text, q, if (sel) Page.ink else Page.ink.copy(alpha = .62f), 13.5.sp, Modifier.weight(1f))
-            if (sel) SvgIcon(Ic("M5 12.5l4.5 4.5L19 7.5"), Skin.accent.copy(alpha = 1f), 16.dp, stroke = 1.8f)
-        }
-    }
-}
-
 /** 一行字，对上找的那几个字标杏色。 */
 @Composable
-private fun Hi(text: String, q: String, ink: Color, size: androidx.compose.ui.unit.TextUnit, modifier: Modifier = Modifier, weight: FontWeight = FontWeight.Normal) {
+private fun Hi(text: String, q: String, ink: Color, size: TextUnit, modifier: Modifier = Modifier, weight: FontWeight = FontWeight.Normal, family: FontFamily = Sans) {
     val i = if (q.isEmpty()) -1 else text.lowercase().indexOf(q)
     BasicText(
         buildAnnotatedString {
             if (i < 0) append(text)
             else { append(text.substring(0, i)); withStyle(SpanStyle(color = Page.accent)) { append(text.substring(i, i + q.length)) }; append(text.substring(i + q.length)) }
         },
-        modifier, style = TextStyle(fontFamily = Sans, color = ink, fontSize = size, fontWeight = weight), maxLines = 1, overflow = TextOverflow.Ellipsis,
+        modifier, style = TextStyle(fontFamily = family, color = ink, fontSize = size, fontWeight = weight), maxLines = 1, overflow = TextOverflow.Ellipsis,
     )
 }
 
@@ -290,27 +340,12 @@ private fun tags(pid: String, m: String): String =
     (if (Attach.vision(pid, m)) "图" else "") + (if (QwenSearch.supports(pid, m)) "搜" else "")
 
 @Composable
-private fun Cap(text: String) = Txt(text, Page.muted, 10.sp, Modifier.padding(start = 6.dp, top = 12.dp, bottom = 8.dp), spacing = ls(2.5f, 10f))
+private fun Cap(text: String) = Txt(text, Page.muted, 10.sp, Modifier.padding(start = 6.dp, top = 16.dp, bottom = 8.dp), spacing = ls(2.5f, 10f))
 
+/** 一行型号：选中淡暖色块 + 勾；tags 是「图」「搜」；mono = 型号用等宽字。 */
 @Composable
-private fun SubFold(text: String, open: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
-    val turn by animateFloatAsState(if (open) 90f else 0f, tween(320, easing = decel), label = "sub")
-    Pressable(onClick, modifier.fillMaxWidth(), label = text) { pressed ->
-        Row(
-            Modifier.fillMaxWidth().background(if (pressed) veil(.05f) else Color.Transparent, RoundedCornerShape(12.dp)).padding(horizontal = 16.dp, vertical = 9.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Txt(text, Page.muted, 12.sp)
-            Spacer(Modifier.width(4.dp))
-            SvgIcon(chevron, Page.muted, 12.dp, modifier = Modifier.rotate(turn))
-        }
-    }
-}
-
-/** 一行型号：选中淡暖色块 + 勾；sub 是「最近用过」里的供应商名；tags 是「图」「搜」。 */
-@Composable
-private fun PickRow(text: String, sub: String, tags: String, sel: Boolean, dim: Boolean = false, q: String, onClick: () -> Unit) {
-    Pressable(onClick, Modifier.fillMaxWidth().padding(bottom = 4.dp), label = text) { pressed ->
+private fun PickRow(text: String, tags: String, sel: Boolean, dim: Boolean = false, q: String, mono: Boolean = false, onClick: () -> Unit) {
+    Pressable(onClick, Modifier.fillMaxWidth(), label = text) { pressed ->
         Row(
             Modifier.fillMaxWidth()
                 .background(when { sel -> Skin.accent.copy(alpha = .16f); pressed -> veil(.05f); else -> Color.Transparent }, RoundedCornerShape(14.dp))
@@ -319,14 +354,13 @@ private fun PickRow(text: String, sub: String, tags: String, sel: Boolean, dim: 
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             val ink = if (sel) Page.ink else if (dim) Page.muted else Page.ink.copy(alpha = .78f)
-            Hi(text, q, ink, 15.sp, Modifier.weight(1f))
-            if (sub.isNotEmpty()) Txt(sub, Page.muted, 11.sp, maxLines = 1)
+            Hi(text, q, ink, if (mono) 14.5.sp else 15.sp, Modifier.weight(1f), family = if (mono) Mono else Sans)
             tags.forEach { t ->
                 val warm = t == '搜'
                 Txt(t.toString(), if (warm) Page.accent else Page.muted, 10.sp,
                     Modifier.background(if (warm) Skin.accent.copy(alpha = .16f) else veil(.06f), RoundedCornerShape(6.dp)).padding(horizontal = 5.dp, vertical = 2.dp))
             }
-            if (sel) SvgIcon(Ic("M5 12.5l4.5 4.5L19 7.5"), Skin.accent.copy(alpha = 1f), 18.dp, stroke = 1.8f)
+            if (sel) SvgIcon(tick, Skin.accent.copy(alpha = 1f), 18.dp, stroke = 1.8f)
         }
     }
 }
