@@ -379,7 +379,7 @@ class ChatState(val history: ConvStore) {
                                 // 没做成的作品如实标出来，不显示「做好了」
                                 val t = if (made) Trail.doneTitle(n, a) else Trail.failTitle(n, a)
                                 if (!made) slips += Lessons.WORK
-                                if (idx < liveSteps.size) liveSteps[idx] = liveSteps[idx].copy(title = t, done = true, detail = if (n == Recall.OPEN) Recall.lastOpen.ifEmpty { liveSteps[idx].detail } else liveSteps[idx].detail)
+                                if (idx < liveSteps.size) liveSteps[idx] = liveSteps[idx].copy(title = t, done = true, detail = if (n == Recall.OPEN) Recall.lastOpen.ifEmpty { liveSteps[idx].detail } else if (n == Team.SPAWN && Team.lastKey.isNotEmpty()) Team.PREFIX + Team.lastKey.also { Team.lastKey = "" } else liveSteps[idx].detail)
                                 if (n == Works.MAKE || n == Works.EDIT) workDraft = null
                             }
                         },

@@ -281,6 +281,21 @@ fun ThinkingDots(color: Color = Page.muted, size: androidx.compose.ui.unit.TextU
 @Composable
 fun ThinkRow(raw: String, steps: List<ToolStep>, live: Boolean, summary: Boolean, thinkMs: Long = 0L, fetch: Boolean = false, onClick: () -> Unit) {
     if (raw.isBlank() && steps.isEmpty()) return
+    // 这一轮叫了分身（第 400 版）：这一轮说完以后，这一行跟着分身走——在写时流光写最新一步，做完时钟 +「整合成《…》」
+    val team = if (live) null else teamOf(steps)
+    if (team != null) {
+        Pressable(onClick, Modifier.padding(bottom = 10.dp), label = "查看思考过程") { pressed ->
+            Row(Modifier.padding(start = 2.dp, top = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                if (teamBusy(team)) ThinkingMotion(teamLine(team), Modifier.weight(1f, fill = false), size = 14.sp, showDots = false)
+                else {
+                    SvgIcon(Trail.clock, if (team.stage == "fail") Skin.danger else Page.muted, 16.dp, stroke = 1.5f); Spacer(Modifier.width(8.dp))
+                    Txt(teamLine(team), if (team.stage == "fail") Skin.danger else if (pressed) Page.ink else Page.muted, 14.sp, Modifier.weight(1f, fill = false), maxLines = 1)
+                    Spacer(Modifier.width(6.dp)); SvgIcon(Trail.chevron, Page.muted, 14.dp)
+                }
+            }
+        }
+        return
+    }
     if (summary && fetch) LaunchedEffect(raw, steps.size, live) { requestTidy(raw, steps, live, AttachLook.store) }
     // 原文变了才重新切段（以前每次重组都切一遍）；整理结果到了 derivedStateOf 自己会更新
     val items by remember(raw, steps, live, summary) { derivedStateOf { if (summary) summaryItems(raw, steps, live) else emptyList() } }
@@ -413,6 +428,9 @@ fun ThinkDrawer(open: Boolean, raw: String, steps: List<ToolStep>, live: Boolean
 /** 一个节点：思考是小圆点（正在想的是橙点），工具是方块图标（正在用时杏色呼吸）；点一下原地展开全文。 */
 @Composable
 private fun TrailNode(it: TrailItem, last: Boolean, open: Boolean, delay: Int = 0, onToggle: () -> Unit) {
+    // 叫分身那一步（第 400 版）：标题、呼吸跟着那一队走，下面挂 α β γ
+    val team = teamKeyOf(it.tool)?.let { k -> Team.runs[k] }
+    if (team != null) { TeamNode(it, team, last, delay); return }
     // Thinking… 走开得快一点（离开比进入快）
     val enter = remember { Animatable(0f) }
     LaunchedEffect(Unit) { enter.animateTo(1f, tween(360, delayMillis = delay, easing = Curves.standard)) }
@@ -443,6 +461,34 @@ private fun TrailNode(it: TrailItem, last: Boolean, open: Boolean, delay: Int = 
                     Txt(it.detail, Page.muted, 14.sp, lineHeight = 25.sp, maxLines = if (full) Int.MAX_VALUE else if (it.tool != null) 1 else 2)
                 }
             }
+        }
+    }
+}
+
+/** 叫分身那一步：和工具节点一样的方块图标（在写时杏色呼吸），标题跟着这一队变，下面 α β γ（TeamTrail.kt）。 */
+@Composable
+private fun TeamNode(it: TrailItem, team: Team.Run, last: Boolean, delay: Int) {
+    val enter = remember { Animatable(0f) }
+    LaunchedEffect(Unit) { enter.animateTo(1f, tween(360, delayMillis = delay, easing = Curves.standard)) }
+    val live = teamBusy(team)
+    val tint by animateColorAsState(if (live) TrailApricot else Page.muted, tween(400), label = "teamTint")
+    val breath = rememberInfiniteTransition(label = "teamBreath").animateFloat(.12f, .2f, infiniteRepeatable(tween(800), RepeatMode.Reverse), label = "tb")
+    Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min).graphicsLayer { alpha = enter.value; translationY = (1f - enter.value) * 6.dp.toPx() }) {
+        Box(Modifier.width(26.dp).fillMaxHeight()) {
+            if (!last) Box(Modifier.padding(top = 32.dp, bottom = 4.dp).align(Alignment.TopCenter).width(1.dp).fillMaxHeight().background(veil(.13f)))
+            Box(
+                Modifier.align(Alignment.TopCenter).size(26.dp).background(if (live) TrailApricot.copy(alpha = breath.value) else veil(.06f), RoundedCornerShape(8.dp)),
+                contentAlignment = Alignment.Center,
+            ) { SvgIcon(Trail.icon(Team.SPAWN), tint, 15.dp, stroke = 1.5f) }
+        }
+        Column(Modifier.weight(1f).padding(start = 12.dp, bottom = 26.dp, end = 4.dp, top = 1.dp)) {
+            if (live) ThinkingMotion(teamTitle(team), size = 15.5.sp, showDots = false, ink = Page.ink)
+            else Txt(teamTitle(team), if (team.stage == "fail") Skin.danger else Page.ink.copy(alpha = .94f), 15.5.sp, lineHeight = 24.sp, weight = FontWeight.Medium)
+            if (team.stage == "fail" && !team.fail.isNullOrBlank()) {
+                Spacer(Modifier.height(6.dp))
+                Txt(team.fail.orEmpty(), Page.muted, 14.sp, lineHeight = 25.sp)
+            }
+            TeamParts(team)
         }
     }
 }
