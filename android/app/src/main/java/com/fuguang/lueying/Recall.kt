@@ -16,8 +16,8 @@ import java.util.Locale
  * 她自己想找时还能用 [TOOL] 按关键词搜。
  */
 object Recall {
-    /** 停用了聊天摘要（第 375 版）：翻以前的聊天时不看已有的摘要，只按标题和原话。 */
-    private fun gist(c: Conv) = if (Memory.active.gistOn) c.gist else ""
+    /** 那段聊了什么：以前写好的摘要；没有就用那段的前情（第 394 版聊天摘要废弃，不再新写）。 */
+    private fun gist(c: Conv) = c.gist.ifBlank { Fold.gist(c) }
 
     const val TOOL = "recall_chats"
     const val OPEN = "open_chat"
@@ -147,7 +147,6 @@ object Recall {
         val from = if (at == null) maxOf(0, c.msgs.size - 30) else maxOf(0, at - 6)
         val to = minOf(c.msgs.size, from + 30)
         val lines = (from until to).filter { c.msgs[it].text.isNotBlank() }.map { i -> "第 ${i + 1} 句 " + who(c.msgs[i].role) + "：" + c.msgs[i].text.take(800) }
-        if (gist(c).isBlank()) Reflect.digestLater(c.id)
         lastOpen = "${c.title} · 第 ${from + 1}–$to 句" + (if (at == null && words.isNotEmpty()) "（没找到「$q」，看的是最后一段）" else "") +
             "\n\n" + (from until to).filter { c.msgs[it].text.isNotBlank() }.joinToString("\n") { i -> (if (c.msgs[i].role == "user") Memory.userCall else (Memory.get(c.who)?.name ?: "她")) + "：" + c.msgs[i].text.replace("\n", " ").take(300) }
         return ToolOut(
@@ -186,9 +185,6 @@ object Recall {
             }
             if (out.length() == 0) return ToolOut("以前的聊天里没找到「${query.trim()}」。")
         }
-        // 翻到的几段还没有小结：后台补上，下次就有（第 361 版）
-        val ids = (0 until out.length()).mapNotNull { out.optJSONObject(it)?.optString("id") }.toSet()
-        convs.filter { it.id in ids && it.gist.isBlank() }.take(3).forEach { Reflect.digestLater(it.id) }
         return ToolOut(JSONObject().put("chats", out).toString())
     }
 
