@@ -94,7 +94,7 @@ private val minus = Ic("M6 12h12")
 
 /** 文字换掉：旧的往上淡出（140ms 加速），新的从下面上来（240ms 减速）。 */
 @Composable
-private fun SwapText(text: String, color: androidx.compose.ui.graphics.Color, size: androidx.compose.ui.unit.TextUnit, modifier: Modifier = Modifier, family: FontFamily = Sans) {
+internal fun SwapText(text: String, color: androidx.compose.ui.graphics.Color, size: androidx.compose.ui.unit.TextUnit, modifier: Modifier = Modifier, family: FontFamily = Sans) {
     AnimatedContent(
         text,
         modifier,
@@ -320,7 +320,10 @@ internal fun ColumnScope.FoldScreen(store: AssistantStore, compact: Boolean, blu
     DisposableEffect(Unit) { onDispose { commit() } }
     Box(Modifier.weight(1f).fillMaxWidth()) {
         Column(Modifier.fillMaxSize()) {
-            Title("前情", compact, onBack = { nav.back() }) { ModelChip(store, pick) { pick = true } }
+            val own = FoldModel.own(store)
+            Title("前情", compact, onBack = { nav.back() }) {
+                ModelChip(if (own) FoldModel.pid else MemModel.pick(store).first, if (own) FoldModel.model else "跟着记忆模型", pick) { pick = true }
+            }
             BasicTextField(
                 value = draft,
                 onValueChange = { draft = it },
@@ -339,41 +342,46 @@ internal fun ColumnScope.FoldScreen(store: AssistantStore, compact: Boolean, blu
                 }
             }
         }
-        ModelSheet(pick, store) { pick = false }
+        val (mid, mm) = MemModel.pick(store)
+        ModelSheet(pick, store, "跟着记忆模型", mid, store.config(mid).name + " / " + mm, FoldModel.own(store), FoldModel.pid, FoldModel.model, { id, m -> FoldModel.use(id, m) }) { pick = false }
     }
 }
 
-/** 标题右边：logo + 用哪个模型 + ⌄（打开列表时转过来）。 */
+/** 标题右边：logo + 用哪个模型 + ⌄（打开列表时转过来）。前情页、Amor 分身页共用。 */
 @Composable
-private fun ModelChip(store: AssistantStore, held: Boolean, onClick: () -> Unit) {
-    val own = FoldModel.own(store)
-    val id = if (own) FoldModel.pid else MemModel.pick(store).first
-    Pressable(onClick, Modifier.padding(start = 8.dp, top = 4.dp, bottom = 4.dp), label = "整理用的模型") { pr ->
-        val s by animateFloatAsState(if (pr) .95f else 1f, if (pr) tween(70) else tween(180, easing = Curves.standard), label = "foldChipPress")
-        val rot by animateFloatAsState(if (held) 180f else 0f, tween(240, easing = Curves.standard), label = "foldChipCaret")
+internal fun ModelChip(logo: String, label: String, held: Boolean, onClick: () -> Unit) {
+    Pressable(onClick, Modifier.padding(start = 8.dp, top = 4.dp, bottom = 4.dp), label = "选模型") { pr ->
+        val s by animateFloatAsState(if (pr) .95f else 1f, if (pr) tween(70) else tween(180, easing = Curves.standard), label = "modelChipPress")
+        val rot by animateFloatAsState(if (held) 180f else 0f, tween(240, easing = Curves.standard), label = "modelChipCaret")
         Row(
             Modifier.graphicsLayer { scaleX = s; scaleY = s }.background(veil(if (pr || held) .13f else .07f), RoundedCornerShape(12.dp))
                 .height(36.dp).padding(start = 7.dp, end = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            ProviderLogo(id, provider(id).letter, 22.dp)
+            ProviderLogo(logo, provider(logo).letter, 22.dp)
             Spacer(Modifier.width(7.dp))
-            SwapText(if (own) FoldModel.model else "跟着记忆模型", Page.ink, 13.sp, Modifier.widthIn(max = 132.dp))
+            SwapText(label, Page.ink, 13.sp, Modifier.widthIn(max = 132.dp))
             Spacer(Modifier.width(6.dp))
             SvgIcon(caret, Page.muted, 12.dp, stroke = 1.7f, modifier = Modifier.graphicsLayer { rotationZ = rot })
         }
     }
 }
 
-/** 选模型：从底下升起（380ms 减速），收回 260ms 加速；选好停一拍自己收回。 */
+/**
+ * 选模型：从底下升起（380ms 减速），收回 260ms 加速；选好停一拍自己收回。
+ * 第一行是「跟着…」（own = false 时打勾），下面每家配好的型号。
+ */
 @Composable
-private fun ModelSheet(open: Boolean, store: AssistantStore, onDismiss: () -> Unit) {
+internal fun ModelSheet(
+    open: Boolean, store: AssistantStore, followLabel: String, followPid: String, followSub: String,
+    own: Boolean, pid: String, model: String, onPick: (String, String) -> Unit, onDismiss: () -> Unit,
+) {
     val t = remember { Animatable(0f) }
     val scope = rememberCoroutineScope()
     LaunchedEffect(open) { t.animateTo(if (open) 1f else 0f, if (open) tween(380, easing = Curves.decel) else tween(260, easing = Curves.accel)) }
     BackHandler(open) { onDismiss() }
     if (!open && t.value <= 0f) return
-    fun choose(id: String, m: String) { FoldModel.use(id, m); scope.launch { delay(260); onDismiss() } }
+    fun choose(id: String, m: String) { onPick(id, m); scope.launch { delay(260); onDismiss() } }
     Box(Modifier.fillMaxSize()) {
         Box(Modifier.fillMaxSize().graphicsLayer { alpha = t.value }.background(Skin.scrim(.4f)).pointerInput(open) { if (open) detectTapGestures { onDismiss() } })
         Column(
@@ -386,15 +394,13 @@ private fun ModelSheet(open: Boolean, store: AssistantStore, onDismiss: () -> Un
         ) {
             Box(Modifier.align(Alignment.CenterHorizontally).size(36.dp, 4.dp).background(veil(.18f), RoundedCornerShape(2.dp)))
             Spacer(Modifier.height(10.dp))
-            Txt("整理用的模型", Page.ink, 15.sp, Modifier.padding(horizontal = 10.dp, vertical = 6.dp))
+            Txt("用哪个模型", Page.ink, 15.sp, Modifier.padding(horizontal = 10.dp, vertical = 6.dp))
             Column(Modifier.verticalScroll(rememberScrollState())) {
-                val (mid, mm) = MemModel.pick(store)
-                val own = FoldModel.own(store)
-                ModelRow(mid, "跟着记忆模型", store.config(mid).name + " / " + mm, !own) { choose("", "") }
+                ModelRow(followPid, followLabel, followSub, !own) { choose("", "") }
                 store.order.filter { store.config(it).configured }.forEach { id ->
                     val cfg = store.config(id)
                     cfg.models.ifEmpty { ProviderConfig.DEFAULT_MODELS[id].orEmpty() }.forEach { m ->
-                        ModelRow(id, cfg.name, m, own && FoldModel.pid == id && FoldModel.model == m) { choose(id, m) }
+                        ModelRow(id, cfg.name, m, own && pid == id && model == m) { choose(id, m) }
                     }
                 }
             }
