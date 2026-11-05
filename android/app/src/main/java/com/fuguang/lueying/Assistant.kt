@@ -236,6 +236,11 @@ object AssistantApi {
             if (c.key.isBlank()) throw IllegalStateException("先填 API Key")
             val body = read(open(trim(c.base) + "/models", c, p))
             val arr = JSONObject(body).optJSONArray("data") ?: JSONArray()
+            // 有的家在列表里写了窗口多大：记下来，前情按它算什么时候整理（第 394 版）
+            for (k in 0 until arr.length()) arr.optJSONObject(k)?.let { o ->
+                val n = listOf("context_length", "context_window", "max_context_length", "max_input_tokens", "max_model_len").firstNotNullOfOrNull { key -> o.optInt(key, 0).takeIf { it > 0 } }
+                if (n != null) CtxWin.know(p.id, o.optString("id"), n)
+            }
             List(arr.length()) { arr.getJSONObject(it).optString("id") }.filter { it.isNotBlank() }
         }.recoverCatching { throw IllegalStateException(friendly(it)) }
     }
@@ -374,6 +379,8 @@ object ChatApi {
     @Volatile var topP: Float? = null
     /** 这一轮里 App 认出的岔子（Lessons.CLAIM 说做好了没动手、Lessons.CAP 工具用到顶）；每次 stream 开始时清空。 */
     val slips: MutableSet<String> = java.util.Collections.synchronizedSet(mutableSetOf())
+    /** 这一轮第一次发出去，供应商说用了多少 token（usage；没回就是 0）。前情按它算要不要整理（第 394 版）。 */
+    @Volatile var firstInput = 0
 
     suspend fun stream(
         p: Provider,
@@ -394,6 +401,7 @@ object ChatApi {
         onText: suspend (String) -> Unit,
     ) {
         slips.clear()
+        firstInput = 0
         // 先按 ModelFit 认这个模型（认过 / 学过的参数一开始就不带）；报错点名了哪个参数就记下、去掉重发（最多 5 次）；思考档位先一档档往下退，退到底才不带。
         repeat(5) {
             // 自带搜索被拒过（ModelFit 记了 search），这一轮就不带
@@ -577,7 +585,7 @@ object ChatApi {
     }
 
     /** 能一起并发着做的工具（只读、不问人）。 */
-    private val READ_ONLY = setOf(Memory.READ, Skills.OPEN, Skills.FIND, WebSearch.TOOL, Recall.TOOL, Works.READ, Materials.OPEN, Materials.LOOK, VideoParse.TOOL, PanTools.OPEN, ClockTools.NEXT, ClockTools.LIST)
+    private val READ_ONLY = setOf(Fold.LOOK, Memory.READ, Skills.OPEN, Skills.FIND, WebSearch.TOOL, Recall.TOOL, Works.READ, Materials.OPEN, Materials.LOOK, VideoParse.TOOL, PanTools.OPEN, ClockTools.NEXT, ClockTools.LIST)
 
     private fun args(call: Call) = runCatching { JSONObject(call.args.toString().ifBlank { "{}" }) }.getOrDefault(JSONObject())
 
@@ -646,12 +654,16 @@ object ChatApi {
                 body.put("tools", arr)
             }
             if (search != null) QwenSearch.apply(body)
+            // 要供应商在最后回一下用了多少（Anthropic 本来就回）；不认这个参数的，报错点名后 ModelFit 记下不带
+            if (!anthropic) body.put("stream_options", JSONObject().put("include_usage", true))
             ModelFit.strip(p.id, model, body)
             conn.outputStream.use { it.write(body.toString().toByteArray()) }
 
             val code = conn.responseCode
             val err = if (code !in 200..299) conn.errorStream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() } ?: "" else ""
             if (QwenSearch.audited(err)) throw IllegalStateException(QwenSearch.AUDIT)
+            // 内容太长了：交给聊天页整理前情再发（第 394 版）
+            if (code !in 200..299) CtxWin.overflow(err)?.let { throw ContextFull(it) }
             if (code == 400 || code == 422) {
                 // 报错点名了哪个参数：记在这个模型名下，去掉重发
                 ModelFit.blame(err, body)?.let { w ->
@@ -684,7 +696,15 @@ object ChatApi {
                     val o = runCatching { JSONObject(data) }.getOrNull() ?: continue
                     if (anthropic) {
                         when (o.optString("type")) {
-                            "error" -> throw IllegalStateException("出错了：" + o.optJSONObject("error")?.optString("message").orEmpty().take(80))
+                            "error" -> {
+                                val em = o.optJSONObject("error")?.optString("message").orEmpty()
+                                CtxWin.overflow(em)?.let { throw ContextFull(it) }
+                                throw IllegalStateException("出错了：" + em.take(80))
+                            }
+                            "message_start" -> o.optJSONObject("message")?.optJSONObject("usage")?.let { u ->
+                                val n = u.optInt("input_tokens") + u.optInt("cache_creation_input_tokens") + u.optInt("cache_read_input_tokens")
+                                if (n > 0 && firstInput == 0) firstInput = n
+                            }
                             "content_block_start" -> {
                                 val i = o.optInt("index")
                                 val cb = o.optJSONObject("content_block") ?: JSONObject()
@@ -715,6 +735,7 @@ object ChatApi {
                         }
                     } else {
                         if (search != null && QwenSearch.searched(o)) search()
+                        o.optJSONObject("usage")?.let { u -> val n = u.optInt("prompt_tokens", u.optInt("input_tokens")); if (n > 0 && firstInput == 0) firstInput = n }
                         val d = o.optJSONArray("choices")?.optJSONObject(0)?.optJSONObject("delta") ?: continue
                         if (!d.isNull("reasoning_content")) d.optString("reasoning_content").takeIf { it.isNotEmpty() }?.let {
                             reasoning.append(it); withContext(Dispatchers.Main) { onThink(it) }
@@ -761,6 +782,8 @@ object ChatApi {
         } catch (e: IllegalStateException) {
             throw e
         } catch (e: Rejected) {
+            throw e
+        } catch (e: ContextFull) {
             throw e
         } catch (e: java.net.UnknownHostException) {
             throw IllegalStateException("连不上服务器，检查网络或地址")

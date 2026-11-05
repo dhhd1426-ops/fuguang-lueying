@@ -57,6 +57,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.drawOutline
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
@@ -130,6 +131,8 @@ class ChatState(val history: ConvStore) {
     val queue = mutableStateListOf<String>()
     /** 点了「立即发送」：停下这轮后马上把排着的发出去。 */
     private var sendNowAfterStop = false
+    /** 发出去被拒说太长了、整理前情后重发过的那一句（序号）：同一句只重发一次。 */
+    private var overflowAt = -1
     /** 这轮用过 / 正在用的工具，和思考段落排在同一条时间线上。 */
     val liveSteps = mutableStateListOf<ToolStep>()
     /** 这轮回答里读到的羽的笔记图片。 */
@@ -265,7 +268,11 @@ class ChatState(val history: ConvStore) {
         val roundAt = System.currentTimeMillis()
         val mine = history.lastOrNull { it.role == "user" }?.text
         Notify.startLive(convId, this@ChatState.history, mine)
+        val model0 = store.activeModel
         job = scope.launch {
+            // 前情（Fold.kt）：这段聊长了整理过，发出去的是前情 + 后面的原话；sentEst 是估的这轮发出去多少
+            var sentEst = 0
+            var tooLong = false
             try {
                 // 她看不了图：先请能看图的帮她看一眼（AttachLook.kt），时间线上记一步
                 if (!Attach.vision(p.id, store.activeModel)) {
@@ -284,13 +291,17 @@ class ChatState(val history: ConvStore) {
                 val recall = who.memOn
                 val store0 = this@ChatState.history
                 val cur = convId
+                val conv0 = store0.get(cur)
+                val folded = Fold.of(conv0)
+                Fold.shown = folded
+                val sent0 = Fold.view(conv0, history)
                 val question = history.lastOrNull { it.role == "user" }?.text.orEmpty()
                 val mcp = Mcp.specs
                 // 开着千问自带搜索：她自己会查，App 的 web_search 这一轮不给（免得查两遍）
                 val native = store.search()
                 val web = WebSearch.usable && !native
                 val skills = Skills.specs()
-                val specs = (if (who.noteOn) Memory.toolSpecs else emptyList()) + Works.specs.filter { it.name != Works.MAKE } + WorkJobs.spec + SentFiles.spec + SentPics.spec + Pacts.specs + Materials.specs + VideoParse.specs + PanTools.specs + ClockTools.specs + WebHand.specs + skills + (if (web) listOf(WebSearch.spec) else emptyList()) + (if (yu) Yu.tools else emptyList()) + (if (recall) listOf(Recall.spec, Recall.openSpec) else emptyList()) + mcp
+                val specs = (if (who.noteOn) Memory.toolSpecs else emptyList()) + Works.specs.filter { it.name != Works.MAKE } + WorkJobs.spec + SentFiles.spec + SentPics.spec + Pacts.specs + Materials.specs + VideoParse.specs + PanTools.specs + ClockTools.specs + WebHand.specs + skills + (if (web) listOf(WebSearch.spec) else emptyList()) + (if (yu) Yu.tools else emptyList()) + (if (recall) listOf(Recall.spec, Recall.openSpec) else emptyList()) + (if (folded != null) listOf(Fold.spec) else emptyList()) + mcp
                 val convTitle0 = store0.get(cur)?.title ?: firstSentence(question, 18)
                 // 对方发来的照片，最近的在前：send_image / send_file 里 photo:1 就是最近那张
                 fun photos(): List<java.io.File> = history.filter { it.role == "user" }.flatMap { it.files }.filter { Attach.isImage(it) }.reversed().map { Attach.file(it) }
@@ -311,6 +322,7 @@ class ChatState(val history: ConvStore) {
                     if (web) append("\n").append(WebSearch.system())
                     if (native) append("\n").append("你这会儿能直接上网查（用的是你自己带的搜索）：问到天气、新闻、价格、谁现在是什么职位这类会变的事，先查再说；查到的照实说，拿不准的说拿不准。")
                     if (recall) append("\n").append(Recall.system())
+                    if (folded != null) append("\n").append(Fold.system())
                     if (yu) append("\n").append(Yu.system())
                     if (mcp.isNotEmpty()) append("\n").append(Mcp.system())
                 }
@@ -318,8 +330,10 @@ class ChatState(val history: ConvStore) {
                 val hits = if (recall) runCatching { withContext(Dispatchers.Default) { Recall.match(store0, cur, question) } }.getOrDefault(emptyList()) else emptyList() // 翻所有旧聊天：放后台算
                 if (hits.isNotEmpty()) liveSteps.add(0, Recall.step(hits))
                 var searchedOnce = false
+                val sys0 = Prompt.system(who, model0)
+                sentEst = CtxWin.est(sent0) + CtxWin.est(sys0) + CtxWin.est(extra)
                 ChatApi.stream(
-                    p, c, store.activeModel, Prompt.system(who, store.activeModel), Entries.weave(who, history, Prompt.aside(who, history, who.prevAt) + Lessons.aside(shownLessons, slips) + Recall.note(hits).let { if (it.isEmpty()) "" else "\n$it" }), effort,
+                    p, c, model0, sys0, Entries.weave(who, sent0, Prompt.aside(who, history, who.prevAt) + Lessons.aside(shownLessons, slips) + Recall.note(hits).let { if (it.isEmpty()) "" else "\n$it" } + Fold.note(conv0).let { if (it.isEmpty()) "" else "\n$it" }), effort,
                     onThink = { thinkText += it; thinking = true; val t = System.currentTimeMillis(); if (thinkAt == 0L) thinkAt = t; thinkEnd = t },
                     tools = if (specs.isNotEmpty()) Tools(
                         specs,
@@ -333,6 +347,7 @@ class ChatState(val history: ConvStore) {
                             when (n) { Works.MAKE, Works.EDIT, WorkJobs.START, SentFiles.TOOL -> happened += "work"; SentPics.TOOL -> happened += "photo"; Materials.LOOK -> happened += "photo"; WebSearch.TOOL -> happened += "web" }
                             try {
                             if (n == Memory.REMEMBER || n == Memory.FORGET || n == Memory.READ) Memory.runTool(who, n, a, cur.orEmpty(), convTitle0)
+                            else if (n == Fold.LOOK) Fold.look(store0, cur, a)
                             else if (n == Recall.TOOL) Recall.run(store0, cur, a.optString("query"))
                             else if (n == Recall.OPEN) Recall.open(store0, a)
                             else if (n == WebSearch.TOOL) WebSearch.run(a.optString("query"))
@@ -394,6 +409,10 @@ class ChatState(val history: ConvStore) {
                     val cid = convId.orEmpty()
                     val title = this@ChatState.history.get(convId)?.title ?: firstSentence(question, 18)
                     Reflect.later(cid, messages.toList()) { w -> Reflect.run(who, w, cid, title) }
+                    // 前情：这轮发出去的快到窗口的 75% 了，后台整理（供应商回了用量就按它，顺手校准估算）
+                    val real = ChatApi.firstInput
+                    if (real > 0) CtxWin.calibrate(p.id, model0, real, sentEst)
+                    Fold.check(this@ChatState.history, convId, p.id, model0, if (real > 0) real else CtxWin.tokens(p.id, model0, sentEst))
                     // 做事经验：想起过的这一轮算不算用上；出了岔子就请帮手给她记一句，挂在这条回复下面
                     slips += ChatApi.slips
                     Lessons.settle(who, shownLessons, slips, happened)
@@ -405,6 +424,11 @@ class ChatState(val history: ConvStore) {
             } catch (e: kotlinx.coroutines.CancellationException) {
                 if (partial.isNotBlank() || pendingWorks.isNotEmpty() || pendingClips.isNotEmpty()) messages.add(replyMsg(partial.take(ceil(shown).toInt()).trim()))
                 throw e
+            } catch (e: ContextFull) {
+                // 太长了被拒：记下这个模型的窗口，收尾后整理前情、再发一遍（finally 里）
+                if (partial.isNotBlank() || pendingWorks.isNotEmpty() || pendingClips.isNotEmpty()) messages.add(replyMsg(partial.trim()))
+                CtxWin.full(p.id, model0, e.limit, CtxWin.tokens(p.id, model0, sentEst))
+                tooLong = true
             } catch (e: Exception) {
                 if (partial.isNotBlank() || pendingWorks.isNotEmpty() || pendingClips.isNotEmpty()) messages.add(replyMsg(partial.trim()))
                 error = e.message ?: "出错了"
@@ -421,8 +445,19 @@ class ChatState(val history: ConvStore) {
                     if (err != null) Notify.failed(convId, this@ChatState.history, err, seen)
                     else if (r != null) Notify.replied(convId, this@ChatState.history, mine, Notify.preview(r), seen)
                 }
+                // 太长了被拒：整理前情后再发这一句（同一句只重发一次）；关着前情就请他开新对话
+                if (tooLong && !stopped) {
+                    val id = convId
+                    if (id != null && Memory.active.foldOn && overflowAt != messages.size) {
+                        overflowAt = messages.size
+                        scope.launch {
+                            if (Fold.run(this@ChatState.history, id, true)) { if (convId == id && !busy && messages.lastOrNull()?.role == "user") ask(scope, store) }
+                            else if (convId == id) error = "这段聊天太长了，前面没整理成：" + MemModel.lastError.ifBlank { "整理用的模型没回应" }
+                        }
+                    } else error = if (Memory.active.foldOn) "这段聊天太长了，开个新对话接着聊吧" else "这段聊天太长了。开个新对话，或者在记忆页打开前情"
+                }
                 // 这轮结束还有排着的话：接着发（你自己点停止的不发，出错的也不发，留着等你）
-                val go = sendNowAfterStop || (!stopped && error == null)
+                val go = !tooLong && (sendNowAfterStop || (!stopped && error == null))
                 sendNowAfterStop = false
                 if (go && queue.isNotEmpty()) scope.launch { flushQueue(scope, store) }
                 else if (!onScreen) Chats.finished(this@ChatState)
@@ -791,6 +826,21 @@ private fun Conversation(
     var endY by remember { mutableFloatStateOf(0f) }
     val gapPx = with(density) { 14.dp.toPx() }
     val lastUser = chat.messages.indexOfLast { it.role == "user" }
+    // 前情（Fold.kt）：分隔线插在整理过的和原样留着的中间；整理时先画在要整理到的那一条
+    val convNow = chat.convId?.let { chat.history.get(it) }
+    val foldBusy = chat.convId?.let { Fold.busy[it] }
+    val foldAt = foldBusy ?: Fold.of(convNow)?.upto ?: -1
+    // 前情卡里点「看原话」：滚到那几条，亮一下再褪掉
+    val jump = FoldUi.jump
+    val glowA = remember { androidx.compose.animation.core.Animatable(0f) }
+    LaunchedEffect(FoldUi.glow) {
+        if (FoldUi.glow == null) return@LaunchedEffect
+        glowA.snapTo(0f)
+        glowA.animateTo(1f, tween(200))
+        kotlinx.coroutines.delay(700)
+        glowA.animateTo(0f, tween(900, easing = Curves.standard))
+        FoldUi.glow = null
+    }
 
     // 发出一条消息后，把它滑到屏幕上方（之后回复写出来时屏幕不动）
     LaunchedEffect(chat.sent) {
@@ -826,9 +876,20 @@ private fun Conversation(
                     )
                     // 位置要按这一层（列表的直接子项）来量：包了一层之后，里面量到的只是相对这一层的位置
                     val topPad = if (i == 0) 0.dp else 26.dp
+                    if (i == foldAt && chat.convId != null) FoldDivider(chat.convId.orEmpty(), convNow?.fold, foldBusy)
                     Column(
                         Modifier.graphicsLayer { alpha = dim }
-                            .then(if (i == lastUser && m.role == "user") Modifier.onGloballyPositioned { lastUserTop = it.positionInParent().y + with(density) { topPad.toPx() } } else Modifier),
+                            .then(if (i == lastUser && m.role == "user") Modifier.onGloballyPositioned { lastUserTop = it.positionInParent().y + with(density) { topPad.toPx() } } else Modifier)
+                            .then(if (jump != null && i == jump.first - 1) Modifier.onGloballyPositioned {
+                                if (FoldUi.jump != null) {
+                                    val y = it.positionInParent().y + with(density) { topPad.toPx() }
+                                    FoldUi.jump = null; FoldUi.glow = jump
+                                    scope.launch { scroll.animateScrollTo((y - gapPx).toInt().coerceAtLeast(0)) }
+                                }
+                            } else Modifier)
+                            .then(if (FoldUi.glow?.contains(i + 1) == true) Modifier.drawBehind {
+                                drawRoundRect(Skin.accent.copy(alpha = .13f * glowA.value), cornerRadius = androidx.compose.ui.geometry.CornerRadius(12.dp.toPx()))
+                            } else Modifier),
                     ) {
                     if (m.role == "user") {
                         Box(

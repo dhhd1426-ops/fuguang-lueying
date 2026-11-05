@@ -68,45 +68,6 @@ object Reflect {
         scope.launch { runCatching { b() } }
     }
 
-    /** 正在写小结的对话 id：「这段聊了什么」里显示「正在写…」。 */
-    val writing = mutableStateListOf<String>()
-
-    /** 要用小结却还没有（打开「这段聊了什么」、她翻到没小结的旧聊天）：当场读那段原文补一份。 */
-    fun digestNow(id: String) { scope.launch { digestOne(id) } }
-
-    /** 后台顺手补（翻旧聊天时碰到没摘要的）：只在开着「自动写摘要」时。 */
-    fun digestLater(id: String) { if (GistModel.auto) digestNow(id) }
-
-    /** 聊天摘要页「补写没写的 N 段」：一段一段写，没写出来的记下原因、接着写下一段。 */
-    fun digestAll(ids: List<String>) {
-        if (filling) return
-        filling = true
-        scope.launch {
-            try {
-                for (id in ids) {
-                    digestOne(id)
-                    // 余额不足、Key 不对、没设置好：后面的也一样写不出来，停下（第 365 版）
-                    if (gistFail[id]?.let { MemModel.fatal(it) } == true) break
-                }
-            } finally { filling = false }
-        }
-    }
-    var filling by androidx.compose.runtime.mutableStateOf(false)
-        private set
-
-    private suspend fun digestOne(id: String) {
-        if (id in writing) return
-        val c0 = Chats.current?.history?.get(id) ?: return
-        if (c0.gist.isNotBlank() || c0.msgs.none { it.role == "user" }) return
-        val her = Memory.get(c0.who) ?: Memory.active
-        runCatching { digest(her, emptyList(), id, c0.title) }
-    }
-
-    /** 小结写不出来的原因（对话 id → 一句话），摘要页里显示，写成了就清掉。 */
-    val gistFail = androidx.compose.runtime.mutableStateMapOf<String, String>()
-    /** 小结自己的锁：一段一段写，不和记忆整理抢。 */
-    private val gistLock = Mutex()
-
     /** 证件号、银行卡、手机号这类，提示词说了不记，写入前再硬拦一道（照 RikkaHub 的 MemoryContentGuard）。 */
     private val secret = listOf(
         Regex("\\d{17}[\\dXx]"),
@@ -146,7 +107,7 @@ update 只写要改的字段；正文分段用换行。没什么要变就返回 
 
     /** 聊完回头看这一段：新开、更新，或者不动。失败就算了，不打扰用户。 */
     suspend fun run(her: Persona, window: List<ChatMsg>, conv: String, convTitle: String) {
-        // 停用了记忆（第 375 版）：不回看，只看要不要写摘要
+        // 停用了记忆（第 375 版）：不回看。聊天摘要第 394 版废弃，换成前情（Fold.kt）
         if (her.noteOn) lock.withLock {
             val who = Memory.userCall
             val talk = window.joinToString("\n") { (if (it.role == "user") "$who：" else "${her.name}：") + it.text.take(800) }.take(8000)
@@ -163,63 +124,8 @@ $talk
 
 $OPS
 """.trim()
-            // 记忆那次没回也照样写小结，两件事互不拖累（第 361 版）
             MemModel.ask(sys(her), ask, 3000)?.let { raw -> apply(her, raw, conv, convTitle, emptySet()) }
         }
-        // 小结不占记忆的锁：每天整理记忆时也能写（第 363 版）；关了「自动写摘要」就不写（第 365 版）
-        if (GistModel.auto && her.gistOn) runCatching { digest(her, window, conv, convTitle) }
-    }
-
-    /**
-     * 这段聊了什么（第 359 版）：在原来的小结上把新聊的并进去，整份重写。只给她翻以前的聊天时看（Recall）。
-     * 还没有小结的（以前的对话、头一次回看）：拿整段最近 80 条来写。
-     */
-    private suspend fun digest(her: Persona, window: List<ChatMsg>, conv: String, convTitle: String) {
-        val store = Chats.current?.history ?: return
-        val c = store.get(conv) ?: return
-        if (c.msgs.none { it.role == "user" }) return
-        // 停用了聊天摘要（第 375 版）：补写、翻到时顺手补、聊完回看都不写
-        if (!her.gistOn) return
-        val mine = conv !in writing
-        if (mine) writing += conv
-        try {
-            gistLock.withLock {
-                val now = store.get(conv) ?: return@withLock
-                val err = digestBody(her, if (now.gist.isBlank()) emptyList() else window, conv, convTitle, store, now)
-                if (err == null) gistFail.remove(conv) else gistFail[conv] = err
-            }
-        } finally { if (mine) writing.remove(conv) }
-    }
-
-    /** 写成了返回 null；没写成返回原因。 */
-    private suspend fun digestBody(her: Persona, window: List<ChatMsg>, conv: String, convTitle: String, store: ConvStore, c: Conv): String? {
-        val who = Memory.userCall
-        val msgs = if (c.gist.isBlank()) c.msgs.takeLast(80) else window
-        val talk = msgs.filter { it.text.isNotBlank() }.joinToString("\n") { (if (it.role == "user") "$who：" else "${her.name}：") + it.text.take(1500) }.takeLast(16000)
-        if (talk.isBlank()) return null
-        // 写法（GistModel.text，摘要页 ☰ 里能改）放在 system 里，这段聊天放在 user 里（第 365 版）
-        val system = GistModel.text + "\n\n这里的「她」是${her.name}，「他」是$who。摘要里称呼用「$who」和「${her.name}」，不用「我」「你」。直接输出摘要正文，不要标题、不要解释、不要 JSON、不要代码块。"
-        val ask = """
-这段聊天的标题：${c.title.ifBlank { convTitle }}
-今天是 ${today()}。
-
-原来的摘要：
-${c.gist.ifBlank { "（还没有）" }}
-
-${if (c.gist.isBlank()) "这段聊天（最近的部分）：" else "后来又聊的这些："}
-$talk
-
-${if (c.gist.isBlank()) "把这段聊天写成一份摘要。" else "把后来聊的并进原来的摘要，整份重写。"}
-""".trim()
-        val raw = GistModel.ask(system, ask, 3000) ?: return MemModel.lastError.ifBlank { "摘要模型没回应" }
-        // 万一还是包了代码块或 JSON：剥掉
-        var text = raw.trim().removePrefix("```json").removePrefix("```").removeSuffix("```").trim()
-        if (text.startsWith("{")) obj(text)?.optString("gist")?.takeIf { it.isNotBlank() }?.let { text = it }
-        // 证件号、卡号、手机号、密码这类抹掉，其余照留
-        val g = secret.fold(text.trim().take(1500)) { s, r -> r.replace(s, "（略）") }
-        if (g.isEmpty()) return "摘要模型回了空白"
-        store.setGist(conv, g)
-        return null
     }
 
     /** 她当场记下的、你手写的、做事上记的一句：交给记忆模型写成标题 + 正文，或者并进说同一件事的那条。 */

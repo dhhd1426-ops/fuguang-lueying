@@ -72,7 +72,7 @@ private val saveIcon = Ic("M12 4v11m-4.5-4.5L12 15l4.5-4.5M5 19h14")
 /** 每种工具在时间线上的说法和图标。 */
 object Trail {
     fun liveTitle(n: String): String = when (n) {
-        Lessons.STEP -> "想起上次"; QwenSearch.STEP -> "正在上网查"
+        Lessons.STEP -> "想起上次"; QwenSearch.STEP -> "正在上网查"; Fold.LOOK -> Fold.liveTitle()
         Memory.REMEMBER -> "正在记下"; Memory.READ -> "正在翻记忆"; Memory.FORGET -> "正在忘掉"; Recall.TOOL -> "正在翻看以前的聊天"; Recall.OPEN -> "正在回忆"; Recall.AUTO -> "想起之前聊过的"; WebSearch.TOOL -> "正在上网查"
         Skills.OPEN -> "正在翻开本事"; Skills.FIND -> "正在 GitHub 上找本事"; Skills.LEARN -> "等你点头"
         Materials.OPEN -> "正在打开网页"; Materials.LOOK -> "正在看素材"; VideoParse.TOOL -> "正在解析抖音"; VideoParse.SAVE -> "正在存视频"
@@ -84,7 +84,7 @@ object Trail {
     }
 
     fun doneTitle(n: String, a: JSONObject): String = when (n) {
-        Lessons.STEP -> "想起上次"; QwenSearch.STEP -> "用千问自带搜索查过了"
+        Lessons.STEP -> "想起上次"; QwenSearch.STEP -> "用千问自带搜索查过了"; Fold.LOOK -> Fold.doneTitle(a)
         Memory.REMEMBER -> "记下了一条"; Memory.READ -> "翻了 ${a.optJSONArray("ids")?.length() ?: 1} 条记忆"; Memory.FORGET -> "忘掉了一些"; Recall.TOOL -> "翻了以前的聊天"; Recall.OPEN -> "回忆起那段聊天"; Recall.AUTO -> "想起之前聊过的"; WebSearch.TOOL -> "上网查了「${a.optString("query").trim().take(16)}」"
         Skills.OPEN -> a.optJSONArray("names")?.takeIf { it.length() > 1 }?.let { arr -> "翻开了 ${arr.length()} 样本事，合成一种做法" } ?: "翻开了「${(a.optJSONArray("names")?.optString(0) ?: a.optString("name")).trim().take(12)}」"; Skills.FIND -> "在 GitHub 上找了「${a.optString("query").trim().take(16)}」"
         Skills.LEARN -> if (Skills.has(SkillHub.cand(a.optString("repo"), a.optString("path")))) "学会了「${a.optString("title").trim().take(12)}」" else "没学「${a.optString("title").trim().take(12)}」"
@@ -112,6 +112,7 @@ object Trail {
 
     fun detail(n: String, a: JSONObject): String = when (n) {
         Lessons.STEP -> a.optString("text")
+        Fold.LOOK -> Fold.detail(a)
         Memory.REMEMBER, Memory.FORGET -> a.optString("text")
         Memory.READ -> Memory.titles(a)
         Recall.TOOL, "search_notes", WebSearch.TOOL, Skills.FIND -> a.optString("query")
@@ -130,7 +131,7 @@ object Trail {
     /** 作品用和作品卡同一个图标（圆 + 方）。 */
     fun icon(n: String): Ic = when (n) {
         Lessons.STEP -> bulb
-        Memory.REMEMBER, Memory.READ -> bookmark; Memory.FORGET -> eraser; Recall.TOOL, Recall.AUTO -> bubble; Recall.OPEN -> folder; WebSearch.TOOL, Materials.OPEN, QwenSearch.STEP -> globe; Materials.LOOK, SentPics.TOOL -> picture; VideoParse.TOOL -> Icons.play; VideoParse.SAVE, PanTools.GET -> saveIcon; PanTools.OPEN -> globe
+        Memory.REMEMBER, Memory.READ -> bookmark; Memory.FORGET -> eraser; Recall.TOOL, Recall.AUTO -> bubble; Recall.OPEN, Fold.LOOK -> folder; WebSearch.TOOL, Materials.OPEN, QwenSearch.STEP -> globe; Materials.LOOK, SentPics.TOOL -> picture; VideoParse.TOOL -> Icons.play; VideoParse.SAVE, PanTools.GET -> saveIcon; PanTools.OPEN -> globe
         Skills.OPEN, Skills.FIND, Skills.LEARN -> skillIcon
         Works.MAKE, Works.EDIT -> shapes; Works.READ, SentFiles.TOOL -> page; Pacts.SET, Pacts.DROP -> alarmIcon; "list_todos" -> todo
         ClockTools.ALARM, ClockTools.NEXT, ClockTools.OFF -> alarmIcon

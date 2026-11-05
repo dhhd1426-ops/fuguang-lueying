@@ -22,6 +22,8 @@ data class Conv(
     val gist: String = "",
     /** 小结最后一次写好的时间。 */
     val gistAt: Long = 0,
+    /** 前情（第 394 版，Fold.kt）：前面整理过的几段；null = 还没整理过。 */
+    val fold: FoldData? = null,
 ) {
     /** 预览：最后一条回复的第一句。 */
     val preview: String
@@ -59,6 +61,7 @@ class ConvStore(private val prefs: Prefs) {
                     who = o.optString("a"),
                     gist = o.optString("g"),
                     gistAt = o.optLong("ga"),
+                    fold = FoldData.of(o.optJSONObject("fd")),
                 )
             }
         }
@@ -87,7 +90,9 @@ class ConvStore(private val prefs: Prefs) {
         val now = System.currentTimeMillis()
         val old = get(id)
         val title = old?.title ?: firstSentence(msgs.first { it.role == "user" }.text, 18)
-        val c = Conv(id ?: now.toString(), title, old?.created ?: now, now, old?.pinned ?: false, msgs.toList(), old?.who?.ifEmpty { null } ?: Memory.activeId, old?.gist.orEmpty(), old?.gistAt ?: 0)
+        // 前情只认前面那几条没动过：改了话重发、删到了前情里面，就作废（下次整理重来）
+        val fold = old?.fold?.takeIf { f -> f.upto < msgs.size && msgs.getOrNull(f.upto - 1)?.at == old?.msgs?.getOrNull(f.upto - 1)?.at }
+        val c = Conv(id ?: now.toString(), title, old?.created ?: now, now, old?.pinned ?: false, msgs.toList(), old?.who?.ifEmpty { null } ?: Memory.activeId, old?.gist.orEmpty(), old?.gistAt ?: 0, fold)
         val i = all.indexOfFirst { it.id == c.id }
         if (i >= 0) all[i] = c else all.add(0, c)
         persist()
@@ -98,7 +103,7 @@ class ConvStore(private val prefs: Prefs) {
     fun append(id: String?, m: ChatMsg, who: String, title: String): String {
         val now = System.currentTimeMillis()
         val old = get(id)
-        val c = Conv(old?.id ?: now.toString(), old?.title ?: title, old?.created ?: now, now, old?.pinned ?: false, (old?.msgs ?: emptyList()) + m, old?.who?.ifEmpty { null } ?: who, old?.gist.orEmpty(), old?.gistAt ?: 0)
+        val c = Conv(old?.id ?: now.toString(), old?.title ?: title, old?.created ?: now, now, old?.pinned ?: false, (old?.msgs ?: emptyList()) + m, old?.who?.ifEmpty { null } ?: who, old?.gist.orEmpty(), old?.gistAt ?: 0, old?.fold)
         val i = all.indexOfFirst { it.id == c.id }
         if (i >= 0) all[i] = c else all.add(0, c)
         persist()
@@ -110,6 +115,15 @@ class ConvStore(private val prefs: Prefs) {
         val i = all.indexOfFirst { it.id == id }
         if (i < 0 || all[i].gist == gist) return
         all[i] = all[i].copy(gist = gist, gistAt = System.currentTimeMillis())
+        persist()
+    }
+
+    /** 换上新的前情（不动更新时间）。整理时他又接着聊了也没关系：前情只管前面那几条。 */
+    fun setFold(id: String, f: FoldData?) {
+        val i = all.indexOfFirst { it.id == id }
+        if (i < 0 || all[i].fold == f) return
+        if (f != null && f.upto >= all[i].msgs.size) return
+        all[i] = all[i].copy(fold = f)
         persist()
     }
 
@@ -153,7 +167,7 @@ class ConvStore(private val prefs: Prefs) {
             snap.sortedByDescending { it.updated }.forEach { c ->
                 val ms = JSONArray()
                 c.msgs.forEach { m -> ms.put(JSONObject().put("r", m.role).put("x", m.text).apply { if (m.think.isNotEmpty()) put("k", m.think); if (m.imgs.isNotEmpty()) put("i", JSONArray(m.imgs)); if (m.works.isNotEmpty()) put("w", JSONArray(m.works)); if (m.workAt.isNotEmpty()) put("wa", JSONArray(m.workAt)); if (m.clips.isNotEmpty()) put("v", JSONArray(m.clips)); if (m.files.isNotEmpty()) put("f", JSONArray(m.files)); if (m.steps.isNotEmpty()) put("s", JSONArray(m.steps.map { s -> JSONObject().put("a", s.at).put("n", s.name).put("t", s.title).put("d", s.detail) })); if (m.at > 0) put("t", m.at); if (m.pid.isNotEmpty()) put("pv", m.pid); if (m.thinkMs > 0) put("tm", m.thinkMs); if (m.lesson.isNotEmpty()) put("ls", m.lesson); if (m.pact.isNotEmpty()) put("pc", m.pact) }) }
-                arr.put(JSONObject().put("id", c.id).put("t", c.title).put("c", c.created).put("u", c.updated).put("p", c.pinned).put("a", c.who).put("m", ms).apply { if (c.gist.isNotEmpty()) put("g", c.gist).put("ga", c.gistAt) })
+                arr.put(JSONObject().put("id", c.id).put("t", c.title).put("c", c.created).put("u", c.updated).put("p", c.pinned).put("a", c.who).put("m", ms).apply { if (c.gist.isNotEmpty()) put("g", c.gist).put("ga", c.gistAt); c.fold?.let { put("fd", it.json()) } })
             }
             arr.toString()
         }
