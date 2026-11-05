@@ -301,7 +301,7 @@ class ChatState(val history: ConvStore) {
                 val native = store.search()
                 val web = WebSearch.usable && !native
                 val skills = Skills.specs()
-                val specs = (if (who.noteOn) Memory.toolSpecs else emptyList()) + Works.specs.filter { it.name != Works.MAKE } + WorkJobs.spec + SentFiles.spec + SentPics.spec + Pacts.specs + Materials.specs + VideoParse.specs + PanTools.specs + ClockTools.specs + WebHand.specs + skills + (if (web) listOf(WebSearch.spec) else emptyList()) + (if (yu) Yu.tools else emptyList()) + (if (recall) listOf(Recall.spec, Recall.openSpec) else emptyList()) + (if (folded != null) listOf(Fold.spec) else emptyList()) + mcp
+                val specs = (if (who.noteOn) Memory.toolSpecs else emptyList()) + Works.specs.filter { it.name != Works.MAKE } + WorkJobs.spec + SentFiles.spec + SentPics.spec + Pacts.specs + Materials.specs + VideoParse.specs + PanTools.specs + ClockTools.specs + WebHand.specs + skills + (if (web) listOf(WebSearch.spec) else emptyList()) + (if (yu) Yu.tools else emptyList()) + (if (recall) listOf(Recall.spec, Recall.openSpec) else emptyList()) + (if (folded != null) listOf(Fold.spec) else emptyList()) + Team.specs(cur) + mcp
                 val convTitle0 = store0.get(cur)?.title ?: firstSentence(question, 18)
                 // 对方发来的照片，最近的在前：send_image / send_file 里 photo:1 就是最近那张
                 fun photos(): List<java.io.File> = history.filter { it.role == "user" }.flatMap { it.files }.filter { Attach.isImage(it) }.reversed().map { Attach.file(it) }
@@ -323,6 +323,7 @@ class ChatState(val history: ConvStore) {
                     if (native) append("\n").append("你这会儿能直接上网查（用的是你自己带的搜索）：问到天气、新闻、价格、谁现在是什么职位这类会变的事，先查再说；查到的照实说，拿不准的说拿不准。")
                     if (recall) append("\n").append(Recall.system())
                     if (folded != null) append("\n").append(Fold.system())
+                    Team.system(Memory.userCall, cur).takeIf { it.isNotEmpty() }?.let { append("\n").append(it) }
                     if (yu) append("\n").append(Yu.system())
                     if (mcp.isNotEmpty()) append("\n").append(Mcp.system())
                 }
@@ -333,7 +334,7 @@ class ChatState(val history: ConvStore) {
                 val sys0 = Prompt.system(who, model0)
                 sentEst = CtxWin.est(sent0) + CtxWin.est(sys0) + CtxWin.est(extra)
                 ChatApi.stream(
-                    p, c, model0, sys0, Entries.weave(who, sent0, Prompt.aside(who, history, who.prevAt) + Lessons.aside(shownLessons, slips) + Recall.note(hits).let { if (it.isEmpty()) "" else "\n$it" } + Fold.note(conv0).let { if (it.isEmpty()) "" else "\n$it" }), effort,
+                    p, c, model0, sys0, Entries.weave(who, sent0, Prompt.aside(who, history, who.prevAt) + Lessons.aside(shownLessons, slips) + Recall.note(hits).let { if (it.isEmpty()) "" else "\n$it" } + Fold.note(conv0).let { if (it.isEmpty()) "" else "\n$it" } + Team.note(cur).let { if (it.isEmpty()) "" else "\n$it" }), effort,
                     onThink = { thinkText += it; thinking = true; val t = System.currentTimeMillis(); if (thinkAt == 0L) thinkAt = t; thinkEnd = t },
                     tools = if (specs.isNotEmpty()) Tools(
                         specs,
@@ -344,10 +345,14 @@ class ChatState(val history: ConvStore) {
                             liveSteps.add(ToolStep(thinkText.length, n, Trail.liveTitle(n), Trail.detail(n, a), done = false))
                             var made = n != Works.MAKE && n != Works.EDIT
                             if (!made && workDraft == null) workDraft = WorkDraft(partial.length, n, 0, WorkDraft.title(n, a.toString()))
-                            when (n) { Works.MAKE, Works.EDIT, WorkJobs.START, SentFiles.TOOL -> happened += "work"; SentPics.TOOL -> happened += "photo"; Materials.LOOK -> happened += "photo"; WebSearch.TOOL -> happened += "web" }
+                            when (n) { Works.MAKE, Works.EDIT, WorkJobs.START, Team.SPAWN, SentFiles.TOOL -> happened += "work"; SentPics.TOOL -> happened += "photo"; Materials.LOOK -> happened += "photo"; WebSearch.TOOL -> happened += "web" }
                             try {
                             if (n == Memory.REMEMBER || n == Memory.FORGET || n == Memory.READ) Memory.runTool(who, n, a, cur.orEmpty(), convTitle0)
                             else if (n == Fold.LOOK) Fold.look(store0, cur, a)
+                            else if (n == Team.SPAWN) Team.start(a, this@ChatState, who.id) { ref -> pendingWorks.add(ref); pendingWorkAt.add(partial.length) }
+                            else if (n == Team.LOOK) Team.look(cur)
+                            else if (n == Team.TELL) Team.tell(cur, a)
+                            else if (n == Team.STOP) Team.stopFromChat(cur)
                             else if (n == Recall.TOOL) Recall.run(store0, cur, a.optString("query"))
                             else if (n == Recall.OPEN) Recall.open(store0, a)
                             else if (n == WebSearch.TOOL) WebSearch.run(a.optString("query"))
