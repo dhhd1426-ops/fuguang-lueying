@@ -16,13 +16,15 @@ import org.json.JSONObject
 
 /*
  * 分身团队（第 398 版，原型 https://claude.ai/artifact/DQqyv4AAxQkVig2FrNCJs1 第 3 版；用户的《Amor 多分身协作机制设计方案》）：
- * 她（Amor）遇到大、能拆开的作品，用 spawn_team 叫 α β γ 在后台一起做（照 WorkJobs：卡片马上出现，她接着跟他说话）。
+ * 她（Amor）遇到大、能拆开的作品，用 spawn_team 叫 α β γ 在后台一起做（照 WorkJobs：后台跑，她接着跟他说话）。
  * - 协调员就是她自己（用户定的，不另设零）：派活、谁等谁、超时、轮数这些死规矩由这里的代码执行；分身问她的事、他中途改的要求由她定。
  * - 她随时能看全部：每个分身写了什么、发了什么、黑板上记了什么（team_look）；要改就 team_tell 告诉对应的分身，写完的会按新要求重写。
- * - 分身只能查资料、写内容（web_search + 团队工具），不能动任何会改东西的工具；只拿到这件作品的要求，不带记忆和他的个人信息（可能是别家模型）。
- * - 全部写完由她整合成一件作品（只调用一次 make_work），卡片原地换成作品卡。
+ * - 分身只能查资料、写内容（web_search + 团队工具），不能动任何会改东西的工具。
+ * - 分身和她一样的记忆配置（第 400 版用户要的）：带她的记忆目录和「一直记着」那几条、能翻记忆（只读，记新事 / 忘掉只有她能），也看得到叫分身前最近几句聊天。
+ * - 全部写完由她整合成一件作品（只调用一次 make_work），作品卡出现在她那条回复里。
+ * - 进度在思考过程里（第 400 版，原型第 4 版，用户说的）：那条回复的思考行一直写最新一步，摘要里叫分身那一步挂 α β γ 和停下 / 接着做（TeamTrail.kt），没有进度卡。
  * - 护栏：最多 3 个分身、分身不能再叫分身、每个分身单次最多 12 分钟、同一家最多同时 2 路、每个分身最多发 6 条消息、整队 25 分钟到了就拿已有的整合。
- * - 卡片上能停下 / 接着做；App 被杀掉，下次打开是「停在这里」，点接着做从没写完的那几段重来。
+ * - 摘要里能停下 / 接着做；App 被杀掉，下次打开是「停在这里」，点接着做从没写完的那几段重来。
  * 审查者和摘要里的分身节点下一版做。
  */
 object Team {
@@ -40,7 +42,7 @@ object Team {
     private const val TEAM_MS = 25 * 60_000L
     private const val MAX_MSGS = 6
 
-    /** 一个分身那一块：status = wait / run / done / fail / stop；note = 卡片上那句（在查什么、写了多少）。 */
+    /** 一个分身那一块：status = wait / run / done / fail / stop；note = 摘要里那一行（在查什么）。 */
     data class Part(
         val who: String, val task: String, val after: List<String>,
         val status: String = "wait", val note: String = "", val content: String = "", val redo: String = "", val tries: Int = 0,
@@ -51,6 +53,8 @@ object Team {
         val key: String, val title: String, val kind: String, val brief: String, val conv: String?, val persona: String,
         val parts: List<Part>, val board: List<String> = emptyList(), val log: List<String> = emptyList(),
         val stage: String = "write", val done: String? = null, val fail: String? = null, val at: Long = System.currentTimeMillis(),
+        /** 叫分身前最近几句聊天（分身看得到上下文）。 */
+        val talk: String = "",
     ) {
         fun part(who: String) = parts.firstOrNull { it.who == who }
     }
@@ -66,6 +70,8 @@ object Team {
     private var file: java.io.File? = null
 
     fun keyOf(ref: String) = ref.removePrefix(PREFIX).substringBefore('|')
+    /** 刚叫的那一队：聊天页把它记进叫分身那一步（ToolStep.detail = "team:<key>"），思考过程靠它找到这一队。 */
+    @Volatile var lastKey = ""
     fun isRef(ref: String) = ref.startsWith(PREFIX)
 
     fun init(p: Prefs) {
@@ -91,13 +97,13 @@ object Team {
             },
             o.optJSONArray("bd")?.let { a -> List(a.length()) { a.optString(it) } } ?: emptyList(),
             o.optJSONArray("lg")?.let { a -> List(a.length()) { a.optString(it) } } ?: emptyList(),
-            o.optString("s", "stop"), o.optString("d").ifEmpty { null }, o.optString("f").ifEmpty { null }, o.optLong("at"),
+            o.optString("s", "stop"), o.optString("d").ifEmpty { null }, o.optString("f").ifEmpty { null }, o.optLong("at"), o.optString("tk"),
         )
     }.getOrNull()
 
     private fun json(r: Run): JSONObject = JSONObject().put("k", r.key).put("t", r.title).put("kd", r.kind).put("b", r.brief).put("c", r.conv.orEmpty()).put("w", r.persona)
         .put("p", JSONArray(r.parts.map { JSONObject().put("w", it.who).put("t", it.task).put("a", JSONArray(it.after)).put("s", it.status).put("n", it.note).put("x", it.content).put("r", it.redo).put("tr", it.tries) }))
-        .put("bd", JSONArray(r.board)).put("lg", JSONArray(r.log)).put("s", r.stage).put("d", r.done.orEmpty()).put("f", r.fail.orEmpty()).put("at", r.at)
+        .put("bd", JSONArray(r.board)).put("lg", JSONArray(r.log)).put("s", r.stage).put("d", r.done.orEmpty()).put("f", r.fail.orEmpty()).put("at", r.at).put("tk", r.talk)
 
     private fun persist() {
         val f = file ?: return
@@ -114,7 +120,7 @@ object Team {
 
     val spec get() = ToolSpec(
         SPAWN,
-        "叫分身 α β γ 在后台一起做一件大作品（幻灯片、长文档、要查很多资料的网页）。卡片马上出现，分身各写一块，写完你来整合，卡片自己亮起来；你交代完就接着跟他说话。" +
+        "叫分身 α β γ 在后台一起做一件大作品（幻灯片、长文档、要查很多资料的网页）。分身各写一块，写完你来整合，作品卡会出现在你这条回复里，进度他在思考过程里看得到；你交代完就接着跟他说话。" +
             "能不叫就不叫：聊天、短回答、小作品你自己做或用 ${WorkJobs.START}。brief 写清楚总要求和规范（给谁看、风格、口吻、数字怎么写、每块大概多长）；" +
             "parts 每个分身一块（最多 3 个），task 写清它负责什么，after 写它要等谁写完（比如预算要等前两块的价格）。",
         JSONObject().put("type", "object").put(
@@ -185,11 +191,13 @@ object Team {
         val ok = acyclic(clean)
         val final = if (ok) clean else clean.map { it.copy(after = emptyList()) }
         val key = System.currentTimeMillis().toString(36) + (100..999).random()
-        put(Run(key, title, a.optString("kind").ifBlank { "doc" }, brief.take(6000), chat.convId, persona, final))
+        val talk = chat.messages.takeLast(10).filter { it.text.isNotBlank() }.joinToString("\n") { m -> (if (m.role == "user") Memory.userCall else "Amor") + "：" + ToolText.clean(m.text).take(600) }.takeLast(4000)
+        put(Run(key, title, a.optString("kind").ifBlank { "doc" }, brief.take(6000), chat.convId, persona, final, talk = talk))
+        lastKey = key
         chats[key] = chat
         onCard("$PREFIX$key|$title")
         go(key)
-        return ToolOut("已经叫 ${final.joinToString(" ") { it.who }} 在后台做《$title》了，卡片就在你说到这里的位置，写好会自己亮起来。接着跟${Memory.userCall}说话；别说做好了。")
+        return ToolOut("已经叫 ${final.joinToString(" ") { it.who }} 在后台做《$title》了，进度在你这条回复的思考过程里，做好了作品卡会出现在这里。接着跟${Memory.userCall}说话；别说做好了。")
     }
 
     private fun acyclic(ps: List<Part>): Boolean {
@@ -243,7 +251,7 @@ object Team {
     private fun stageZh(r: Run) = when (r.stage) { "merge" -> "都写好了，在整合"; "done" -> "做好了"; "fail" -> "没做成：" + r.fail.orEmpty(); "stop" -> "停着"; else -> "分身在写" }
     private fun statusZh(p: Part) = when (p.status) { "done" -> "写好了"; "run" -> "在写" + (if (p.note.isNotEmpty()) "（${p.note}）" else ""); "fail" -> "没写成"; "stop" -> "停着"; else -> if (p.after.isNotEmpty()) "等 ${p.after.joinToString(" ")}" else "等开工" }
 
-    /* ---------- 卡片上的停下 / 接着做 ---------- */
+    /* ---------- 摘要里的停下 / 接着做 ---------- */
 
     fun stop(key: String) {
         jobs.remove(key)?.forEach { it.cancel() }
@@ -296,15 +304,22 @@ object Team {
         JSONObject().put("type", "object").put("properties", JSONObject().put("content", JSONObject().put("type", "string"))).put("required", JSONArray(listOf("content"))))
 
     private fun memberSystem(r: Run, p: Part): String = buildString {
+        val her = Memory.get(r.persona)
         append("你是分身 ${p.who}，和另外几个分身一起帮 Amor 做《${r.title}》（${kindZh(r.kind)}）。你只负责自己那一块，别人的部分不要写。\n")
         append("规矩：只查资料、写内容；查到的关键事实用 $NOTE 记到黑板；要别人的数据用 $ASK 问；写完用 $DONE 交上完整正文，交了就结束。不要跟谁寒暄，不要解释你在做什么。")
         Amor.role(p.who).prompt.trim().takeIf { it.isNotEmpty() }?.let { append("\n\n").append(it) }
+        // 和她一样的记忆（只读）
+        if (her != null && her.noteOn) MemTree.catalog(her).takeIf { it.isNotBlank() }?.let { cat ->
+            append("\n\n你和 Amor 共用她记得的事，这里是目录（方括号里是编号）：\n").append(cat)
+            append("\n\n「一直记着」那组的正文都在上面，照着做。做你这一块时用得上的，用 ${Memory.READ} 翻那条的正文；只能翻，不能记新的。")
+        }
     }
 
     private fun kindZh(k: String) = when (k) { "slides" -> "幻灯片"; "page" -> "网页"; else -> "文档" }
 
     private fun memberOrder(r: Run, p: Part): String = buildString {
         append("总要求和规范（Amor 定的，照着做）：\n").append(r.brief).append("\n\n")
+        if (r.talk.isNotBlank()) append("叫分身之前，${Memory.userCall}和 Amor 最近的几句聊天：\n").append(r.talk).append("\n\n")
         append("你负责：").append(p.task).append('\n')
         val others = r.parts.filter { it.who != p.who }
         if (others.isNotEmpty()) append("别的分身：").append(others.joinToString("；") { "${it.who} 写 ${it.task.take(60)}" }).append('\n')
@@ -328,7 +343,12 @@ object Team {
         var done: String? = null
         val text = StringBuilder()
         var err: String? = null
-        val tools = buildList { if (WebSearch.usable) add(WebSearch.spec); add(noteSpec); add(askSpec); add(doneSpec) }
+        val her = Memory.get(r0.persona)
+        val tools = buildList {
+            if (WebSearch.usable) add(WebSearch.spec)
+            if (her != null && her.noteOn) Memory.toolSpecs.firstOrNull { it.name == Memory.READ }?.let { add(it) }
+            add(noteSpec); add(askSpec); add(doneSpec)
+        }
         try {
             lock(pid).withPermit {
                 withTimeout(MEMBER_MS) {
@@ -337,7 +357,7 @@ object Team {
                         onThink = { },
                         tools = Tools(
                             tools,
-                            run = { n, a -> memberTool(key, who, n, a) { done = it } },
+                            run = { n, a -> if (n == Memory.READ && her != null) Memory.runTool(her, n, a, r0.conv.orEmpty(), r0.title) else memberTool(key, who, n, a) { done = it } },
                             onUse = { n -> if (n == WebSearch.TOOL) editPart(key, who) { it.copy(note = "在查资料") } },
                             inbox = { inbox.remove("$key/$who")?.joinToString("\n") },
                             wrap = { "（团队里的消息：）\n$it\n\n（看完接着写。）" },

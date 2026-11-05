@@ -84,12 +84,10 @@ private fun WorkSlot(id: String?, draft: WorkDraft?, onWork: (String) -> Unit) {
         Box(Modifier.graphicsLayer { alpha = rise.value; translationY = (1f - rise.value) * 8.dp.toPx() }) { PactCard(id) }
         return
     }
-    // 分身团队（Team.kt，第 398 版）：做着是进度卡；做好了 swapWork 会把引用换成作品 id，这里就是普通作品卡
+    // 分身团队（Team.kt）：进度在思考过程里（第 400 版），这里做着时什么都不放；做好了 swapWork 会把引用换成作品 id，就是普通作品卡
     if (id != null && Team.isRef(id)) {
-        val done = Team.runs[Team.keyOf(id)]?.done
-        Box(Modifier.graphicsLayer { alpha = rise.value; translationY = (1f - rise.value) * 8.dp.toPx() }) {
-            if (done != null) WorkCards(listOf(done), onWork) else TeamCard(Team.keyOf(id))
-        }
+        val done = Team.runs[Team.keyOf(id)]?.done ?: return
+        Box(Modifier.graphicsLayer { alpha = rise.value; translationY = (1f - rise.value) * 8.dp.toPx() }) { WorkCards(listOf(done), onWork) }
         return
     }
     if (id != null && SentFiles.isRef(id)) {
