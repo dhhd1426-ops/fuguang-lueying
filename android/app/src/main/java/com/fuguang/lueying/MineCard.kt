@@ -83,8 +83,8 @@ private val warmInk: Color get() = Skin.onAccent
 private fun depth(s: String) = when {
     s == "mine" -> 0
     s == "assistant" || s == "mcp" || s == "about" || s == "features" || s == "theme" -> 1
-    s == "persona" || s.startsWith("mcp/") || s == "search" || s == "skills" || s == "gallery" -> 2
-    s.startsWith("search/") || s.startsWith("skills/") || s.startsWith("gallery/") -> 3
+    s == "persona" || s.startsWith("mcp/") || s == "search" || s == "skills" || s == "gallery" || s == "amor" -> 2
+    s.startsWith("search/") || s.startsWith("skills/") || s.startsWith("gallery/") || s.startsWith("amor/") -> 3
     s == "providers" || s == "memories" || s == "fold" -> 3
     s == "memprompt" -> 5
     else -> 4
@@ -111,11 +111,13 @@ fun MineCardLayer(store: AssistantStore, nav: MineNav) {
             }
             "about" -> AboutPage { nav.screen = "mine" }
             "theme" -> ThemePage { nav.screen = "mine" }
-            "features" -> FeaturesPage({ nav.screen = "mine" }, { nav.screen = "search" }) { nav.screen = "skills" }
+            "features" -> FeaturesPage({ nav.screen = "mine" }, { nav.screen = "search" }, { nav.screen = "skills" }) { nav.screen = "amor" }
+            "amor" -> AmorPage(store, { nav.screen = "features" }) { nav.screen = "amor/$it" }
             "skills" -> SkillsPage({ nav.screen = "features" }) { nav.screen = "skills/$it" }
             "search" -> SearchPage({ nav.screen = "features" }) { nav.screen = "search/$it" }
             else -> if (screen.startsWith("skills/")) SkillDetailPage(screen.removePrefix("skills/")) { nav.screen = "skills" }
             else if (screen.startsWith("search/")) SearchSourcePage(screen.removePrefix("search/")) { nav.screen = "search" }
+            else if (screen.startsWith("amor/")) AmorRolePage(store, screen.removePrefix("amor/")) { nav.screen = "amor" }
             else Column(Modifier.widthIn(max = 720.dp).fillMaxSize()) {
                 CompositionLocalProvider(LocalTitleEnd provides 36.dp) { MineSub(store, screen, true, 0.dp, nav) }
             }
