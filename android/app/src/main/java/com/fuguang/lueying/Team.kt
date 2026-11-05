@@ -60,6 +60,8 @@ object Team {
     }
 
     val runs = mutableStateMapOf<String, Run>()
+    /** 她整合时已经写了多少字（回复里那张「正在写」小球卡用）。 */
+    val chars = mutableStateMapOf<String, Int>()
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private val jobs = HashMap<String, MutableList<Job>>()
@@ -464,6 +466,7 @@ object Team {
                         }
                     },
                     onUse = { },
+                    onDraft = { _, len, _ -> chars[key] = len },
                 ),
             ) { if (made != null) throw CancellationException("做好了") }
         } catch (e: CancellationException) {
