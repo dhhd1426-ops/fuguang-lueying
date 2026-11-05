@@ -84,10 +84,25 @@ private fun WorkSlot(id: String?, draft: WorkDraft?, onWork: (String) -> Unit) {
         Box(Modifier.graphicsLayer { alpha = rise.value; translationY = (1f - rise.value) * 8.dp.toPx() }) { PactCard(id) }
         return
     }
-    // 分身团队（Team.kt）：进度在思考过程里（第 400 版），这里做着时什么都不放；做好了 swapWork 会把引用换成作品 id，就是普通作品卡
+    // 分身团队（Team.kt）：α β γ 的进度在思考过程里；这里和后台写作品一样——做着是「正在写」那张小球卡，
+    // 好了原地换成作品卡（swapWork 随后把引用换成作品 id），停下 / 没做成是能点一下接着做的卡（第 402 版，用户说要留着）
     if (id != null && Team.isRef(id)) {
-        val done = Team.runs[Team.keyOf(id)]?.done ?: return
-        Box(Modifier.graphicsLayer { alpha = rise.value; translationY = (1f - rise.value) * 8.dp.toPx() }) { WorkCards(listOf(done), onWork) }
+        val key = Team.keyOf(id)
+        val r = Team.runs[key]
+        val face: String? = when {
+            r?.done != null -> r.done
+            r == null || r.stage == "fail" || r.stage == "stop" -> "fail"
+            else -> null
+        }
+        Box(Modifier.graphicsLayer { alpha = rise.value; translationY = (1f - rise.value) * 8.dp.toPx() }) {
+            AnimatedContent(face, transitionSpec = { fadeIn(tween(240, 40)) togetherWith fadeOut(tween(160)) }, label = "teamSlot") { real ->
+                when {
+                    real == "fail" -> FailCard(r?.title ?: id.substringAfter('|', ""), if (r?.stage == "stop") "停下了" else r?.fail, r != null) { Team.resume(key) }
+                    real != null -> WorkCards(listOf(real), onWork)
+                    else -> DraftCard(WorkDraft(0, Works.MAKE, Team.chars[key] ?: 0, r?.title))
+                }
+            }
+        }
         return
     }
     if (id != null && SentFiles.isRef(id)) {
