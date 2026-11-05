@@ -323,6 +323,8 @@ class Tools(
     val inbox: suspend () -> String? = { null },
     /** 做作品的参数还在流式来：名字、已写多少字、开头一段（取标题）。 */
     val onDraft: (String, Int, String) -> Unit = { _, _, _ -> },
+    /** inbox 收到的话怎么包给她看；null = 当成对方又说了一句（分身团队收到的是队友的消息，第 398 版）。 */
+    val wrap: ((String) -> String)? = null,
 )
 
 /**
@@ -478,7 +480,7 @@ object ChatApi {
                 else msgs.put(JSONObject().put("role", "user").put("content", CAP_NOTE))
             }
             val r = once(p, c, model, system, msgs, effort, if (round < MAX_ROUNDS) tools else null, round == 0, onThink, search, onText)
-            if (r.calls.any { it.name.toString() in setOf(Works.MAKE, Works.EDIT, WorkJobs.START) }) worked = true
+            if (r.calls.any { it.name.toString() in setOf(Works.MAKE, Works.EDIT, WorkJobs.START, Team.SPAWN) }) worked = true
             // 嘴上说「做好了 / 卡在下面」，这一轮却没真的调用做作品的工具：提醒她一次，接着真的去做
             if (r.calls.isEmpty() && tools != null && round < MAX_ROUNDS && !nudged && !worked && Claims.saysDone(r.text)) {
                 nudged = true; round++; slips += Lessons.CLAIM
@@ -504,7 +506,7 @@ object ChatApi {
                     }
                     results.put(JSONObject().put("type", "tool_result").put("tool_use_id", call.id).put("content", content))
                 }
-                tools.inbox()?.let { results.put(JSONObject().put("type", "text").put("text", midTurn(it))) }
+                tools.inbox()?.let { results.put(JSONObject().put("type", "text").put("text", tools.wrap?.invoke(it) ?: midTurn(it))) }
                 msgs.put(JSONObject().put("role", "user").put("content", results))
             } else {
                 val tc = JSONArray()
@@ -537,7 +539,7 @@ object ChatApi {
                     for (k in 0 until pics.length()) content.put(pics.get(k))
                     msgs.put(JSONObject().put("role", "user").put("content", content))
                 }
-                tools.inbox()?.let { msgs.put(JSONObject().put("role", "user").put("content", midTurn(it))) }
+                tools.inbox()?.let { msgs.put(JSONObject().put("role", "user").put("content", tools.wrap?.invoke(it) ?: midTurn(it))) }
             }
         }
     }
@@ -585,7 +587,7 @@ object ChatApi {
     }
 
     /** 能一起并发着做的工具（只读、不问人）。 */
-    private val READ_ONLY = setOf(Fold.LOOK, Memory.READ, Skills.OPEN, Skills.FIND, WebSearch.TOOL, Recall.TOOL, Works.READ, Materials.OPEN, Materials.LOOK, VideoParse.TOOL, PanTools.OPEN, ClockTools.NEXT, ClockTools.LIST)
+    private val READ_ONLY = setOf(Fold.LOOK, Team.LOOK, Memory.READ, Skills.OPEN, Skills.FIND, WebSearch.TOOL, Recall.TOOL, Works.READ, Materials.OPEN, Materials.LOOK, VideoParse.TOOL, PanTools.OPEN, ClockTools.NEXT, ClockTools.LIST)
 
     private fun args(call: Call) = runCatching { JSONObject(call.args.toString().ifBlank { "{}" }) }.getOrDefault(JSONObject())
 
