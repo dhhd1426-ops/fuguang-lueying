@@ -277,7 +277,7 @@ private val TrailLive = Color(0xFFD97757)
 /** Thinking + 三个点依次跳（照原型：每个点隔 150ms，上跳 4dp，1.2 秒一轮）。 */
 @Composable
 fun ThinkingDots(color: Color = Page.muted, size: androidx.compose.ui.unit.TextUnit = 14.sp, modifier: Modifier = Modifier) {
-    if (ToyMotion.still()) {
+    if (Toy.still()) {
         Txt("Thinking…", color, size, modifier, maxLines = 1)
         return
     }
@@ -545,7 +545,7 @@ private fun TrailNode(it: TrailItem, last: Boolean, open: Boolean, delay: Int = 
 /** Completed connectors are stable; a newly available next row draws only this segment. */
 @Composable
 private fun androidx.compose.foundation.layout.BoxScope.TrailConnector(last: Boolean, top: androidx.compose.ui.unit.Dp) {
-    val still = ToyMotion.still()
+    val still = Toy.still()
     val grow = remember { Animatable(if (last) 0f else 1f) }
     LaunchedEffect(last, still) {
         if (last || still) grow.snapTo(if (last) 0f else 1f)
@@ -562,7 +562,7 @@ private fun androidx.compose.foundation.layout.BoxScope.TrailConnector(last: Boo
 @Composable
 private fun ThoughtTrailNode(text: String, live: Boolean, last: Boolean, summary: Boolean = false) {
     var expanded by remember { mutableStateOf(false) }
-    val still = ToyMotion.still()
+    val still = Toy.still()
     val first = remember(text) { text.substringBefore("\n\n").trim() }
     val label = (if (summary) ThinkTidy.get(first)?.firstOrNull()?.title else null)
         ?: firstSentence(first, 46).ifBlank { "思考摘要" }
