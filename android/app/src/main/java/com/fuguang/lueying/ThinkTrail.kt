@@ -15,6 +15,9 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.draggable
@@ -166,30 +169,17 @@ object Trail {
 /** 时间线上的一个节点。placeholder：Thinking…（等这段想完 / 等整理）；prose：原文型的一段原话。 */
 class TrailItem(val key: String, val tool: ToolStep?, val title: String, val detail: String, val live: Boolean, val placeholder: Boolean = false, val tidy: Boolean = false, val prose: Boolean = false)
 
-/** 思考原文的一段：按工具的位置和空行切开。done：这一段已经想完（后面还有字、隔着空行或工具，或者这轮想完了）。 */
+/** 一次模型响应的思考，历史记录用已保存的工具位置还原。 */
+internal const val THINK_ROUND_END = "_think_round_end"
 class ThinkUnit(val text: String, val start: Int, val done: Boolean)
 
-private val blank = Regex("\\n\\s*\\n")
-
 fun thinkUnits(raw: String, steps: List<ToolStep>, live: Boolean): List<ThinkUnit> {
-    val cuts = steps.map { it.at.coerceIn(0, raw.length) }
-    val bounds = (listOf(0) + cuts + raw.length)
-    val out = mutableListOf<ThinkUnit>()
-    for (i in 0 until bounds.size - 1) {
-        val a = bounds[i]; val b = bounds[i + 1].coerceAtLeast(a)
-        val piece = raw.substring(a, b)
-        var from = 0
-        blank.findAll(piece).map { it.range }.plusElement(piece.length until piece.length).forEach { r ->
-            val text = piece.substring(from, r.first).trim()
-            if (text.isNotEmpty()) {
-                // 后面隔着空行、后面是工具、或者这轮想完了：这一段想完了
-                val closed = !live || r.first < piece.length || i < bounds.size - 2
-                out += ThinkUnit(text, a + from, closed)
-            }
-            from = r.last + 1
-        }
+    val markers = steps.filter { it.name == THINK_ROUND_END }
+    val cuts = (markers.ifEmpty { steps }).map { it.at.coerceIn(0, raw.length) }.distinct().sorted()
+    return (listOf(0) + cuts + raw.length).zipWithNext().mapIndexedNotNull { index, (start, end) ->
+        val text = raw.substring(start, end).trim()
+        text.takeIf { it.isNotEmpty() }?.let { ThinkUnit(it, start, !live || index < cuts.size) }
     }
-    return out
 }
 
 /** 整理不成时用原文顶上：第一句当标题，其余当理由。 */
@@ -204,7 +194,7 @@ private inline fun interleave(units: List<ThinkUnit>, steps: List<ToolStep>, uni
     var k = 0
     steps.forEachIndexed { j, st ->
         while (k < units.size && units[k].start < st.at) { unit(k, units[k]); k++ }
-        tool(j, st)
+        if (st.name != THINK_ROUND_END) tool(j, st)
     }
     while (k < units.size) { unit(k, units[k]); k++ }
 }
@@ -221,7 +211,7 @@ fun summaryItems(raw: String, steps: List<ToolStep>, live: Boolean): List<TrailI
         if (!u.done) { wait("w$k"); return@interleave }
         val got = ThinkTidy.get(u.text)
         when {
-            got != null -> got.forEachIndexed { j, st -> out += TrailItem("d$k-$j", null, st.title, st.detail, false, tidy = true) }
+            got != null -> got.firstOrNull()?.let { st -> out += TrailItem("d$k", null, st.title, got.joinToString("\n") { it.detail.ifBlank { it.title } }, false, tidy = true) }
             ThinkTidy.failed(u.text) -> out += fallback("f$k", u.text)
             else -> wait("w$k")
         }
@@ -248,27 +238,14 @@ fun proseItems(raw: String, steps: List<ToolStep>, live: Boolean): List<TrailIte
     interleave(units, steps, { k, u -> out += TrailItem("p$k", null, u.text, "", live && !u.done, prose = true) }) { j, st ->
         out += TrailItem("s$j", st, st.title, st.detail, !st.done)
     }
-    if (live && steps.none { !it.done } && out.lastOrNull()?.live != true) out += TrailItem("w-end", null, "Thinking", "", true, placeholder = true)
+    if (live && steps.none { !it.done } && out.lastOrNull()?.live != true) out += TrailItem("p${units.size}", null, "Thinking", "", true, placeholder = true)
     return out
 }
 
 private fun collapsedProseItems(raw: String, steps: List<ToolStep>, live: Boolean): List<TrailItem> {
-    val collapsed = mutableListOf<TrailItem>()
-    var group = 0
-    proseItems(raw, steps, live).forEach { item ->
-        if (item.prose || item.placeholder) {
-            val key = "thought-$group"
-            val previous = collapsed.lastOrNull()?.takeIf { it.key == key }
-            val text = if (item.placeholder) previous?.title.orEmpty()
-                else listOfNotNull(previous?.title, item.title).joinToString("\n\n")
-            val thought = TrailItem(key, null, text, "", item.live, prose = true)
-            if (previous == null) collapsed += thought else collapsed[collapsed.lastIndex] = thought
-        } else {
-            collapsed += item
-            group++
-        }
+    return proseItems(raw, steps, live).map { item ->
+        if (item.placeholder) TrailItem(item.key, null, "", "", true, prose = true) else item
     }
-    return collapsed
 }
 
 // Timeline colors are paired with the sheet, including the light gradient palettes.
@@ -447,12 +424,19 @@ fun ThinkDrawer(open: Boolean, raw: String, savedSteps: List<ToolStep>, live: Bo
                                 value = ArtworkRuns.load(art)
                             }
                             val runs = ArtworkRuns.live(art) ?: saved
-                            TrailNode(TrailItem(it.key, it.tool, it.title, "", it.live), last && runs.isEmpty(), false) {}
-                            runs.forEachIndexed { index, run ->
+                            val expanded = it.key in opened.value
+                            TrailNode(TrailItem(it.key, it.tool, it.title, "", it.live), last && (!expanded || runs.isEmpty()), expanded, expandable = true) {
+                                opened.value = if (expanded) opened.value - it.key else opened.value + it.key
+                            }
+                            if (expanded && runs.isEmpty()) {
+                                val state = WorkJobs.state[art]
+                                Txt(state?.fail ?: state?.stage ?: "暂无执行记录", trailSecondary, 13.sp, Modifier.padding(start = 38.dp, bottom = 14.dp))
+                            }
+                            if (expanded) runs.forEachIndexed { index, run ->
                                 androidx.compose.runtime.key(run.id) {
                                     val end = last && index == runs.lastIndex
                                     if (run.kind == "thought") ThoughtTrailNode(run.output, run.status == "running", end)
-                                    else RenderTrailNode(run, end)
+                                    else RenderTrailNode(art, run, end)
                                 }
                             }
                         } else TrailNode(it, last, it.key in opened.value) {
@@ -468,10 +452,11 @@ fun ThinkDrawer(open: Boolean, raw: String, savedSteps: List<ToolStep>, live: Bo
 private val renderCommandIcon = Ic("M5 7l5 5-5 5m8 0h6")
 
 @Composable
-private fun RenderTrailNode(run: ArtworkRuns.Entry, last: Boolean) {
+private fun RenderTrailNode(job: String, run: ArtworkRuns.Entry, last: Boolean) {
     var expanded by remember { mutableStateOf(false) }
+    val context = LocalContext.current
     val title = when {
-        run.kind == "draft" || run.kind == "present" -> run.output
+        run.kind in setOf("draft", "present", "review") -> run.output
         run.status == "running" -> "正在渲染预览"
         run.status == "success" -> "已运行渲染"
         run.status == "failed" -> "渲染失败"
@@ -504,9 +489,28 @@ private fun RenderTrailNode(run: ArtworkRuns.Entry, last: Boolean) {
                 }
                 if (expanded) {
                     Spacer(Modifier.height(5.dp))
-                    val action = when (run.kind) { "draft" -> "write_draft"; "present" -> "present_artwork"; else -> "render_preview" }
-                    Txt("$action · 第 ${run.version} 稿", trailSecondary, 12.5.sp)
-                    if (run.kind == "render" && run.output.isNotBlank()) Txt(run.output, tint, 13.sp, lineHeight = 20.sp)
+                    val action = when (run.kind) {
+                        "draft" -> "write_draft"
+                        "review" -> "make_work · WebView"
+                        "present" -> if (run.version > 0) "present_artwork" else "present_work"
+                        else -> "render_preview · WebView"
+                    }
+                    val detail = if (run.version > 0) "$action · 第 ${run.version} 稿" else action
+                    Row(Modifier.fillMaxWidth().background(veil(.06f), RoundedCornerShape(8.dp)).padding(8.dp),
+                        verticalAlignment = Alignment.CenterVertically) {
+                        Txt(detail, Page.ink, 12.5.sp, Modifier.weight(1f).horizontalScroll(rememberScrollState()),
+                            family = FontFamily.Monospace, maxLines = 1)
+                        Pressable({
+                            val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                            clipboard.setPrimaryClip(android.content.ClipData.newPlainText("执行步骤", detail))
+                        }, label = "复制执行步骤") {
+                            Txt("复制", trailSecondary, 12.sp, Modifier.padding(horizontal = 8.dp, vertical = 4.dp))
+                        }
+                    }
+                    if (run.output.isNotBlank()) Txt(run.output, tint, 13.sp, lineHeight = 20.sp)
+                    if (run.kind == "render" && run.status == "success" && run.version > 0) {
+                        ArtworkProgress(ArtworkJob.directory(job)?.let { java.io.File(it, "${run.version}.png") })
+                    }
                 }
             }
         }
@@ -515,14 +519,14 @@ private fun RenderTrailNode(run: ArtworkRuns.Entry, last: Boolean) {
 
 /** 一个节点：思考是小圆点（正在想的是橙点），工具是方块图标（正在用时杏色呼吸）；点一下原地展开全文。 */
 @Composable
-private fun TrailNode(it: TrailItem, last: Boolean, open: Boolean, delay: Int = 0, onToggle: () -> Unit) {
+private fun TrailNode(it: TrailItem, last: Boolean, open: Boolean, delay: Int = 0, expandable: Boolean = false, onToggle: () -> Unit) {
     // Thinking… 走开得快一点（离开比进入快）
     val enter = remember { Animatable(0f) }
     LaunchedEffect(Unit) { enter.animateTo(1f, tween(360, delayMillis = delay, easing = Curves.standard)) }
     val dot by animateColorAsState(if (it.live) trailActive else trailDoneDot, tween(400), label = "dot")
     val tint by animateColorAsState(if (it.live) trailActive else trailSecondary, tween(400), label = "tint")
     val breath = rememberInfiniteTransition(label = "breath").animateFloat(.12f, .2f, infiniteRepeatable(tween(800), RepeatMode.Reverse), label = "b")
-    Pressable({ if (!it.live) onToggle() }, Modifier.fillMaxWidth().graphicsLayer { alpha = enter.value; translationY = (1f - enter.value) * 6.dp.toPx() }, label = it.title) { pressed ->
+    Pressable({ if (!it.live || expandable) onToggle() }, Modifier.fillMaxWidth().graphicsLayer { alpha = enter.value; translationY = (1f - enter.value) * 6.dp.toPx() }, label = it.title) { pressed ->
         Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min).background(if (pressed) veil(.04f) else Color.Transparent, RoundedCornerShape(12.dp))) {
             // 照 Claude App 图二：圆点对齐标题第一行，竖线从圆点下面连到下一步；标题是结论，下面是理由，整理好的不截断
             Box(Modifier.width(26.dp).fillMaxHeight()) {
@@ -540,7 +544,13 @@ private fun TrailNode(it: TrailItem, last: Boolean, open: Boolean, delay: Int = 
                 val full = open || it.tidy
                 if (it.placeholder) ThinkingDots(trailSecondary, 15.sp)
                 else if (it.live) ThinkingMotion(it.title, size = 15.5.sp, showDots = false, ink = Page.ink)
-                else Txt(it.title, Page.ink.copy(alpha = .94f), 15.5.sp, lineHeight = 24.sp, weight = FontWeight.Medium, maxLines = if (full) Int.MAX_VALUE else 1)
+                else Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Txt(it.title, Page.ink.copy(alpha = .94f), 15.5.sp, Modifier.weight(1f), lineHeight = 24.sp,
+                        weight = FontWeight.Medium, maxLines = if (full) Int.MAX_VALUE else 1)
+                    if (expandable) SvgIcon(Trail.chevron, trailSecondary, 13.dp, modifier = Modifier.graphicsLayer {
+                        rotationZ = if (open) 90f else 0f
+                    })
+                }
                 if (it.detail.isNotEmpty()) {
                     Spacer(Modifier.height(6.dp))
                     Txt(it.detail, trailSecondary, 14.sp, lineHeight = 25.sp, maxLines = if (full) Int.MAX_VALUE else if (it.tool != null) 1 else 2)
@@ -571,9 +581,10 @@ private fun androidx.compose.foundation.layout.BoxScope.TrailConnector(last: Boo
 private fun ThoughtTrailNode(text: String, live: Boolean, last: Boolean, summary: Boolean = false) {
     var expanded by remember { mutableStateOf(false) }
     val still = Toy.still()
-    val first = remember(text) { text.substringBefore("\n\n").trim() }
+    val first = remember(text) { text.trim() }
     val label = (if (summary) ThinkTidy.get(first)?.firstOrNull()?.title else null)
         ?: firstSentence(first, 46).ifBlank { "思考摘要" }
+    val expandable = first.trimEnd('。', '.', '！', '!') != label.trimEnd('。', '.', '！', '!')
     val dot by animateColorAsState(if (live) trailActive else trailDoneDot,
         tween(if (still) 0 else 185, easing = Curves.standard), label = "thoughtDot")
     val arrival = remember { Animatable(if (live && !still) 0f else 1f) }
@@ -581,7 +592,7 @@ private fun ThoughtTrailNode(text: String, live: Boolean, last: Boolean, summary
         arrival.animateTo(1f, tween(if (still) 0 else 195, delayMillis = if (live && !still) 100 else 0,
             easing = Curves.standard))
     }
-    Pressable({ if (!live) expanded = !expanded }, Modifier.fillMaxWidth(),
+    Pressable({ if (!live && expandable) expanded = !expanded }, Modifier.fillMaxWidth(),
         label = if (expanded) "收起思考" else "展开思考") { pressed ->
         Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min)
             .background(if (pressed) veil(.04f) else Color.Transparent, RoundedCornerShape(8.dp))) {
@@ -601,7 +612,7 @@ private fun ThoughtTrailNode(text: String, live: Boolean, last: Boolean, summary
                         else {
                             Txt(label, Page.ink, 14.5.sp, Modifier.weight(1f), maxLines = 1)
                             Spacer(Modifier.width(8.dp))
-                            SvgIcon(Trail.chevron, trailSecondary, 13.dp, modifier = Modifier.graphicsLayer {
+                            if (expandable) SvgIcon(Trail.chevron, trailSecondary, 13.dp, modifier = Modifier.graphicsLayer {
                                 rotationZ = if (expanded) 90f else 0f
                             })
                         }

@@ -400,6 +400,7 @@ object ChatApi {
         toolNote: String = "",
         /** 不是 null：这一轮用模型自带的搜索（QwenSearch），真查了就叫它一声。 */
         search: (() -> Unit)? = null,
+        onRoundEnd: suspend () -> Unit = {},
         onText: suspend (String) -> Unit,
     ) {
         slips.clear()
@@ -408,14 +409,14 @@ object ChatApi {
         repeat(5) {
             // 自带搜索被拒过（ModelFit 记了 search），这一轮就不带
             val s = search?.takeIf { QwenSearch.offered(p.id, model) }
-            try { return tiers(p, c, model, system, history, effort, onThink, tools, fallback, toolNote, s, onText) } catch (_: Adapted) { }
+            try { return tiers(p, c, model, system, history, effort, onThink, tools, fallback, toolNote, s, onRoundEnd, onText) } catch (_: Adapted) { }
         }
-        tiers(p, c, model, system, history, effort, onThink, tools, fallback, toolNote, search?.takeIf { QwenSearch.offered(p.id, model) }, onText)
+        tiers(p, c, model, system, history, effort, onThink, tools, fallback, toolNote, search?.takeIf { QwenSearch.offered(p.id, model) }, onRoundEnd, onText)
     }
 
     private suspend fun tiers(
         p: Provider, c: ProviderConfig, model: String, system: String, history: List<ChatMsg>, effort: String?,
-        onThink: suspend (String) -> Unit, tools: Tools?, fallback: (suspend () -> String)?, toolNote: String, search: (() -> Unit)?, onText: suspend (String) -> Unit,
+        onThink: suspend (String) -> Unit, tools: Tools?, fallback: (suspend () -> String)?, toolNote: String, search: (() -> Unit)?, onRoundEnd: suspend () -> Unit, onText: suspend (String) -> Unit,
     ) {
         // 报错没点名时：先怀疑工具，再怀疑思考参数，逐个去掉再发；null = 什么思考参数都不带
         val hasTools = tools != null && !ModelFit.drops(p.id, model, "tools")
@@ -430,7 +431,7 @@ object ChatApi {
                     else -> system + "\n\n这一会儿你手边那些本事用不上：记不了事，也做不了作品。没真做出来的东西，别说已经做好了。" +
                         (fallback?.let { "\n\n" + runCatching { it() }.getOrDefault("") } ?: "")
                 }
-                conversation(p, c, model, sys, history, lv, if (useTools) tools else null, show, search, onText)
+                conversation(p, c, model, sys, history, lv, if (useTools) tools else null, show, search, onRoundEnd, onText)
                 // 去掉思考参数、工具留着就通了：这个模型不收思考参数，记下来，下次直接不带
                 if (lv == null && effort != null && useTools == hasTools) ModelFit.learn(p.id, model, "think")
                 return
@@ -442,7 +443,7 @@ object ChatApi {
 
     private suspend fun conversation(
         p: Provider, c: ProviderConfig, model: String, system: String, history: List<ChatMsg>,
-        effort: String?, tools: Tools?, onThink: suspend (String) -> Unit, search: (() -> Unit)?, onText: suspend (String) -> Unit,
+        effort: String?, tools: Tools?, onThink: suspend (String) -> Unit, search: (() -> Unit)?, onRoundEnd: suspend () -> Unit, onText: suspend (String) -> Unit,
     ) {
         val anthropic = p.kind == "anthropic"
         val msgs = JSONArray()
@@ -480,6 +481,7 @@ object ChatApi {
                 else msgs.put(JSONObject().put("role", "user").put("content", CAP_NOTE))
             }
             val r = once(p, c, model, system, msgs, effort, if (round < MAX_ROUNDS) tools else null, round == 0, onThink, search, onText)
+            onRoundEnd()
             if (r.calls.any { it.name.toString() in setOf(Works.MAKE, Works.EDIT, WorkJobs.START) }) worked = true
             // 嘴上说「做好了 / 卡在下面」，这一轮却没真的调用做作品的工具：提醒她一次，接着真的去做
             if (r.calls.isEmpty() && tools != null && round < MAX_ROUNDS && !nudged && !worked && Claims.saysDone(r.text)) {

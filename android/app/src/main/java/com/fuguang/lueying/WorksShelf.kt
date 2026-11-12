@@ -27,12 +27,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-/** 侧栏「作品」：网页、动画、动效、幻灯片、文档（画板另在「画板」里），新的在前；点一件全屏看。从下面升上来，点空白落回去。 */
+/** 侧栏「作品」：网页、动画、动效、幻灯片、文档和画板，新的在前；点一件全屏看。从下面升上来，点空白落回去。 */
 @Composable
-fun WorksShelf(open: Boolean, onClose: () -> Unit, onOpen: (String) -> Unit) {
+fun WorksShelf(open: Boolean, onClose: () -> Unit, onOpen: (String) -> Unit, onNewBoard: () -> Unit) {
     val t by animateFloatAsState(if (open) 1f else 0f, tween(if (open) 320 else 220, easing = Curves.standard), label = "shelf")
     if (t <= 0f) return
-    val ids = remember(open, Works.version) { Works.list().filter { it.kind != "board" }.map { it.id } }
+    val ids = remember(open, Works.version) { Works.list().map { it.id } }
     BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
         val h = maxHeight
         Box(Modifier.fillMaxSize().graphicsLayer { alpha = t }.background(Skin.scrim(.5f)).pointerInput(Unit) { detectTapGestures { onClose() } })
@@ -49,6 +49,9 @@ fun WorksShelf(open: Boolean, onClose: () -> Unit, onOpen: (String) -> Unit) {
                     SvgIcon(Icons.close, Page.ink, 20.dp, modifier = Modifier.padding(6.dp))
                 }
                 Txt("作品", Page.ink, 16.5.sp, Modifier.align(Alignment.Center), family = Serif, weight = FontWeight.SemiBold, maxLines = 1)
+            }
+            Pressable(onNewBoard, Modifier.align(Alignment.End), label = "新建画板") {
+                Txt("新建画板", Page.ink, 13.sp, Modifier.padding(10.dp))
             }
             Spacer(Modifier.height(6.dp))
             if (ids.isEmpty()) {

@@ -72,7 +72,8 @@ internal object ArtworkJob {
             (1..MAX_DRAFTS).filter { File(dir, "$it.json").isFile }.toMutableList()
         }
         val vision = Attach.vision(author.provider.id, author.name)
-        val reviewed = mutableSetOf<Int>()
+        val reviewed = mutableMapOf<Int, Int>()
+        var round = 0
         var presented = false
         var failedRenders = 0
         val reviewLimit = if (quick) 1 else 3
@@ -144,10 +145,10 @@ internal object ArtworkJob {
                                 "按原始要求检查这张静态插画。只提出 1–3 条具体的画面问题、位置、修改方向和应保留的部分；没有明显问题就说明可交付。\n" + brief.take(3000))
                         } catch (e: CancellationException) { throw e }
                         catch (_: Exception) { return ToolOut("渲染成功，但看图请求失败。可重试或保留预览。") }
-                        reviewed += version
+                        reviewed[version] = round
                         return ToolOut("第 ${version} 稿视觉检查（${reviewer.name}）：\n$note")
                     }
-                    reviewed += version
+                    reviewed[version] = round
                     val image = if (quick) emptyList() else listOf(ToolImage("image/png", Base64.encodeToString(checkNotNull(reviewImage), Base64.NO_WRAP)))
                     ToolOut("第 ${version} 稿渲染成功。" +
                         if (quick) "可直接交付。" else "这条工具结果的图片就是该版本，请看图后再决定。", image)
@@ -156,6 +157,7 @@ internal object ArtworkJob {
                     val data = draft(version) ?: return ToolOut("没有这个版本。")
                     val file = preview(version)
                     if (version !in reviewed || !file.isFile) return ToolOut("请先完成这个版本要求的渲染和检查。")
+                    if (reviewed[version] == round) return ToolOut("先读取这次渲染的结果，再决定是否交付。")
                     onStage("正在交付第 ${version} 稿", file)
                     val html = ArtworkPreview.page(data.getString("svg"))
                     val result = Works.saveArtwork(title, editId, html, file, onMade)
@@ -173,7 +175,7 @@ internal object ArtworkJob {
         val instructions = "你在 Vignette 里绘制静态艺术作品。先决定构图和绘法，用 $WRITE 保存 SVG，" +
             "用 $RENDER 检查实际画面。必要时修改源码、再渲染。选出最好的一版后必须调用 $PRESENT。" +
             "用户的原话和参考图优先。不要把源码贴进正文。全部画面要在 viewBox 内，不使用脚本、远程资源或 HTML。" +
-            if (quick) "本次快速模式，完成一次渲染即可交付。" else "本次精修模式。对照用户要求看图，修正实质问题，最多两轮视觉返工。"
+            if (quick) "本次快速模式，完成一次渲染即可交付。" else "本次精修模式。对照用户要求看图，判断是否需要返工。检查通过就交付；预算内仍有实质问题就修正并重新查看。"
         val thought = StringBuilder()
         var thoughtEntry: ArtworkRuns.Entry? = null
         suspend fun flushThought() {
@@ -193,7 +195,8 @@ internal object ArtworkJob {
                     }
                     if (thoughtEntry != null) thought.append(chunk.take((24_000 - thought.length).coerceAtLeast(0)))
                 },
-                tools = Tools(tools, ::use, onUse = { flushThought() }, onEffort = onEffort, finished = { presented }),
+                tools = Tools(tools, ::use, onUse = {}, onEffort = onEffort, finished = { presented }),
+                onRoundEnd = { round++; flushThought() },
                 onText = {})
         } finally {
             withContext(kotlinx.coroutines.NonCancellable) { flushThought() }

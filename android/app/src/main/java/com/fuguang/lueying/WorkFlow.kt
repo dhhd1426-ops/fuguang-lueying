@@ -118,12 +118,12 @@ private fun WorkSlot(id: String?, draft: WorkDraft?, onWork: (String) -> Unit, c
                     val reason = st?.fail ?: if (record != null) "已暂停 · 点此继续绘制" else null
                     FailCard(WorkJobs.titleOf(job), reason, WorkJobs.canRetry(job, record)) { WorkJobs.retry(job, record, chat, store) }
                     val file = st?.preview ?: remember(job) { ArtworkJob.latestPreview(WorkJobs.keyOf(job)) }
-                    ArtworkProgress(file, st?.effort, null)
+                    ArtworkProgress(file)
                 }
                 real != null -> WorkCards(listOf(real), onWork)
                 st != null -> Column {
                     DraftCard(WorkDraft(0, if (st.editing) Works.EDIT else Works.MAKE, st.chars, st.title), st.stage)
-                    if (job != null && st.stage != null) ArtworkProgress(st.preview, st.effort) { WorkJobs.stop(job) }
+                    if (job != null && st.stage != null) ArtworkProgress(st.preview)
                 }
                 draft != null -> DraftCard(draft)
             }
@@ -132,8 +132,8 @@ private fun WorkSlot(id: String?, draft: WorkDraft?, onWork: (String) -> Unit, c
 }
 
 @Composable
-private fun ArtworkProgress(file: java.io.File?, effort: String?, stop: (() -> Unit)?) {
-    if (file == null && effort == null && stop == null) return
+internal fun ArtworkProgress(file: java.io.File?) {
+    if (file == null) return
     Column(Modifier.widthIn(max = 440.dp).fillMaxWidth().padding(bottom = 10.dp)) {
         val preview by produceState<ImageBitmap?>(null, file) {
             value = withContext(Dispatchers.IO) { file?.let { android.graphics.BitmapFactory.decodeFile(it.path)?.asImageBitmap() } }
@@ -146,10 +146,6 @@ private fun ArtworkProgress(file: java.io.File?, effort: String?, stop: (() -> U
             if (expanded) Dialog(onDismissRequest = { expanded = false }) {
                 Image(image, "当前画稿", Modifier.fillMaxWidth())
             }
-        }
-        effort?.let { Txt(it, Page.muted, 11.sp, maxLines = 2) }
-        if (stop != null) Pressable(stop, label = "停止绘制") {
-            Txt("停止", Page.muted, 12.sp, Modifier.padding(vertical = 8.dp, horizontal = 10.dp))
         }
     }
 }
