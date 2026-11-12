@@ -6,6 +6,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -26,6 +27,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -102,18 +104,38 @@ private fun WorkSlot(id: String?, draft: WorkDraft?, onWork: (String) -> Unit) {
         }
         AnimatedContent(face, transitionSpec = { fadeIn(tween(240, 40)) togetherWith fadeOut(tween(160)) }, label = "workSlot") { real ->
             when {
-                real == "fail" && job != null -> FailCard(WorkJobs.titleOf(job), st?.fail, WorkJobs.canRetry(job)) { WorkJobs.retry(job) }
+                real == "fail" && job != null -> Column {
+                    FailCard(WorkJobs.titleOf(job), st?.fail, WorkJobs.canRetry(job)) { WorkJobs.retry(job) }
+                    val file = st?.preview ?: remember(job) { ArtworkJob.latestPreview(WorkJobs.keyOf(job)) }
+                    ArtworkProgress(file, st?.effort, null)
+                }
                 real != null -> WorkCards(listOf(real), onWork)
-                st != null -> DraftCard(WorkDraft(0, if (st.editing) Works.EDIT else Works.MAKE, st.chars, st.title))
+                st != null -> Column {
+                    DraftCard(WorkDraft(0, if (st.editing) Works.EDIT else Works.MAKE, st.chars, st.title), st.stage)
+                    if (job != null && st.stage != null) ArtworkProgress(st.preview, st.effort) { WorkJobs.stop(job) }
+                }
                 draft != null -> DraftCard(draft)
             }
         }
     }
 }
 
+@Composable
+private fun ArtworkProgress(file: java.io.File?, effort: String?, stop: (() -> Unit)?) {
+    if (file == null && effort == null && stop == null) return
+    Column(Modifier.widthIn(max = 440.dp).fillMaxWidth().padding(bottom = 10.dp)) {
+        val preview = remember(file) { file?.let { android.graphics.BitmapFactory.decodeFile(it.path)?.asImageBitmap() } }
+        if (preview != null) Image(preview, "当前画稿", Modifier.fillMaxWidth().height(168.dp))
+        effort?.let { Txt(it, Page.muted, 11.sp, maxLines = 2) }
+        if (stop != null) Pressable(stop, label = "停止绘制") {
+            Txt("停止", Page.muted, 12.sp, Modifier.padding(vertical = 8.dp, horizontal = 10.dp))
+        }
+    }
+}
+
 /** 正在写的卡：和作品卡一样的块；左边小方块里是变形弹跳（第 339 版起，ToyMotion.kt，原来是页面图标加一道扫光），名字没出来时是一根灰条，下面写着写到多少字。 */
 @Composable
-private fun DraftCard(d: WorkDraft) {
+private fun DraftCard(d: WorkDraft, stage: String? = null) {
     Column(Modifier.padding(top = 10.dp, bottom = 12.dp)) {
         Row(
             Modifier.widthIn(max = 440.dp).fillMaxWidth().background(veil(.055f), RoundedCornerShape(16.dp)).padding(10.dp),
@@ -130,7 +152,7 @@ private fun DraftCard(d: WorkDraft) {
                 }
                 Spacer(Modifier.height(4.dp))
                 val verb = if (d.editing) "正在改" else "正在写"
-                Txt(if (d.chars < 200) "$verb…" else "$verb · 已写 %.1fk 字".format(d.chars / 1000f), Page.muted, 12.5.sp, maxLines = 1)
+                Txt(stage ?: if (d.chars < 200) "$verb…" else "$verb · 已写 %.1fk 字".format(d.chars / 1000f), Page.muted, 12.5.sp, maxLines = 1)
             }
         }
     }

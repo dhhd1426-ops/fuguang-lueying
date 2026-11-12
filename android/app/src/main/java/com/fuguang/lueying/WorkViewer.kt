@@ -263,6 +263,11 @@ fun WorkViewer(id: String?, onClose: () -> Unit, onFix: (String) -> Unit = {}) {
                 Spacer(Modifier.height(10.dp))
                 val items = ArrayList<Triple<String, String, () -> Unit>>()
                 items += Triple("分享网页文件", ".html，发给谁都能用浏览器打开", { shareBytes(ctx, "${w.title}.html", MaterialStore.inline(html.orEmpty(), Works.source(cur)?.let { MaterialStore.usedOf(it) }.orEmpty()).toByteArray(), "text/html") })
+                Works.artworkPng(cur)?.let { png ->
+                    items += Triple("导出 PNG", "导出这版画面", {
+                        runCatching { shareBytes(ctx, "${w.title}.png", png.readBytes(), "image/png") }
+                    })
+                }
                 items += Triple("存成 PDF", "用系统打印，选「另存为 PDF」", { web?.let { printPdf(ctx, it, w.title) }; Unit })
                 if (w.kind == "slides") items += Triple("导出 PPT", ".pptx，PowerPoint 和 WPS 都能打开", {
                     Works.source(cur)?.let { o -> shareBytes(ctx, "${w.title}.pptx", Pptx.build(w.title, Works.slidesOf(o)), "application/vnd.openxmlformats-officedocument.presentationml.presentation") }; Unit

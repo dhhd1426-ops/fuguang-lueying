@@ -38,6 +38,11 @@ object Works {
     }
 
     private fun src(id: String) = dir?.let { File(it, "$id.json") }
+    fun artworkPng(id: String): File? {
+        val png = source(id)?.optString("artworkPng").orEmpty()
+        return png.takeIf { it.matches(Regex("[0-9a-f-]{36}\\.png")) }
+            ?.let { dir?.let { folder -> File(folder, it) } }?.takeIf { it.isFile }
+    }
     fun htmlFile(id: String) = dir?.let { File(it, "$id.html") }
 
     fun get(id: String): Work? = runCatching {
@@ -50,7 +55,38 @@ object Works {
 
     fun source(id: String): JSONObject? = runCatching { JSONObject(src(id)!!.readText()) }.getOrNull()
 
-    fun html(id: String): String? = runCatching { htmlFile(id)!!.readText() }.getOrNull()
+    fun html(id: String): String? = runCatching {
+        val data = source(id)
+        if (data?.has("artworkPng") == true) data.getString("html") else htmlFile(id)!!.readText()
+    }.getOrNull()
+
+    internal suspend fun saveArtwork(title: String, old: String?, html: String, png: File, onMade: (String) -> Unit): Boolean {
+        val id = old ?: java.util.UUID.randomUUID().toString()
+        val folder = dir ?: return false
+        // The JSON is the commit point. A published revision never points to a partially written PNG.
+        return withContext(kotlinx.coroutines.NonCancellable) {
+            val saved = withContext(Dispatchers.IO) {
+                val previous = artworkPng(id)
+                val image = File(folder, "${java.util.UUID.randomUUID()}.png")
+                val manifest = android.util.AtomicFile(File(folder, "$id.json"))
+                runCatching {
+                    png.copyTo(image)
+                    val data = JSONObject().put("title", title).put("kind", "page").put("updated", System.currentTimeMillis())
+                        .put("html", html).put("artworkPng", image.name)
+                    val stream = manifest.startWrite()
+                    try {
+                        stream.write(data.toString().toByteArray())
+                        manifest.finishWrite(stream)
+                    } catch (e: Exception) {
+                        manifest.failWrite(stream)
+                        throw e
+                    }
+                }.onSuccess { previous?.delete() }.onFailure { image.delete() }.isSuccess
+            }
+            if (saved) withContext(Dispatchers.Main) { version++; onMade(id) }
+            saved
+        }
+    }
 
     fun slidesOf(o: JSONObject): List<Slide> {
         val a = o.optJSONArray("slides") ?: JSONArray()
@@ -183,12 +219,14 @@ object Works {
                 Preview.page(h)
             }
         }
+        val previousArtwork = old?.let { artworkPng(it) }
         val prior = old?.let { source(it) }?.let { MaterialStore.usedOf(it) }.orEmpty()
         val used = MaterialStore.refs(page.replace("\\/", "/"), mats.flatMap { it.first } + prior)
         val missed = mats.flatMap { it.second }
         if (used.isNotEmpty()) o.put("materials", MaterialStore.toJson(used))
         File(d, "$id.json").writeText(o.toString())
         File(d, "$id.html").writeText(page)
+        previousArtwork?.delete()
         withContext(Dispatchers.Main) { version++; onMade(id) }
         ToolOut(
             (if (old != null) "改好了" else "做好了") + "：《$title》，id=$id。作品卡会显示在你这条回复下面，不用贴代码，说一两句就好。" +
