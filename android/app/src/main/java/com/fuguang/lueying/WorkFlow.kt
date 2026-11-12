@@ -55,7 +55,9 @@ internal fun ReplyFlow(
     reply: @Composable (String, Boolean) -> Unit,
 ) {
     class Slot(val pos: Int, val id: String?, val draft: WorkDraft?)
-    val slots = works.mapIndexed { k, id -> Slot(at.getOrElse(k) { Int.MAX_VALUE }, id, null) }.toMutableList()
+    val slots = works.mapIndexedNotNull { k, id ->
+        ArchivedTeamWorks.resolve(id)?.let { Slot(at.getOrElse(k) { Int.MAX_VALUE }, it, null) }
+    }.toMutableList()
     if (draft != null) slots += Slot(draft.at, null, draft)
     slots.sortBy { it.pos }
     val n = text.length
@@ -82,27 +84,6 @@ private fun WorkSlot(id: String?, draft: WorkDraft?, onWork: (String) -> Unit) {
     // 她直接发的文件（SentFiles）：文件卡，自己管打包动效
     if (id != null && id.startsWith(Pacts.PREFIX)) {
         Box(Modifier.graphicsLayer { alpha = rise.value; translationY = (1f - rise.value) * 8.dp.toPx() }) { PactCard(id) }
-        return
-    }
-    // 分身团队（Team.kt）：α β γ 的进度在思考过程里；这里和后台写作品一样——做着是「正在写」那张小球卡，
-    // 好了原地换成作品卡（swapWork 随后把引用换成作品 id），停下 / 没做成是能点一下接着做的卡（第 402 版，用户说要留着）
-    if (id != null && Team.isRef(id)) {
-        val key = Team.keyOf(id)
-        val r = Team.runs[key]
-        val face: String? = when {
-            r?.done != null -> r.done
-            r == null || r.stage == "fail" || r.stage == "stop" -> "fail"
-            else -> null
-        }
-        Box(Modifier.graphicsLayer { alpha = rise.value; translationY = (1f - rise.value) * 8.dp.toPx() }) {
-            AnimatedContent(face, transitionSpec = { fadeIn(tween(240, 40)) togetherWith fadeOut(tween(160)) }, label = "teamSlot") { real ->
-                when {
-                    real == "fail" -> FailCard(r?.title ?: id.substringAfter('|', ""), if (r?.stage == "stop") "停下了" else r?.fail, r != null) { Team.resume(key) }
-                    real != null -> WorkCards(listOf(real), onWork)
-                    else -> DraftCard(WorkDraft(0, Works.MAKE, Team.chars[key] ?: 0, r?.title))
-                }
-            }
-        }
         return
     }
     if (id != null && SentFiles.isRef(id)) {

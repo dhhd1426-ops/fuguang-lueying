@@ -385,7 +385,7 @@ class PactRun : Service() {
             ready = true
             val prefs = Prefs(ctx)
             Notify.init(ctx); ClockTools.init(ctx); Works.init(ctx); SentFiles.init(ctx); SentPics.init(ctx); MaterialStore.init(ctx); Avatars.init(ctx); Attach.init(ctx)
-            Memory.init(prefs); MemModel.init(prefs); FoldModel.init(prefs); CtxWin.init(prefs); Amor.init(prefs); Team.init(prefs); ModelFit.init(prefs); WebSearch.init(prefs)
+            Memory.init(prefs); MemModel.init(prefs); FoldModel.init(prefs); CtxWin.init(prefs); ModelFit.init(prefs); WebSearch.init(prefs)
             Pacts.init(ctx, prefs)
         }
     }
