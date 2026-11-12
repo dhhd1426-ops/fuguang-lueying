@@ -55,12 +55,13 @@ object AttachLook {
     private const val ASK = "仔细看这张图，用中文写下你看到的一切：画面里有什么、人和物在做什么、构图和颜色、给人的感觉；" +
         "图里所有能看清的字逐字照抄（标明在什么位置）。只描述，不评论，不加开场白。"
 
-    private suspend fun describe(p: Provider, c: ProviderConfig, model: String, jpg: ByteArray): String = withContext(Dispatchers.IO) {
+    internal suspend fun describe(p: Provider, c: ProviderConfig, model: String, bytes: ByteArray,
+                                  mime: String = "image/jpeg", prompt: String = ASK): String = withContext(Dispatchers.IO) {
         val anthropic = p.kind == "anthropic"
-        val b64 = android.util.Base64.encodeToString(jpg, android.util.Base64.NO_WRAP)
-        val img = if (anthropic) JSONObject().put("type", "image").put("source", JSONObject().put("type", "base64").put("media_type", "image/jpeg").put("data", b64))
-        else JSONObject().put("type", "image_url").put("image_url", JSONObject().put("url", "data:image/jpeg;base64,$b64"))
-        val content = JSONArray().put(img).put(JSONObject().put("type", "text").put("text", ASK))
+        val b64 = android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
+        val img = if (anthropic) JSONObject().put("type", "image").put("source", JSONObject().put("type", "base64").put("media_type", mime).put("data", b64))
+        else JSONObject().put("type", "image_url").put("image_url", JSONObject().put("url", "data:$mime;base64,$b64"))
+        val content = JSONArray().put(img).put(JSONObject().put("type", "text").put("text", prompt))
         val body = JSONObject().put("model", model).put("stream", false)
             .put("messages", JSONArray().put(JSONObject().put("role", "user").put("content", content)))
         // DeepSeek 现在默认先想再答：字多的图（食谱、表格）光想就把 1500 用完，正文是空的 → 「照片没看清」。帮手看图不用想，额度也放宽

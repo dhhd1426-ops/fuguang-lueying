@@ -323,6 +323,8 @@ class Tools(
     val inbox: suspend () -> String? = { null },
     /** 做作品的参数还在流式来：名字、已写多少字、开头一段（取标题）。 */
     val onDraft: (String, Int, String) -> Unit = { _, _, _ -> },
+    val onEffort: (suspend (String?) -> Unit)? = null,
+    val finished: () -> Boolean = { false },
 )
 
 /**
@@ -533,12 +535,13 @@ object ChatApi {
                     }
                 }
                 if (pics.length() > 0) {
-                    val content = JSONArray().put(JSONObject().put("type", "text").put("text", "（这是刚才读取的笔记里的图片）"))
+                    val content = JSONArray().put(JSONObject().put("type", "text").put("text", "（这些图片来自刚才的工具结果，按结果中的顺序排列）"))
                     for (k in 0 until pics.length()) content.put(pics.get(k))
                     msgs.put(JSONObject().put("role", "user").put("content", content))
                 }
                 tools.inbox()?.let { msgs.put(JSONObject().put("role", "user").put("content", midTurn(it))) }
             }
+            if (tools.finished()) return
         }
     }
 
@@ -660,6 +663,7 @@ object ChatApi {
             conn.outputStream.use { it.write(body.toString().toByteArray()) }
 
             val code = conn.responseCode
+            if (code in 200..299) tools?.onEffort?.let { report -> withContext(Dispatchers.Main) { report(lv.takeIf { sentThink && !ModelFit.drops(p.id, model, "think") }) } }
             val err = if (code !in 200..299) conn.errorStream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() } ?: "" else ""
             if (QwenSearch.audited(err)) throw IllegalStateException(QwenSearch.AUDIT)
             // 内容太长了：交给聊天页整理前情再发（第 394 版）
