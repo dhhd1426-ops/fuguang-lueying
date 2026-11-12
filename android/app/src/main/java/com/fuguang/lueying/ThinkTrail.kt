@@ -1,6 +1,11 @@
 package com.fuguang.lueying
 
 import androidx.compose.animation.Crossfade
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.RepeatMode
@@ -247,12 +252,35 @@ fun proseItems(raw: String, steps: List<ToolStep>, live: Boolean): List<TrailIte
     return out
 }
 
+private fun collapsedProseItems(raw: String, steps: List<ToolStep>, live: Boolean): List<TrailItem> {
+    val collapsed = mutableListOf<TrailItem>()
+    var group = 0
+    proseItems(raw, steps, live).forEach { item ->
+        if (item.prose || item.placeholder) {
+            val key = "thought-$group"
+            val previous = collapsed.lastOrNull()?.takeIf { it.key == key }
+            val text = if (item.placeholder) previous?.title.orEmpty()
+                else listOfNotNull(previous?.title, item.title).joinToString("\n\n")
+            val thought = TrailItem(key, null, text, "", item.live, prose = true)
+            if (previous == null) collapsed += thought else collapsed[collapsed.lastIndex] = thought
+        } else {
+            collapsed += item
+            group++
+        }
+    }
+    return collapsed
+}
+
 private val TrailApricot: Color get() = Skin.accent
 private val TrailLive = Color(0xFFD97757)
 
 /** Thinking + 三个点依次跳（照原型：每个点隔 150ms，上跳 4dp，1.2 秒一轮）。 */
 @Composable
 fun ThinkingDots(color: Color = Page.muted, size: androidx.compose.ui.unit.TextUnit = 14.sp, modifier: Modifier = Modifier) {
+    if (Toy.still()) {
+        Txt("Thinking…", color, size, modifier, maxLines = 1)
+        return
+    }
     val inf = rememberInfiniteTransition(label = "dots")
     val t by inf.animateFloat(0f, 1f, infiniteRepeatable(tween(1200, easing = androidx.compose.animation.core.LinearEasing)), label = "dt")
     Row(modifier, verticalAlignment = Alignment.Bottom) {
@@ -366,7 +394,7 @@ fun ThinkDrawer(open: Boolean, raw: String, savedSteps: List<ToolStep>, live: Bo
         if (summary) LaunchedEffect(open, raw, steps.size, live) { if (open) requestTidy(raw, steps, live, AttachLook.store) }
         // 内容变了才重新切段；derivedStateOf 跟着整理结果（ThinkTidy 的 state map）自己更新
         val items by remember(raw, steps, live, summary) {
-            derivedStateOf { if (summary) summaryItems(raw, steps, live) else proseItems(raw, steps, live) }
+            derivedStateOf { collapsedProseItems(raw, steps, live) }
         }
         Column(
             Modifier.align(Alignment.BottomCenter).widthIn(max = 640.dp).fillMaxWidth().height(maxHeight * .92f)
@@ -402,8 +430,10 @@ fun ThinkDrawer(open: Boolean, raw: String, savedSteps: List<ToolStep>, live: Bo
                         val art = it.tool?.takeIf { step ->
                             step.name == WorkJobs.START && step.detail.startsWith(WorkJobs.PREFIX)
                         }?.let { step -> WorkJobs.keyOf(step.detail) }
-                        val last = i == items.lastIndex || items.getOrNull(i + 1)?.prose == true
-                        if (it.prose) ProseNode(it)
+                        val last = i == items.lastIndex
+                        if (it.prose) {
+                            ThoughtTrailNode(it.title, it.live, last, summary)
+                        }
                         else if (art != null) {
                             val saved by androidx.compose.runtime.produceState(emptyList<ArtworkRuns.Entry>(), art) {
                                 value = ArtworkRuns.load(art)
@@ -412,7 +442,9 @@ fun ThinkDrawer(open: Boolean, raw: String, savedSteps: List<ToolStep>, live: Bo
                             TrailNode(TrailItem(it.key, it.tool, it.title, "", it.live), last && runs.isEmpty(), false) {}
                             runs.forEachIndexed { index, run ->
                                 androidx.compose.runtime.key(run.id) {
-                                    RenderTrailNode(run, last && index == runs.lastIndex)
+                                    val end = last && index == runs.lastIndex
+                                    if (run.kind == "thought") ThoughtTrailNode(run.output, run.status == "running", end)
+                                    else RenderTrailNode(run, end)
                                 }
                             }
                         } else TrailNode(it, last, it.key in opened.value) {
@@ -430,10 +462,11 @@ private val renderCommandIcon = Ic("M5 7l5 5-5 5m8 0h6")
 @Composable
 private fun RenderTrailNode(run: ArtworkRuns.Entry, last: Boolean) {
     var expanded by remember { mutableStateOf(false) }
-    val title = when (run.status) {
-        "running" -> "正在渲染预览"
-        "success" -> "已运行渲染"
-        "failed" -> "渲染失败"
+    val title = when {
+        run.kind == "draft" || run.kind == "present" -> run.output
+        run.status == "running" -> "正在渲染预览"
+        run.status == "success" -> "已运行渲染"
+        run.status == "failed" -> "渲染失败"
         else -> "渲染已停止"
     }
     val tint = when (run.status) {
@@ -445,8 +478,7 @@ private fun RenderTrailNode(run: ArtworkRuns.Entry, last: Boolean) {
         Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min)
             .background(if (pressed) veil(.04f) else Color.Transparent, RoundedCornerShape(8.dp))) {
             Box(Modifier.width(26.dp).fillMaxHeight()) {
-                if (!last) Box(Modifier.align(Alignment.TopCenter).padding(top = 29.dp, bottom = 4.dp)
-                    .width(1.dp).fillMaxHeight().background(veil(.13f)))
+                TrailConnector(last, 29.dp)
                 Box(Modifier.align(Alignment.TopCenter).size(26.dp).background(veil(.06f), RoundedCornerShape(8.dp)),
                     contentAlignment = Alignment.Center) {
                     SvgIcon(renderCommandIcon, tint, 15.dp, stroke = 1.5f)
@@ -464,8 +496,9 @@ private fun RenderTrailNode(run: ArtworkRuns.Entry, last: Boolean) {
                 }
                 if (expanded) {
                     Spacer(Modifier.height(5.dp))
-                    Txt("render_preview · 第 ${run.version} 稿", Page.muted, 12.5.sp)
-                    if (run.output.isNotBlank()) Txt(run.output, tint, 13.sp, lineHeight = 20.sp)
+                    val action = when (run.kind) { "draft" -> "write_draft"; "present" -> "present_artwork"; else -> "render_preview" }
+                    Txt("$action · 第 ${run.version} 稿", Page.muted, 12.5.sp)
+                    if (run.kind == "render" && run.output.isNotBlank()) Txt(run.output, tint, 13.sp, lineHeight = 20.sp)
                 }
             }
         }
@@ -486,7 +519,7 @@ private fun TrailNode(it: TrailItem, last: Boolean, open: Boolean, delay: Int = 
             // 照 Claude App 图二：圆点对齐标题第一行，竖线从圆点下面连到下一步；标题是结论，下面是理由，整理好的不截断
             Box(Modifier.width(26.dp).fillMaxHeight()) {
                 val top = if (it.tool != null) 32.dp else 22.dp
-                if (!last) Box(Modifier.padding(top = top, bottom = 4.dp).align(Alignment.TopCenter).width(1.dp).fillMaxHeight().background(veil(.13f)))
+                TrailConnector(last, top)
                 if (it.tool != null) {
                     Box(
                         Modifier.align(Alignment.TopCenter).size(26.dp)
@@ -509,16 +542,69 @@ private fun TrailNode(it: TrailItem, last: Boolean, open: Boolean, delay: Int = 
     }
 }
 
-/** 原文型的一段原话：照原样，不截断；正在写的那段末尾一个橙点。 */
+/** Completed connectors are stable; a newly available next row draws only this segment. */
 @Composable
-private fun ProseNode(it: TrailItem) {
-    val enter = remember { Animatable(0f) }
-    LaunchedEffect(Unit) { enter.animateTo(1f, tween(300, easing = Curves.standard)) }
-    Row(Modifier.fillMaxWidth().padding(bottom = 16.dp).graphicsLayer { alpha = enter.value; translationY = (1f - enter.value) * 4.dp.toPx() }, verticalAlignment = Alignment.Bottom) {
-        Txt(it.title, Page.ink.copy(alpha = .78f), 14.5.sp, Modifier.weight(1f, fill = false), lineHeight = 27.sp)
-        if (it.live) {
-            val a by rememberInfiniteTransition(label = "cur").animateFloat(1f, .3f, infiniteRepeatable(tween(500), RepeatMode.Reverse), label = "c")
-            Box(Modifier.padding(start = 6.dp, bottom = 9.dp).size(6.dp).graphicsLayer { alpha = a }.background(TrailLive, CircleShape))
+private fun androidx.compose.foundation.layout.BoxScope.TrailConnector(last: Boolean, top: androidx.compose.ui.unit.Dp) {
+    val still = Toy.still()
+    val grow = remember { Animatable(if (last) 0f else 1f) }
+    LaunchedEffect(last, still) {
+        if (last || still) grow.snapTo(if (last) 0f else 1f)
+        else grow.animateTo(1f, tween(250, easing = Curves.standard))
+    }
+    if (!last) Box(Modifier.align(Alignment.TopCenter).padding(top = top, bottom = 2.dp)
+        .width(1.dp).fillMaxHeight().graphicsLayer {
+            transformOrigin = androidx.compose.ui.graphics.TransformOrigin(.5f, 0f)
+            scaleY = grow.value
+        }.background(veil(.13f)))
+}
+
+/** The pending row settles in place into an expandable excerpt. */
+@Composable
+private fun ThoughtTrailNode(text: String, live: Boolean, last: Boolean, summary: Boolean = false) {
+    var expanded by remember { mutableStateOf(false) }
+    val still = Toy.still()
+    val first = remember(text) { text.substringBefore("\n\n").trim() }
+    val label = (if (summary) ThinkTidy.get(first)?.firstOrNull()?.title else null)
+        ?: firstSentence(first, 46).ifBlank { "思考摘要" }
+    val dot by animateColorAsState(if (live) TrailLive else veil(.32f),
+        tween(if (still) 0 else 185, easing = Curves.standard), label = "thoughtDot")
+    val arrival = remember { Animatable(if (live && !still) 0f else 1f) }
+    LaunchedEffect(Unit) {
+        arrival.animateTo(1f, tween(if (still) 0 else 195, delayMillis = if (live && !still) 100 else 0,
+            easing = Curves.standard))
+    }
+    Pressable({ if (!live) expanded = !expanded }, Modifier.fillMaxWidth(),
+        label = if (expanded) "收起思考" else "展开思考") { pressed ->
+        Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min)
+            .background(if (pressed) veil(.04f) else Color.Transparent, RoundedCornerShape(8.dp))) {
+            Box(Modifier.width(26.dp).fillMaxHeight()) {
+                TrailConnector(last, 22.dp)
+                Box(Modifier.align(Alignment.TopCenter).padding(top = 9.dp).size(8.dp)
+                    .graphicsLayer {
+                        alpha = arrival.value
+                        scaleX = .55f + .45f * arrival.value
+                        scaleY = scaleX
+                    }.background(dot, CircleShape))
+            }
+            Column(Modifier.weight(1f).padding(start = 12.dp, end = 4.dp, bottom = 17.dp)) {
+                Crossfade(live, animationSpec = tween(if (still) 0 else 180), label = "thoughtSummary") { pending ->
+                    Row(Modifier.fillMaxWidth().height(26.dp), verticalAlignment = Alignment.CenterVertically) {
+                        if (pending) ThinkingDots(Page.muted, 14.5.sp)
+                        else {
+                            Txt(label, Page.ink, 14.5.sp, Modifier.weight(1f), maxLines = 1)
+                            Spacer(Modifier.width(8.dp))
+                            SvgIcon(Trail.chevron, Page.muted, 13.dp, modifier = Modifier.graphicsLayer {
+                                rotationZ = if (expanded) 90f else 0f
+                            })
+                        }
+                    }
+                }
+                AnimatedVisibility(expanded && !live,
+                    enter = if (still) androidx.compose.animation.EnterTransition.None else expandVertically(tween(250, easing = Curves.standard)) + fadeIn(tween(150)),
+                    exit = if (still) androidx.compose.animation.ExitTransition.None else shrinkVertically(tween(200, easing = Curves.standard)) + fadeOut(tween(100))) {
+                    Txt(text, Page.muted, 14.sp, lineHeight = 24.sp)
+                }
+            }
         }
     }
 }
