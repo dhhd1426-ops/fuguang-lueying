@@ -101,6 +101,7 @@ internal object ArtworkJob {
                     val data = JSONObject().put("svg", svg).put("width", width).put("height", height)
                     withContext(Dispatchers.IO) { AtomicFile(File(dir, "$next.json")).write(data.toString().toByteArray()) }
                     revisions += next
+                    ArtworkRuns.note(key, "draft", "已保存第 ${next} 稿", next)
                     onStage("已保存第 ${next} 稿", null)
                     ToolOut("已保存第 ${next} 稿。调用 $RENDER，version=$next。")
                 }
@@ -159,6 +160,7 @@ internal object ArtworkJob {
                     val html = ArtworkPreview.page(data.getString("svg"))
                     val result = Works.saveArtwork(title, editId, html, file, onMade)
                     presented = result
+                    if (result) ArtworkRuns.note(key, "present", "已交付第 ${version} 稿", version)
                     ToolOut(if (result) "已交付第 ${version} 稿。" else "保存成品失败，预览已保留。")
                 }
                 else -> ToolOut("没有这个工具。")
@@ -172,8 +174,30 @@ internal object ArtworkJob {
             "用 $RENDER 检查实际画面。必要时修改源码、再渲染。选出最好的一版后必须调用 $PRESENT。" +
             "用户的原话和参考图优先。不要把源码贴进正文。全部画面要在 viewBox 内，不使用脚本、远程资源或 HTML。" +
             if (quick) "本次快速模式，完成一次渲染即可交付。" else "本次精修模式。对照用户要求看图，修正实质问题，最多两轮视觉返工。"
-        ChatApi.stream(author.provider, author.config, author.name, instructions, listOf(input), author.effort,
-            onThink = {}, tools = Tools(tools, ::use, onUse = {}, onEffort = onEffort, finished = { presented }), onText = {})
+        val thought = StringBuilder()
+        var thoughtEntry: ArtworkRuns.Entry? = null
+        suspend fun flushThought() {
+            val entry = thoughtEntry ?: return
+            thoughtEntry = null
+            val content = thought.toString().trim()
+            thought.clear()
+            ArtworkRuns.finishThought(key, entry, content)
+        }
+        try {
+            ChatApi.stream(author.provider, author.config, author.name, instructions, listOf(input), author.effort,
+                onThink = { chunk ->
+                    if (chunk.isNotBlank() && thoughtEntry == null) {
+                        thoughtEntry = withContext(Dispatchers.Main + kotlinx.coroutines.NonCancellable) {
+                            ArtworkRuns.beginThought(key)
+                        }
+                    }
+                    if (thoughtEntry != null) thought.append(chunk.take((24_000 - thought.length).coerceAtLeast(0)))
+                },
+                tools = Tools(tools, ::use, onUse = { flushThought() }, onEffort = onEffort, finished = { presented }),
+                onText = {})
+        } finally {
+            withContext(kotlinx.coroutines.NonCancellable) { flushThought() }
+        }
         return when {
             presented -> null
             !quick && !vision && reviewer == null -> "预览已保留，缺少可用的看图模型"
