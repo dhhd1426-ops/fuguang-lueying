@@ -271,8 +271,12 @@ private fun collapsedProseItems(raw: String, steps: List<ToolStep>, live: Boolea
     return collapsed
 }
 
-private val TrailApricot: Color get() = Skin.accent
-private val TrailLive = Color(0xFFD97757)
+// Timeline colors are paired with the sheet, including the light gradient palettes.
+private val trailSecondary: Color get() = if (Skin.id == Skin.LIGHT) Color(0xFF66645E) else Page.muted
+private val trailActive: Color get() = if (Skin.light) Color(0xFF9E4B2D) else Color(0xFFF0A67C)
+private val trailDoneDot: Color get() = if (Skin.light) Color(0xFF89847D) else Color(0xFF85817E)
+private val trailLine: Color get() = if (Skin.light) Color.Black.copy(alpha = .17f) else Color.White.copy(alpha = .24f)
+private val trailError: Color get() = if (Skin.light) Color(0xFFA33E39) else Skin.danger
 
 /** Thinking + 三个点依次跳（照原型：每个点隔 150ms，上跳 4dp，1.2 秒一轮）。 */
 @Composable
@@ -318,7 +322,11 @@ fun ThinkRow(raw: String, savedSteps: List<ToolStep>, live: Boolean, summary: Bo
     val busy = live || pending
     // 整理完了却一步都没有（都是闲话）：用原文最后一段的第一句
     val head = if (summary) items.lastOrNull { !it.placeholder }?.title.orEmpty().ifEmpty { if (!busy) thinkSummary(raw).ifEmpty { "思考过程" } else "" } else ""
-    Pressable(onClick, Modifier.padding(bottom = 10.dp), label = "查看思考过程") { pressed ->
+    val hitArea = Modifier.padding(bottom = 10.dp).then(
+        if (Skin.frost) Modifier.background(Color(0xE614181F), RoundedCornerShape(9.dp))
+            .padding(horizontal = 7.dp, vertical = 3.dp) else Modifier
+    )
+    Pressable(onClick, hitArea, label = "查看思考过程") { pressed ->
         Row(Modifier.padding(start = 2.dp, top = 2.dp), verticalAlignment = Alignment.CenterVertically) {
             when {
                 summary && head.isEmpty() -> ThinkingDots(Page.muted, 14.sp, Modifier.weight(1f, fill = false))
@@ -470,9 +478,9 @@ private fun RenderTrailNode(run: ArtworkRuns.Entry, last: Boolean) {
         else -> "渲染已停止"
     }
     val tint = when (run.status) {
-        "running" -> Skin.accent
-        "failed" -> Skin.danger
-        else -> Page.muted
+        "running" -> trailActive
+        "failed" -> trailError
+        else -> trailSecondary
     }
     Pressable({ expanded = !expanded }, Modifier.fillMaxWidth(), label = title) { pressed ->
         Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min)
@@ -488,16 +496,16 @@ private fun RenderTrailNode(run: ArtworkRuns.Entry, last: Boolean) {
                 Row(Modifier.fillMaxWidth().height(26.dp), verticalAlignment = Alignment.CenterVertically) {
                     Txt(title, if (run.status == "failed") tint else Page.ink, 15.5.sp,
                         Modifier.weight(1f), weight = FontWeight.Medium, maxLines = 1)
-                    if (run.ms > 0) Txt("%.1f 秒".format(run.ms / 1000.0), Page.muted, 12.sp, maxLines = 1)
+                    if (run.ms > 0) Txt("%.1f 秒".format(run.ms / 1000.0), trailSecondary, 12.sp, maxLines = 1)
                     Spacer(Modifier.width(8.dp))
-                    SvgIcon(Trail.chevron, Page.muted, 13.dp, modifier = Modifier.graphicsLayer {
+                    SvgIcon(Trail.chevron, trailSecondary, 13.dp, modifier = Modifier.graphicsLayer {
                         rotationZ = if (expanded) 90f else 0f
                     })
                 }
                 if (expanded) {
                     Spacer(Modifier.height(5.dp))
                     val action = when (run.kind) { "draft" -> "write_draft"; "present" -> "present_artwork"; else -> "render_preview" }
-                    Txt("$action · 第 ${run.version} 稿", Page.muted, 12.5.sp)
+                    Txt("$action · 第 ${run.version} 稿", trailSecondary, 12.5.sp)
                     if (run.kind == "render" && run.output.isNotBlank()) Txt(run.output, tint, 13.sp, lineHeight = 20.sp)
                 }
             }
@@ -511,8 +519,8 @@ private fun TrailNode(it: TrailItem, last: Boolean, open: Boolean, delay: Int = 
     // Thinking… 走开得快一点（离开比进入快）
     val enter = remember { Animatable(0f) }
     LaunchedEffect(Unit) { enter.animateTo(1f, tween(360, delayMillis = delay, easing = Curves.standard)) }
-    val dot by animateColorAsState(if (it.live) TrailLive else veil(.32f), tween(400), label = "dot")
-    val tint by animateColorAsState(if (it.live) TrailApricot else Page.muted, tween(400), label = "tint")
+    val dot by animateColorAsState(if (it.live) trailActive else trailDoneDot, tween(400), label = "dot")
+    val tint by animateColorAsState(if (it.live) trailActive else trailSecondary, tween(400), label = "tint")
     val breath = rememberInfiniteTransition(label = "breath").animateFloat(.12f, .2f, infiniteRepeatable(tween(800), RepeatMode.Reverse), label = "b")
     Pressable({ if (!it.live) onToggle() }, Modifier.fillMaxWidth().graphicsLayer { alpha = enter.value; translationY = (1f - enter.value) * 6.dp.toPx() }, label = it.title) { pressed ->
         Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min).background(if (pressed) veil(.04f) else Color.Transparent, RoundedCornerShape(12.dp))) {
@@ -523,19 +531,19 @@ private fun TrailNode(it: TrailItem, last: Boolean, open: Boolean, delay: Int = 
                 if (it.tool != null) {
                     Box(
                         Modifier.align(Alignment.TopCenter).size(26.dp)
-                            .background(if (it.live) TrailApricot.copy(alpha = breath.value) else veil(.06f), RoundedCornerShape(8.dp)),
+                            .background(if (it.live) trailActive.copy(alpha = breath.value) else veil(.06f), RoundedCornerShape(8.dp)),
                         contentAlignment = Alignment.Center,
                     ) { SvgIcon(Trail.icon(it.tool.name), tint, 15.dp, stroke = 1.5f) }
                 } else Box(Modifier.padding(top = 8.dp).align(Alignment.TopCenter).size(8.dp).background(dot, CircleShape))
             }
             Column(Modifier.weight(1f).padding(start = 12.dp, bottom = 26.dp, end = 4.dp, top = if (it.tool != null) 1.dp else 0.dp)) {
                 val full = open || it.tidy
-                if (it.placeholder) ThinkingDots(Page.muted, 15.sp)
+                if (it.placeholder) ThinkingDots(trailSecondary, 15.sp)
                 else if (it.live) ThinkingMotion(it.title, size = 15.5.sp, showDots = false, ink = Page.ink)
                 else Txt(it.title, Page.ink.copy(alpha = .94f), 15.5.sp, lineHeight = 24.sp, weight = FontWeight.Medium, maxLines = if (full) Int.MAX_VALUE else 1)
                 if (it.detail.isNotEmpty()) {
                     Spacer(Modifier.height(6.dp))
-                    Txt(it.detail, Page.muted, 14.sp, lineHeight = 25.sp, maxLines = if (full) Int.MAX_VALUE else if (it.tool != null) 1 else 2)
+                    Txt(it.detail, trailSecondary, 14.sp, lineHeight = 25.sp, maxLines = if (full) Int.MAX_VALUE else if (it.tool != null) 1 else 2)
                 }
             }
         }
@@ -555,7 +563,7 @@ private fun androidx.compose.foundation.layout.BoxScope.TrailConnector(last: Boo
         .width(1.dp).fillMaxHeight().graphicsLayer {
             transformOrigin = androidx.compose.ui.graphics.TransformOrigin(.5f, 0f)
             scaleY = grow.value
-        }.background(veil(.13f)))
+        }.background(trailLine))
 }
 
 /** The pending row settles in place into an expandable excerpt. */
@@ -566,7 +574,7 @@ private fun ThoughtTrailNode(text: String, live: Boolean, last: Boolean, summary
     val first = remember(text) { text.substringBefore("\n\n").trim() }
     val label = (if (summary) ThinkTidy.get(first)?.firstOrNull()?.title else null)
         ?: firstSentence(first, 46).ifBlank { "思考摘要" }
-    val dot by animateColorAsState(if (live) TrailLive else veil(.32f),
+    val dot by animateColorAsState(if (live) trailActive else trailDoneDot,
         tween(if (still) 0 else 185, easing = Curves.standard), label = "thoughtDot")
     val arrival = remember { Animatable(if (live && !still) 0f else 1f) }
     LaunchedEffect(Unit) {
@@ -589,11 +597,11 @@ private fun ThoughtTrailNode(text: String, live: Boolean, last: Boolean, summary
             Column(Modifier.weight(1f).padding(start = 12.dp, end = 4.dp, bottom = 17.dp)) {
                 Crossfade(live, animationSpec = tween(if (still) 0 else 180), label = "thoughtSummary") { pending ->
                     Row(Modifier.fillMaxWidth().height(26.dp), verticalAlignment = Alignment.CenterVertically) {
-                        if (pending) ThinkingDots(Page.muted, 14.5.sp)
+                        if (pending) ThinkingDots(trailSecondary, 14.5.sp)
                         else {
                             Txt(label, Page.ink, 14.5.sp, Modifier.weight(1f), maxLines = 1)
                             Spacer(Modifier.width(8.dp))
-                            SvgIcon(Trail.chevron, Page.muted, 13.dp, modifier = Modifier.graphicsLayer {
+                            SvgIcon(Trail.chevron, trailSecondary, 13.dp, modifier = Modifier.graphicsLayer {
                                 rotationZ = if (expanded) 90f else 0f
                             })
                         }
@@ -602,7 +610,7 @@ private fun ThoughtTrailNode(text: String, live: Boolean, last: Boolean, summary
                 AnimatedVisibility(expanded && !live,
                     enter = if (still) androidx.compose.animation.EnterTransition.None else expandVertically(tween(250, easing = Curves.standard)) + fadeIn(tween(150)),
                     exit = if (still) androidx.compose.animation.ExitTransition.None else shrinkVertically(tween(200, easing = Curves.standard)) + fadeOut(tween(100))) {
-                    Txt(text, Page.muted, 14.sp, lineHeight = 24.sp)
+                    Txt(text, trailSecondary, 14.sp, lineHeight = 24.sp)
                 }
             }
         }
