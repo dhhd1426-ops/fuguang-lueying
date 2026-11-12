@@ -23,6 +23,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.produceState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.window.Dialog
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -54,6 +62,7 @@ class WorkDraft(val at: Int, val name: String, val chars: Int, val title: String
 @Composable
 internal fun ReplyFlow(
     text: String, works: List<String>, at: List<Int>, draft: WorkDraft?, fadeTail: Boolean, onWork: (String) -> Unit,
+    chat: ChatState, store: AssistantStore,
     reply: @Composable (String, Boolean) -> Unit,
 ) {
     class Slot(val pos: Int, val id: String?, val draft: WorkDraft?)
@@ -71,7 +80,7 @@ internal fun ReplyFlow(
             val seg = text.substring(from, cut)
             if (seg.isNotBlank()) reply(seg.trim(), false)
             from = cut
-            key(if (s.pos == Int.MAX_VALUE) "end-${s.id}" else "at-${s.pos}") { WorkSlot(s.id, s.draft, onWork) }
+            key(if (s.pos == Int.MAX_VALUE) "end-${s.id}" else "at-${s.pos}") { WorkSlot(s.id, s.draft, onWork, chat, store) }
         }
         val rest = text.substring(from.coerceAtMost(n))
         if (rest.isNotBlank()) reply(rest.trimStart(), fadeTail)
@@ -80,7 +89,7 @@ internal fun ReplyFlow(
 
 /** 一个卡位：正在写时是占位卡，好了原地淡成作品卡（同一个位置，不跳）。 */
 @Composable
-private fun WorkSlot(id: String?, draft: WorkDraft?, onWork: (String) -> Unit) {
+private fun WorkSlot(id: String?, draft: WorkDraft?, onWork: (String) -> Unit, chat: ChatState, store: AssistantStore) {
     val rise = remember { Animatable(if (id != null && draft == null) 1f else 0f) }
     LaunchedEffect(Unit) { rise.animateTo(1f, tween(300, easing = Curves.decel)) }
     // 她直接发的文件（SentFiles）：文件卡，自己管打包动效
@@ -105,7 +114,9 @@ private fun WorkSlot(id: String?, draft: WorkDraft?, onWork: (String) -> Unit) {
         AnimatedContent(face, transitionSpec = { fadeIn(tween(240, 40)) togetherWith fadeOut(tween(160)) }, label = "workSlot") { real ->
             when {
                 real == "fail" && job != null -> Column {
-                    FailCard(WorkJobs.titleOf(job), st?.fail, WorkJobs.canRetry(job)) { WorkJobs.retry(job) }
+                    val record = remember(job, st == null) { if (st == null) ArtworkJob.loadOrder(WorkJobs.keyOf(job)) else null }
+                    val reason = st?.fail ?: if (record != null) "已暂停 · 点此继续绘制" else null
+                    FailCard(WorkJobs.titleOf(job), reason, WorkJobs.canRetry(job, record)) { WorkJobs.retry(job, record, chat, store) }
                     val file = st?.preview ?: remember(job) { ArtworkJob.latestPreview(WorkJobs.keyOf(job)) }
                     ArtworkProgress(file, st?.effort, null)
                 }
@@ -124,8 +135,18 @@ private fun WorkSlot(id: String?, draft: WorkDraft?, onWork: (String) -> Unit) {
 private fun ArtworkProgress(file: java.io.File?, effort: String?, stop: (() -> Unit)?) {
     if (file == null && effort == null && stop == null) return
     Column(Modifier.widthIn(max = 440.dp).fillMaxWidth().padding(bottom = 10.dp)) {
-        val preview = remember(file) { file?.let { android.graphics.BitmapFactory.decodeFile(it.path)?.asImageBitmap() } }
-        if (preview != null) Image(preview, "当前画稿", Modifier.fillMaxWidth().height(168.dp))
+        val preview by produceState<ImageBitmap?>(null, file) {
+            value = withContext(Dispatchers.IO) { file?.let { android.graphics.BitmapFactory.decodeFile(it.path)?.asImageBitmap() } }
+        }
+        var expanded by remember(file) { mutableStateOf(false) }
+        preview?.let { image ->
+            Pressable({ expanded = true }, label = "查看画稿") {
+                Image(image, "当前画稿", Modifier.fillMaxWidth().height(168.dp))
+            }
+            if (expanded) Dialog(onDismissRequest = { expanded = false }) {
+                Image(image, "当前画稿", Modifier.fillMaxWidth())
+            }
+        }
         effort?.let { Txt(it, Page.muted, 11.sp, maxLines = 2) }
         if (stop != null) Pressable(stop, label = "停止绘制") {
             Txt("停止", Page.muted, 12.sp, Modifier.padding(vertical = 8.dp, horizontal = 10.dp))

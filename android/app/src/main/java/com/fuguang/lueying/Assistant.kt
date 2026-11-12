@@ -663,7 +663,7 @@ object ChatApi {
             conn.outputStream.use { it.write(body.toString().toByteArray()) }
 
             val code = conn.responseCode
-            if (code in 200..299) tools?.onEffort?.let { report -> withContext(Dispatchers.Main) { report(lv.takeIf { sentThink }) } }
+            if (code in 200..299) tools?.onEffort?.let { report -> withContext(Dispatchers.Main) { report(lv.takeIf { sentThink && !ModelFit.drops(p.id, model, "think") }) } }
             val err = if (code !in 200..299) conn.errorStream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() } ?: "" else ""
             if (QwenSearch.audited(err)) throw IllegalStateException(QwenSearch.AUDIT)
             // 内容太长了：交给聊天页整理前情再发（第 394 版）

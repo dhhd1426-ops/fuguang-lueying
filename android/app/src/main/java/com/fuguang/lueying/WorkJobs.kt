@@ -29,6 +29,20 @@ object WorkJobs {
     private class Order(val a: JSONObject, val chat: ChatState, val pid: String, val talk: String, val conv: String?,
                         val author: ArtworkJob.Model, val reviewer: ArtworkJob.Model?, val request: ChatMsg?)
     private val orders = mutableMapOf<String, Order>()
+    private fun ArtworkJob.Model.metadata() = JSONObject()
+        .put("provider", provider.id).put("name", name).put("effort", effort ?: JSONObject.NULL)
+
+    private fun restoreModel(data: JSONObject, store: AssistantStore): ArtworkJob.Model {
+        val id = data.getString("provider")
+        return ArtworkJob.Model(provider(id), store.config(id), data.getString("name"),
+            if (data.isNull("effort")) null else data.getString("effort"))
+    }
+
+    private fun Order.metadata() = JSONObject().put("args", a).put("persona", pid).put("talk", talk)
+        .put("conv", conv ?: JSONObject.NULL).put("author", author.metadata())
+        .put("reviewer", reviewer?.metadata() ?: JSONObject.NULL)
+        .put("request", request?.let { JSONObject().put("text", it.text).put("files", JSONArray(it.files)) } ?: JSONObject.NULL)
+
     private val running = mutableMapOf<String, Job>()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
@@ -74,9 +88,25 @@ object WorkJobs {
         return ToolOut("已经交给后台在写《$title》了，卡片就在你说到这里的位置，写好会自己亮起来。接着跟${Memory.userCall}说话就好；别说已经${if (editing) "改" else "做"}好。")
     }
 
-    /** 没写成的，点卡片重来一次。 */
-    fun retry(ref: String) { val k = keyOf(ref); if (orders.containsKey(k) && state[k]?.done == null) run(k) }
-    fun canRetry(ref: String) = orders.containsKey(keyOf(ref))
+    fun canRetry(ref: String, record: JSONObject?) = orders.containsKey(keyOf(ref)) || record != null
+
+    fun retry(ref: String, record: JSONObject?, chat: ChatState, store: AssistantStore) {
+        val key = keyOf(ref)
+        if (state[key]?.done != null) return
+        if (key !in orders && record != null) {
+            val restored = runCatching {
+                val request = record.optJSONObject("request")?.let { item ->
+                    val files = item.optJSONArray("files") ?: JSONArray()
+                    ChatMsg("user", item.getString("text"), files = List(files.length()) { files.getString(it) })
+                }
+                Order(record.getJSONObject("args"), chat, record.getString("persona"), record.getString("talk"),
+                    if (record.isNull("conv")) null else record.getString("conv"), restoreModel(record.getJSONObject("author"), store),
+                    record.optJSONObject("reviewer")?.let { restoreModel(it, store) }, request)
+            }.getOrNull() ?: return
+            orders[key] = restored
+        }
+        run(key)
+    }
     fun stop(ref: String) { running[keyOf(ref)]?.cancel() }
 
     private fun run(key: String) {
@@ -93,6 +123,7 @@ object WorkJobs {
             try {
                 val (p, c, model, effort) = o.author
                 if (artwork) {
+                    ArtworkJob.saveOrder(key, o.metadata())
                     err = kotlinx.coroutines.withTimeout(15 * 60_000L) { ArtworkJob.run(key, title, editId, o.pid, a.optBoolean("quick"), o.author, o.reviewer,
                         o.request, order(o, title, editId, artwork = true),
                         onStage = { phase, preview -> state[key]?.let { state[key] = it.copy(stage = phase, preview = preview ?: it.preview) } },

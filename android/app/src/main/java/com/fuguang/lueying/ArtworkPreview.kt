@@ -1,6 +1,9 @@
 package com.fuguang.lueying
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import java.io.ByteArrayOutputStream
 import android.util.Base64
 import android.util.Xml
 import android.webkit.WebView
@@ -49,6 +52,24 @@ internal object ArtworkPreview {
             }
             if (seen) null else "没有找到 SVG 内容。"
         } catch (_: Exception) { "SVG 标记不完整或格式有误。" }
+    }
+
+    suspend fun reviewImage(png: ByteArray): ByteArray = withContext(Dispatchers.Default) {
+        val original = checkNotNull(BitmapFactory.decodeByteArray(png, 0, png.size)) { "无法读取预览图" }
+        val edge = maxOf(original.width, original.height)
+        if (edge <= 900) {
+            original.recycle()
+            return@withContext png
+        }
+        try {
+            val image = Bitmap.createScaledBitmap(original, original.width * 900 / edge, original.height * 900 / edge, true)
+            try {
+                ByteArrayOutputStream().use { out ->
+                    check(image.compress(Bitmap.CompressFormat.PNG, 100, out))
+                    out.toByteArray()
+                }
+            } finally { if (image !== original) image.recycle() }
+        } finally { original.recycle() }
     }
 
     suspend fun render(context: Context, svg: String, width: Int, height: Int): ByteArray = renderer.withLock {

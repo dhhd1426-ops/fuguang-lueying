@@ -36,6 +36,16 @@ internal object ArtworkJob {
         (MAX_DRAFTS downTo 1).map { File(dir, "$it.png") }.firstOrNull { it.isFile }
     }
 
+    fun loadOrder(key: String): JSONObject? = directory(key)?.let { dir ->
+        runCatching { JSONObject(AtomicFile(File(dir, "order.json")).readFully().decodeToString()) }.getOrNull()
+    }
+
+    suspend fun saveOrder(key: String, order: JSONObject) = withContext(Dispatchers.IO) {
+        val dir = checkNotNull(directory(key))
+        check(dir.isDirectory || dir.mkdirs()) { "无法保存任务" }
+        AtomicFile(File(dir, "order.json")).write(order.toString().toByteArray())
+    }
+
     private fun spec(name: String, description: String, vararg fields: Pair<String, String>) =
         ToolSpec(name, description, JSONObject().put("type", "object")
             .put("properties", JSONObject().apply {
@@ -81,7 +91,7 @@ internal object ArtworkJob {
                     val svg = args.optString("svg").trim()
                     val width = args.optInt("width")
                     val height = args.optInt("height")
-                    if (revisions.size >= MAX_DRAFTS) return ToolOut("草稿预算已用完，选择一张已渲染稿交付。")
+                    if (revisions.size >= MAX_DRAFTS) return ToolOut("这件作品已保存四稿。可选择一张已渲染稿交付。")
                     if (base !in revisions && !(revisions.isEmpty() && base == 0)) return ToolOut("请指定已有的 base 版本。")
                     if (svg.length !in 1..MAX_SOURCE || width !in 64..1600 || height !in 64..1600)
                         return ToolOut("请提交完整 SVG（最多 100000 字符），宽高各为 64–1600 像素。")
@@ -113,11 +123,12 @@ internal object ArtworkJob {
                         failedRenders++
                         return ToolOut("第 ${version} 稿渲染失败：${e.message ?: "未能生成 PNG"}。请修复后写入新版本。")
                     }
+                    val reviewImage = if (quick) null else ArtworkPreview.reviewImage(bytes)
                     onStage(if (quick) "第 ${version} 稿已渲染" else "正在检查第 ${version} 稿", file)
                     if (!quick && !vision && reviewer == null) return ToolOut("第 ${version} 稿已渲染。没有可用的看图模型；这份预览会保留给用户。")
                     if (!quick && !vision && reviewer != null) {
                         val note = try {
-                            AttachLook.describe(reviewer.provider, reviewer.config, reviewer.name, bytes, "image/png",
+                            AttachLook.describe(reviewer.provider, reviewer.config, reviewer.name, checkNotNull(reviewImage), "image/png",
                                 "按原始要求检查这张静态插画。只提出 1–3 条具体的画面问题、位置、修改方向和应保留的部分；没有明显问题就说明可交付。\n" + brief.take(3000))
                         } catch (e: CancellationException) { throw e }
                         catch (_: Exception) { return ToolOut("渲染成功，但看图请求失败。可重试或保留预览。") }
@@ -125,7 +136,7 @@ internal object ArtworkJob {
                         return ToolOut("第 ${version} 稿视觉检查（${reviewer.name}）：\n$note")
                     }
                     reviewed += version
-                    val image = if (quick) emptyList() else listOf(ToolImage("image/png", Base64.encodeToString(bytes, Base64.NO_WRAP)))
+                    val image = if (quick) emptyList() else listOf(ToolImage("image/png", Base64.encodeToString(checkNotNull(reviewImage), Base64.NO_WRAP)))
                     ToolOut("第 ${version} 稿渲染成功。" +
                         if (quick) "可直接交付。" else "这条工具结果的图片就是该版本，请看图后再决定。", image)
                 }

@@ -795,7 +795,7 @@ private fun LiveTurn(chat: ChatState, store: AssistantStore, compact: Boolean, o
         if (chat.partial.isEmpty()) ThinkingMotion("", Modifier.padding(start = 2.dp, top = 6.dp))   // 没开深度思考也没用工具：只有三点
     } else ThinkRow(chat.thinkText, steps, trailLive, summary = ThinkTidy.summaryStyle(chat.turnPid.ifEmpty { store.activeProvider }), fetch = true) { onThink(-1) }
     SkillAskHost(compact)
-    ReplyFlow(chat.partial.take(ceil(chat.shown).toInt()), works, workAt, chat.workDraft, chat.shown < chat.partial.length + 1, onWork) { t, f -> Reply(t, compact, f) }
+    ReplyFlow(chat.partial.take(ceil(chat.shown).toInt()), works, workAt, chat.workDraft, chat.shown < chat.partial.length + 1, onWork, chat, store) { t, f -> Reply(t, compact, f) }
     NoteImageRow(imgs, onImage)
     ClipCards(clips)
 }
@@ -907,7 +907,7 @@ private fun Conversation(
                     } else {
                         if (m.pact.isNotEmpty()) PactTag(m.pact) else ThinkRow(m.think, m.steps, live = false, summary = ThinkTidy.summaryStyle(m.pid.ifEmpty { store.activeProvider }), thinkMs = m.thinkMs, fetch = i == chat.landed) { onThink(i) }
                         Box(Modifier.fillMaxWidth().longPressMsg(i, pressed == i, onLong)) {
-                            ReplyFlow(remember(m.text) { ToolText.clean(m.text) }, m.works, m.workAt, null, false, onWork) { t, f -> Reply(t, compact, f) }
+                            ReplyFlow(remember(m.text) { ToolText.clean(m.text) }, m.works, m.workAt, null, false, onWork, chat, store) { t, f -> Reply(t, compact, f) }
                         }
                         UsedSkills(m.steps)
                         LessonRow(m.lesson)
