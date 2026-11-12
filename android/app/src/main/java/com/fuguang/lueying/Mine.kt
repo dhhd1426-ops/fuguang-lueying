@@ -110,8 +110,7 @@ class MineNav {
             screen.startsWith("provider/") -> "providers"
             screen.startsWith("search/") -> "search"
             screen.startsWith("gallery/") -> "gallery"
-            screen == "search" || screen == "skills" || screen == "gallery" || screen == "amor" -> "features"
-            screen.startsWith("amor/") -> "amor"
+            screen == "search" || screen == "skills" || screen == "gallery" -> "features"
             screen.startsWith("skills/") -> "skills"
             screen.startsWith("letter/") -> letterFrom.ifEmpty { "memories" }.also { letterFrom = "" }
             screen == "memories" -> "persona"

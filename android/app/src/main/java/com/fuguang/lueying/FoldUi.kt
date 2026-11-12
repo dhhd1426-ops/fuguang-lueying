@@ -347,7 +347,7 @@ internal fun ColumnScope.FoldScreen(store: AssistantStore, compact: Boolean, blu
     }
 }
 
-/** 标题右边：logo + 用哪个模型 + ⌄（打开列表时转过来）。前情页、Amor 分身页共用。 */
+/** 标题右边：logo + 用哪个模型 + ⌄（打开列表时转过来）。 */
 @Composable
 internal fun ModelChip(logo: String, label: String, held: Boolean, onClick: () -> Unit) {
     Pressable(onClick, Modifier.padding(start = 8.dp, top = 4.dp, bottom = 4.dp), label = "选模型") { pr ->

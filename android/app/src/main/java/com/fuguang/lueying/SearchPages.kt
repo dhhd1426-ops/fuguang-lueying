@@ -50,7 +50,7 @@ private val play = Ic("M8 5.5v13l10.5-6.5Z")
 
 /** 「我的 → 功能」：她会的本事。现在只有联网搜索，以后新加的也放这一页。 */
 @Composable
-internal fun FeaturesPage(onBack: () -> Unit, onSearch: () -> Unit, onSkills: () -> Unit, onAmor: () -> Unit) {
+internal fun FeaturesPage(onBack: () -> Unit, onSearch: () -> Unit, onSkills: () -> Unit) {
     Column(Modifier.widthIn(max = 560.dp).fillMaxSize().verticalScroll(rememberScrollState())) {
         CardPageHead("功能", onBack = onBack)
         val src = WebSearch.source(WebSearch.use)
@@ -72,9 +72,6 @@ internal fun FeaturesPage(onBack: () -> Unit, onSearch: () -> Unit, onSkills: ()
             SvgIcon(chevron, Page.muted.copy(alpha = .6f), 15.dp, stroke = 1.8f)
         }
         }
-        Spacer(Modifier.height(6.dp))
-        // Amor（第 396 版）：开关在这一行右边；下面原来那句说明去掉了（用户圈掉的）
-        Column(Modifier.spot("amor")) { AmorRow(onAmor) }
     }
 }
 

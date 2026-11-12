@@ -73,7 +73,6 @@ private val saveIcon = Ic("M12 4v11m-4.5-4.5L12 15l4.5-4.5M5 19h14")
 object Trail {
     fun liveTitle(n: String): String = when (n) {
         Lessons.STEP -> "想起上次"; QwenSearch.STEP -> "正在上网查"; Fold.LOOK -> Fold.liveTitle()
-        Team.SPAWN -> "正在叫分身"; Team.LOOK -> "正在看分身写的"; Team.TELL -> "正在跟分身说"; Team.STOP -> "正在让分身停下"
         Memory.REMEMBER -> "正在记下"; Memory.READ -> "正在翻记忆"; Memory.FORGET -> "正在忘掉"; Recall.TOOL -> "正在翻看以前的聊天"; Recall.OPEN -> "正在回忆"; Recall.AUTO -> "想起之前聊过的"; WebSearch.TOOL -> "正在上网查"
         Skills.OPEN -> "正在翻开本事"; Skills.FIND -> "正在 GitHub 上找本事"; Skills.LEARN -> "等你点头"
         Materials.OPEN -> "正在打开网页"; Materials.LOOK -> "正在看素材"; VideoParse.TOOL -> "正在解析抖音"; VideoParse.SAVE -> "正在存视频"
@@ -86,7 +85,6 @@ object Trail {
 
     fun doneTitle(n: String, a: JSONObject): String = when (n) {
         Lessons.STEP -> "想起上次"; QwenSearch.STEP -> "用千问自带搜索查过了"; Fold.LOOK -> Fold.doneTitle(a)
-        Team.SPAWN -> "叫分身一起做《${a.optString("title").trim().ifEmpty { "未命名" }.take(20)}》"; Team.LOOK -> "看了分身写的"; Team.TELL -> "跟${a.optString("to").trim().ifEmpty { "分身" }}说了一句"; Team.STOP -> "让分身停下了"
         Memory.REMEMBER -> "记下了一条"; Memory.READ -> "翻了 ${a.optJSONArray("ids")?.length() ?: 1} 条记忆"; Memory.FORGET -> "忘掉了一些"; Recall.TOOL -> "翻了以前的聊天"; Recall.OPEN -> "回忆起那段聊天"; Recall.AUTO -> "想起之前聊过的"; WebSearch.TOOL -> "上网查了「${a.optString("query").trim().take(16)}」"
         Skills.OPEN -> a.optJSONArray("names")?.takeIf { it.length() > 1 }?.let { arr -> "翻开了 ${arr.length()} 样本事，合成一种做法" } ?: "翻开了「${(a.optJSONArray("names")?.optString(0) ?: a.optString("name")).trim().take(12)}」"; Skills.FIND -> "在 GitHub 上找了「${a.optString("query").trim().take(16)}」"
         Skills.LEARN -> if (Skills.has(SkillHub.cand(a.optString("repo"), a.optString("path")))) "学会了「${a.optString("title").trim().take(12)}」" else "没学「${a.optString("title").trim().take(12)}」"
@@ -115,8 +113,6 @@ object Trail {
     fun detail(n: String, a: JSONObject): String = when (n) {
         Lessons.STEP -> a.optString("text")
         Fold.LOOK -> Fold.detail(a)
-        Team.SPAWN -> a.optJSONArray("parts")?.let { arr -> (0 until arr.length()).mapNotNull { arr.optJSONObject(it) }.joinToString("；") { o -> o.optString("who") + " " + o.optString("task").take(20) } }.orEmpty()
-        Team.TELL -> a.optString("text")
         Memory.REMEMBER, Memory.FORGET -> a.optString("text")
         Memory.READ -> Memory.titles(a)
         Recall.TOOL, "search_notes", WebSearch.TOOL, Skills.FIND -> a.optString("query")
@@ -135,7 +131,7 @@ object Trail {
     /** 作品用和作品卡同一个图标（圆 + 方）。 */
     fun icon(n: String): Ic = when (n) {
         Lessons.STEP -> bulb
-        Memory.REMEMBER, Memory.READ -> bookmark; Memory.FORGET -> eraser; Recall.TOOL, Recall.AUTO -> bubble; Recall.OPEN, Fold.LOOK, Team.LOOK -> folder; Team.SPAWN, Team.TELL, Team.STOP -> bubble; WebSearch.TOOL, Materials.OPEN, QwenSearch.STEP -> globe; Materials.LOOK, SentPics.TOOL -> picture; VideoParse.TOOL -> Icons.play; VideoParse.SAVE, PanTools.GET -> saveIcon; PanTools.OPEN -> globe
+        Memory.REMEMBER, Memory.READ -> bookmark; Memory.FORGET -> eraser; Recall.TOOL, Recall.AUTO -> bubble; Recall.OPEN, Fold.LOOK -> folder; WebSearch.TOOL, Materials.OPEN, QwenSearch.STEP -> globe; Materials.LOOK, SentPics.TOOL -> picture; VideoParse.TOOL -> Icons.play; VideoParse.SAVE, PanTools.GET -> saveIcon; PanTools.OPEN -> globe
         Skills.OPEN, Skills.FIND, Skills.LEARN -> skillIcon
         Works.MAKE, Works.EDIT -> shapes; Works.READ, SentFiles.TOOL -> page; Pacts.SET, Pacts.DROP -> alarmIcon; "list_todos" -> todo
         ClockTools.ALARM, ClockTools.NEXT, ClockTools.OFF -> alarmIcon
@@ -274,28 +270,16 @@ fun ThinkingDots(color: Color = Page.muted, size: androidx.compose.ui.unit.TextU
     }
 }
 
+private val archivedTeamTools = setOf("spawn_team", "team_look", "team_tell", "team_stop")
+
 /**
  * 聊天里的一行（照 Claude App）。摘要型：还没有哪一步整理好时是 Thinking…，之后是最新那一步的结论（想着时流光），想完换时钟图标；
  * 原文型：想着时是最新一句的流光字，想完是「思考了 N 秒」。点开看过程。fetch：这一行负责请帮手整理（正在想的和刚想完的那条）。
  */
 @Composable
-fun ThinkRow(raw: String, steps: List<ToolStep>, live: Boolean, summary: Boolean, thinkMs: Long = 0L, fetch: Boolean = false, onClick: () -> Unit) {
+fun ThinkRow(raw: String, savedSteps: List<ToolStep>, live: Boolean, summary: Boolean, thinkMs: Long = 0L, fetch: Boolean = false, onClick: () -> Unit) {
+    val steps = remember(savedSteps) { savedSteps.filterNot { it.name in archivedTeamTools } }
     if (raw.isBlank() && steps.isEmpty()) return
-    // 这一轮叫了分身（第 400 版）：这一轮说完以后，这一行跟着分身走——在写时流光写最新一步，做完时钟 +「整合成《…》」
-    val team = if (live) null else teamOf(steps)
-    if (team != null) {
-        Pressable(onClick, Modifier.padding(bottom = 10.dp), label = "查看思考过程") { pressed ->
-            Row(Modifier.padding(start = 2.dp, top = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-                if (teamBusy(team)) ThinkingMotion(teamLine(team), Modifier.weight(1f, fill = false), size = 14.sp, showDots = false)
-                else {
-                    SvgIcon(Trail.clock, if (team.stage == "fail") Skin.danger else Page.muted, 16.dp, stroke = 1.5f); Spacer(Modifier.width(8.dp))
-                    Txt(teamLine(team), if (team.stage == "fail") Skin.danger else if (pressed) Page.ink else Page.muted, 14.sp, Modifier.weight(1f, fill = false), maxLines = 1)
-                    Spacer(Modifier.width(6.dp)); SvgIcon(Trail.chevron, Page.muted, 14.dp)
-                }
-            }
-        }
-        return
-    }
     if (summary && fetch) LaunchedEffect(raw, steps.size, live) { requestTidy(raw, steps, live, AttachLook.store) }
     // 原文变了才重新切段（以前每次重组都切一遍）；整理结果到了 derivedStateOf 自己会更新
     val items by remember(raw, steps, live, summary) { derivedStateOf { if (summary) summaryItems(raw, steps, live) else emptyList() } }
@@ -330,7 +314,8 @@ fun ThinkRow(raw: String, steps: List<ToolStep>, live: Boolean, summary: Boolean
 
 /** 思考过程抽屉：半屏打开，上拉全屏，下拉关；开着时实时长内容、自动跟到最新。 */
 @Composable
-fun ThinkDrawer(open: Boolean, raw: String, steps: List<ToolStep>, live: Boolean, summary: Boolean, onClose: () -> Unit) {
+fun ThinkDrawer(open: Boolean, raw: String, savedSteps: List<ToolStep>, live: Boolean, summary: Boolean, onClose: () -> Unit) {
+    val steps = remember(savedSteps) { savedSteps.filterNot { it.name in archivedTeamTools } }
     val scope = rememberCoroutineScope()
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val hPx = constraints.maxHeight.toFloat()
@@ -428,9 +413,6 @@ fun ThinkDrawer(open: Boolean, raw: String, steps: List<ToolStep>, live: Boolean
 /** 一个节点：思考是小圆点（正在想的是橙点），工具是方块图标（正在用时杏色呼吸）；点一下原地展开全文。 */
 @Composable
 private fun TrailNode(it: TrailItem, last: Boolean, open: Boolean, delay: Int = 0, onToggle: () -> Unit) {
-    // 叫分身那一步（第 400 版）：标题、呼吸跟着那一队走，下面挂 α β γ
-    val team = teamKeyOf(it.tool)?.let { k -> Team.runs[k] }
-    if (team != null) { TeamNode(it, team, last, delay); return }
     // Thinking… 走开得快一点（离开比进入快）
     val enter = remember { Animatable(0f) }
     LaunchedEffect(Unit) { enter.animateTo(1f, tween(360, delayMillis = delay, easing = Curves.standard)) }
@@ -461,34 +443,6 @@ private fun TrailNode(it: TrailItem, last: Boolean, open: Boolean, delay: Int = 
                     Txt(it.detail, Page.muted, 14.sp, lineHeight = 25.sp, maxLines = if (full) Int.MAX_VALUE else if (it.tool != null) 1 else 2)
                 }
             }
-        }
-    }
-}
-
-/** 叫分身那一步：和工具节点一样的方块图标（在写时杏色呼吸），标题跟着这一队变，下面 α β γ（TeamTrail.kt）。 */
-@Composable
-private fun TeamNode(it: TrailItem, team: Team.Run, last: Boolean, delay: Int) {
-    val enter = remember { Animatable(0f) }
-    LaunchedEffect(Unit) { enter.animateTo(1f, tween(360, delayMillis = delay, easing = Curves.standard)) }
-    val live = teamBusy(team)
-    val tint by animateColorAsState(if (live) TrailApricot else Page.muted, tween(400), label = "teamTint")
-    val breath = rememberInfiniteTransition(label = "teamBreath").animateFloat(.12f, .2f, infiniteRepeatable(tween(800), RepeatMode.Reverse), label = "tb")
-    Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min).graphicsLayer { alpha = enter.value; translationY = (1f - enter.value) * 6.dp.toPx() }) {
-        Box(Modifier.width(26.dp).fillMaxHeight()) {
-            if (!last) Box(Modifier.padding(top = 32.dp, bottom = 4.dp).align(Alignment.TopCenter).width(1.dp).fillMaxHeight().background(veil(.13f)))
-            Box(
-                Modifier.align(Alignment.TopCenter).size(26.dp).background(if (live) TrailApricot.copy(alpha = breath.value) else veil(.06f), RoundedCornerShape(8.dp)),
-                contentAlignment = Alignment.Center,
-            ) { SvgIcon(Trail.icon(Team.SPAWN), tint, 15.dp, stroke = 1.5f) }
-        }
-        Column(Modifier.weight(1f).padding(start = 12.dp, bottom = 26.dp, end = 4.dp, top = 1.dp)) {
-            if (live) ThinkingMotion(teamTitle(team), size = 15.5.sp, showDots = false, ink = Page.ink)
-            else Txt(teamTitle(team), if (team.stage == "fail") Skin.danger else Page.ink.copy(alpha = .94f), 15.5.sp, lineHeight = 24.sp, weight = FontWeight.Medium)
-            if (team.stage == "fail" && !team.fail.isNullOrBlank()) {
-                Spacer(Modifier.height(6.dp))
-                Txt(team.fail.orEmpty(), Page.muted, 14.sp, lineHeight = 25.sp)
-            }
-            TeamParts(team)
         }
     }
 }
