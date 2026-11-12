@@ -399,11 +399,73 @@ fun ThinkDrawer(open: Boolean, raw: String, savedSteps: List<ToolStep>, live: Bo
             Column(Modifier.weight(1f).nestedScroll(nested).verticalScroll(scroll).padding(start = 24.dp, end = 24.dp, top = 4.dp, bottom = 40.dp)) {
                 items.forEachIndexed { i, it ->
                     androidx.compose.runtime.key(it.key) {
+                        val art = it.tool?.takeIf { step ->
+                            step.name == WorkJobs.START && step.detail.startsWith(WorkJobs.PREFIX)
+                        }?.let { step -> WorkJobs.keyOf(step.detail) }
+                        val last = i == items.lastIndex || items.getOrNull(i + 1)?.prose == true
                         if (it.prose) ProseNode(it)
-                        else TrailNode(it, i == items.lastIndex || items.getOrNull(i + 1)?.prose == true, it.key in opened.value) {
+                        else if (art != null) {
+                            val saved by androidx.compose.runtime.produceState(emptyList<ArtworkRuns.Entry>(), art) {
+                                value = ArtworkRuns.load(art)
+                            }
+                            val runs = ArtworkRuns.live(art) ?: saved
+                            TrailNode(TrailItem(it.key, it.tool, it.title, "", it.live), last && runs.isEmpty(), false) {}
+                            runs.forEachIndexed { index, run ->
+                                androidx.compose.runtime.key(run.id) {
+                                    RenderTrailNode(run, last && index == runs.lastIndex)
+                                }
+                            }
+                        } else TrailNode(it, last, it.key in opened.value) {
                             opened.value = if (it.key in opened.value) opened.value - it.key else opened.value + it.key
                         }
                     }
+                }
+            }
+        }
+    }
+}
+
+private val renderCommandIcon = Ic("M5 7l5 5-5 5m8 0h6")
+
+@Composable
+private fun RenderTrailNode(run: ArtworkRuns.Entry, last: Boolean) {
+    var expanded by remember { mutableStateOf(false) }
+    val title = when (run.status) {
+        "running" -> "正在渲染预览"
+        "success" -> "已运行渲染"
+        "failed" -> "渲染失败"
+        else -> "渲染已停止"
+    }
+    val tint = when (run.status) {
+        "running" -> Skin.accent
+        "failed" -> Skin.danger
+        else -> Page.muted
+    }
+    Pressable({ expanded = !expanded }, Modifier.fillMaxWidth(), label = title) { pressed ->
+        Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min)
+            .background(if (pressed) veil(.04f) else Color.Transparent, RoundedCornerShape(8.dp))) {
+            Box(Modifier.width(26.dp).fillMaxHeight()) {
+                if (!last) Box(Modifier.align(Alignment.TopCenter).padding(top = 29.dp, bottom = 4.dp)
+                    .width(1.dp).fillMaxHeight().background(veil(.13f)))
+                Box(Modifier.align(Alignment.TopCenter).size(26.dp).background(veil(.06f), RoundedCornerShape(8.dp)),
+                    contentAlignment = Alignment.Center) {
+                    SvgIcon(renderCommandIcon, tint, 15.dp, stroke = 1.5f)
+                }
+            }
+            Column(Modifier.weight(1f).padding(start = 12.dp, end = 4.dp, bottom = 17.dp)) {
+                Row(Modifier.fillMaxWidth().height(26.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Txt(title, if (run.status == "failed") tint else Page.ink, 15.5.sp,
+                        Modifier.weight(1f), weight = FontWeight.Medium, maxLines = 1)
+                    if (run.ms > 0) Txt("%.1f 秒".format(run.ms / 1000.0), Page.muted, 12.sp, maxLines = 1)
+                    Spacer(Modifier.width(8.dp))
+                    SvgIcon(Trail.chevron, Page.muted, 13.dp, modifier = Modifier.graphicsLayer {
+                        rotationZ = if (expanded) 90f else 0f
+                    })
+                }
+                if (expanded) {
+                    Spacer(Modifier.height(5.dp))
+                    Txt("render_preview · 第 ${run.version} 稿", Page.muted, 12.5.sp)
+                    if (run.output.isNotBlank()) Txt(run.output, tint, 13.sp, lineHeight = 20.sp)
                 }
             }
         }
