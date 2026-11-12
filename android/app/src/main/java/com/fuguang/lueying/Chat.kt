@@ -335,11 +335,13 @@ class ChatState(val history: ConvStore) {
                 ChatApi.stream(
                     p, c, model0, sys0, Entries.weave(who, sent0, Prompt.aside(who, history, who.prevAt) + Lessons.aside(shownLessons, slips) + Recall.note(hits).let { if (it.isEmpty()) "" else "\n$it" } + Fold.note(conv0).let { if (it.isEmpty()) "" else "\n$it" }), effort,
                     onThink = { thinkText += it; thinking = true; val t = System.currentTimeMillis(); if (thinkAt == 0L) thinkAt = t; thinkEnd = t },
+                    onRoundEnd = {
+                        if (thinkText.length > (liveSteps.lastOrNull { it.name == THINK_ROUND_END }?.at ?: 0))
+                            liveSteps.add(ToolStep(thinkText.length, THINK_ROUND_END, ""))
+                    },
                     tools = if (specs.isNotEmpty()) Tools(
                         specs,
                         { n, a ->
-                            // 记进时间线：思考原文在这里断一段，工具排在它后面
-                            if (thinkText.isNotBlank() && !thinkText.endsWith("\n\n")) thinkText += "\n\n"
                             val idx = liveSteps.size
                             liveSteps.add(ToolStep(thinkText.length, n, Trail.liveTitle(n), Trail.detail(n, a), done = false))
                             var made = n != Works.MAKE && n != Works.EDIT
@@ -362,7 +364,7 @@ class ChatState(val history: ConvStore) {
                             else if (n == WorkJobs.START) WorkJobs.start(a, this@ChatState, store, who.id, history) { ref ->
                                 pendingWorks.add(ref)
                                 pendingWorkAt.add(partial.length)
-                                if (a.optBoolean("artwork") && a.optString("kind") == "page" && idx < liveSteps.size) {
+                                if (idx < liveSteps.size) {
                                     liveSteps[idx] = liveSteps[idx].copy(detail = ref)
                                 }
                             }
@@ -597,8 +599,6 @@ fun ChatPage(
     var shelf by remember { mutableStateOf(false) }
     androidx.activity.compose.BackHandler(enabled = shelf) { shelf = false }
     // 侧栏「画板」：计划、安排、日程
-    var boards by remember { mutableStateOf(false) }
-    androidx.activity.compose.BackHandler(enabled = boards) { boards = false }
     // 长按菜单、选择文字、小提示
     var press by remember { mutableStateOf<MsgPress?>(null) }
     var selectText by remember { mutableStateOf<String?>(null) }
@@ -629,7 +629,7 @@ fun ChatPage(
     }
     // 以前在 SideEffect 里读 chat.draft：每打一个字整页重组。现在在后台跟着这些值，变了才写
     LaunchedEffect(chat) {
-        snapshotFlow { menu || shelf || boards || workOpen != null || thinkOpen || picker || press != null || viewing != null || selectText != null || chat.draft.isNotBlank() || imeOpen || plus.open || chat.atts.isNotEmpty() }
+        snapshotFlow { menu || shelf || workOpen != null || thinkOpen || picker || press != null || viewing != null || selectText != null || chat.draft.isNotBlank() || imeOpen || plus.open || chat.atts.isNotEmpty() }
             .collect { Zen.held = it }
     }
     val menuW = min(width.value * .86f, 340f).dp
@@ -684,7 +684,6 @@ fun ChatPage(
                     onOpen = { Chats.open(it); menu = false },
                     onNew = { Chats.fresh(); menu = false },
                     onWorks = { menu = false; shelf = true },
-                    onBoards = { menu = false; boards = true },
                     onJournal = { menu = false; NoteCard.open = true },
                     onMine = { onMine() },
                     onAssistants = { menu = false; onAssistants() },
@@ -702,10 +701,8 @@ fun ChatPage(
         }
         // 思考原文、正文每来一个字都在变：放进自己的小范围里读，不让整个聊天页跟着重组
         LiveThinkDrawer(chat, store, thinkOpen, thinkOf) { thinkOpen = false }
-        WorksShelf(shelf, onClose = { shelf = false }) { shelf = false; workOpen = it }
-        BoardShelf(boards, onClose = { boards = false }, onOpen = { workOpen = it }) {
-            // 「让她搭一块」：新开一个对话，输入框里写好开头
-            boards = false
+        WorksShelf(shelf, onClose = { shelf = false }, onOpen = { shelf = false; workOpen = it }) {
+            shelf = false
             Chats.fresh()
             Chats.current?.let { it.draft = "帮我搭一块画板："; it.focusTick++ }
         }

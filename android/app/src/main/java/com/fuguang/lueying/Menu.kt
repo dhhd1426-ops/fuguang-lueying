@@ -59,7 +59,7 @@ internal object SideIcons {
     val next = Ic("M9.5 6l6 6-6 6")
     val back = Ic("M14.5 6l-6 6 6 6")
     val plus = Ic("M12 5v14M5 12h14")
-    val board = Ic("M4 4h16v6H4ZM4 13h7v7H4ZM14 13h6v7h-6Z")
+    val artifacts = Ic("M13 5l6 1 1 1-1 10-1 1-3-.5M4 9l7-1 1.5 1 1 10-1 1.5-7 1-1.5-1-1-10Z")
 }
 
 /** 这段对话的图标：置顶是四角星，做过作品是作品图标，其余是对话气泡。 */
@@ -70,7 +70,7 @@ internal fun convIcon(c: Conv): Ic = when {
 }
 
 /**
- * 聊天页左侧栏（照 Claude App）：现在这位助理的名字（点开切换）+ 搜索 → 作品 / 画板 / 手记 / 下载 → 已置顶 → 她的最近对话 → 查看全部；
+ * 聊天页左侧栏（照 Claude App）：现在这位助理的名字（点开切换）+ 搜索 → 作品 / 手记 / 下载 → 已置顶 → 她的最近对话 → 查看全部；
  * 底下左边是你的头像（去「我的」），右边「新对话」。长按一条对话：重命名 / 置顶 / 删除（ConvMenu.kt）。
  */
 @Composable
@@ -81,7 +81,6 @@ fun HistoryMenu(
     onOpen: (Conv) -> Unit,
     onNew: () -> Unit,
     onWorks: () -> Unit,
-    onBoards: () -> Unit,
     onJournal: () -> Unit,
     onMine: () -> Unit,
     onAssistants: () -> Unit,
@@ -100,7 +99,7 @@ fun HistoryMenu(
             label = "side",
         ) { showAll ->
             if (showAll) AllConvs(history, current, busy, onBack = { all = false }, onOpen = onOpen)
-            else SideMain(history, current, busy, onSearch = { all = true }, onOpen, onNew, onWorks, onBoards, onJournal, onAssistants)
+            else SideMain(history, current, busy, onSearch = { all = true }, onOpen, onNew, onWorks, onJournal, onAssistants)
         }
         SideFoot(Modifier.align(Alignment.BottomCenter), onMine, onNew)
     }
@@ -109,7 +108,7 @@ fun HistoryMenu(
 @Composable
 private fun SideMain(
     history: ConvStore, current: String?, busy: Boolean, onSearch: () -> Unit, onOpen: (Conv) -> Unit, onNew: () -> Unit,
-    onWorks: () -> Unit, onBoards: () -> Unit, onJournal: () -> Unit, onAssistants: () -> Unit,
+    onWorks: () -> Unit, onJournal: () -> Unit, onAssistants: () -> Unit,
 ) {
     var editing by remember { mutableStateOf<String?>(null) }
     // 换助理的方式（「我的 → 主题」）：竖排头像在左边一条，右边是名字和列表；连体卡片（默认）名字在顶上
@@ -117,29 +116,21 @@ private fun SideMain(
         AssistantRail(history, onAssistants)
         Column(Modifier.weight(1f)) {
             RailTitle(history, onSearch)
-            SideBody(history, current, busy, editing, { editing = it }, onSearch, onOpen, onNew, onWorks, onBoards, onJournal, narrow = true)
+            SideBody(history, current, busy, editing, { editing = it }, onSearch, onOpen, onNew, onWorks, onJournal, narrow = true)
         }
     } else Column(Modifier.fillMaxSize().padding(top = 22.dp)) {
         AssistantTitle(history, onSearch, onAssistants)
-        SideBody(history, current, busy, editing, { editing = it }, onSearch, onOpen, onNew, onWorks, onBoards, onJournal, narrow = false)
+        SideBody(history, current, busy, editing, { editing = it }, onSearch, onOpen, onNew, onWorks, onJournal, narrow = false)
     }
 }
 
 @Composable
 private fun androidx.compose.foundation.layout.ColumnScope.SideBody(
     history: ConvStore, current: String?, busy: Boolean, editing: String?, setEditing: (String?) -> Unit, onSearch: () -> Unit, onOpen: (Conv) -> Unit, onNew: () -> Unit,
-    onWorks: () -> Unit, onBoards: () -> Unit, onJournal: () -> Unit, narrow: Boolean,
+    onWorks: () -> Unit, onJournal: () -> Unit, narrow: Boolean,
 ) {
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(start = if (narrow) 2.dp else 10.dp, end = 10.dp, bottom = 96.dp)) {
-            val all = remember(Works.version) { Works.list() }
-            val works = all.count { it.kind != "board" }
-            val boards = remember(Works.version) { Boards.list() }
-            SideRow(SideIcons.work, "作品", onWorks) { if (works > 0) Txt(works.toString(), SideFaint, 11.5.sp) }
-            // 画板：计划、安排、日程。你改过、她还没读的，数字前亮一个杏色小点
-            SideRow(SideIcons.board, "画板", onBoards) {
-                if (boards.any { it.edits > 0 }) { Box(Modifier.size(6.dp).background(Skin.accent, androidx.compose.foundation.shape.CircleShape)); Spacer(Modifier.width(8.dp)) }
-                if (boards.isNotEmpty()) Txt(boards.size.toString(), SideFaint, 11.5.sp)
-            }
+            SideRow(SideIcons.artifacts, "作品", onWorks)
             SideRow(SideIcons.pen, "手记", onJournal, modifier = Modifier.onGloballyPositioned { NoteCard.from = it.boundsInRoot().center })
             // 下载：右边有在下的进度圈 / 没看过的杏色小点；点了从右边滑进下载页（侧栏留着，返回回到这里）
             SideRow(Ic("M12 4v11M7.5 10.5L12 15l4.5-4.5M5 19h14"), "下载", { Downloads.open = true }) { DlSideTrail() }

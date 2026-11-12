@@ -30,6 +30,7 @@ object Works {
     fun init(ctx: Context) {
         dir = File(ctx.applicationContext.filesDir, "works").apply { mkdirs() }
         Board.init(ctx.applicationContext, dir!!)
+        WorkReview.init(ctx)
     }
 
     /** 直接写原稿和页面（画板在页面里被改过时用）；html 为空只写原稿。不加 version，免得正开着的那页重载。 */
@@ -153,7 +154,7 @@ object Works {
         val made = history.flatMap { it.works }.distinct().mapNotNull { get(it) }
         val own = if (pid.isEmpty()) emptyList() else Board.names(pid)
         return "你还有一支能做东西的笔（${WorkJobs.START}）：网页、动画、动效、小游戏、小工具，演示文稿，排好版的文档，还有一块画板，都能做出来，交代下去卡片马上出现在你说到的地方，写好了 $who 点开就能看，" +
-            "作品和画板分开放：写代码、做动画、特效、动效、小游戏、小工具、幻灯片、文档，是作品；做计划、安排、日程、清单、行程、要盯着办的事，搭画板（kind=board），它在侧栏「画板」里，$who 会反复回来勾和改。" +
+            "作品和画板都在侧栏「作品」中：写代码、做动画、特效、动效、小游戏、小工具、幻灯片、文档，是作品；做计划、安排、日程、清单、行程、要盯着办的事，搭画板（kind=board），它在侧栏「作品」里，$who 会反复回来勾和改。" +
             "画板是你的地方：想理清的事画导图，要去的地方排时间线，要盯的计划摆看板，封面、颜色、怎么排都由你，$who 点开能勾、能挪、能改字。" +
             (if (own.isEmpty()) "" else "你自己做过的积木：" + own.joinToString("、") { "「$it」" } + "，画板里写 {type:\"own\",name:…} 就能再用。") +
             "幻灯片能导出成 PPT，文档能导出成 Word，也都能存成 PDF。$who 想看个东西、要一份 PPT 或精心排版的长文档时，可以动手做；只是要一份 Word、PDF、txt、md 文件，直接用 ${SentFiles.TOOL} 发，不做作品。做不做、做成什么样，你自己判断。" +
@@ -163,7 +164,7 @@ object Works {
     }
 
     /** 跑工具；做好的作品 id 交给 onMade，好挂到这条回复下面。 */
-    suspend fun run(name: String, a: JSONObject, pid: String = "", onMade: (String) -> Unit): ToolOut = withContext(Dispatchers.IO) {
+    suspend fun run(name: String, a: JSONObject, pid: String = "", preview: (suspend (String, List<String>, suspend () -> ToolOut) -> ToolOut)? = null, onMade: (String) -> Unit): ToolOut = withContext(Dispatchers.IO) {
         val d = dir ?: return@withContext ToolOut("作品没地方存。")
         if (name == READ) {
             val rid = a.optString("id").trim()
@@ -176,7 +177,7 @@ object Works {
             val o = source(eid) ?: return@withContext ToolOut("没有这件作品。")
             val r = WorkEdit.apply(o, a)
             val args = r.args ?: return@withContext ToolOut(r.text)
-            val out = this@Works.run(MAKE, args, pid, onMade)
+            val out = this@Works.run(MAKE, args, pid, preview, onMade)
             return@withContext ToolOut(r.text + "。" + out.text, out.images)
         }
         val title = a.optString("title").trim().ifEmpty { "未命名" }.take(40)
@@ -224,14 +225,19 @@ object Works {
         val used = MaterialStore.refs(page.replace("\\/", "/"), mats.flatMap { it.first } + prior)
         val missed = mats.flatMap { it.second }
         if (used.isNotEmpty()) o.put("materials", MaterialStore.toJson(used))
-        File(d, "$id.json").writeText(o.toString())
-        File(d, "$id.html").writeText(page)
-        previousArtwork?.delete()
-        withContext(Dispatchers.Main) { version++; onMade(id) }
-        ToolOut(
-            (if (old != null) "改好了" else "做好了") + "：《$title》，id=$id。作品卡会显示在你这条回复下面，不用贴代码，说一两句就好。" +
-                (if (used.isEmpty()) "" else "用到的 ${used.size} 件素材已经存进手机。") +
-                (if (missed.isEmpty()) "" else "有 ${missed.size} 件素材没拿到（网站不给或打不开），作品里那几处会显示成带名字的占位：" + missed.take(5).joinToString("、") + "。可以换别的素材再做一次，或者如实告诉对方。"),
-        )
+        val publish: suspend () -> ToolOut = {
+            withContext(Dispatchers.IO) {
+                File(d, "$id.json").writeText(o.toString())
+                File(d, "$id.html").writeText(page)
+                previousArtwork?.delete()
+                withContext(Dispatchers.Main) { version++; onMade(id) }
+                ToolOut(
+                    (if (old != null) "改好了" else "做好了") + "：《$title》，id=$id。作品卡会显示在你这条回复下面，不用贴代码，说一两句就好。" +
+                        (if (used.isEmpty()) "" else "用到的 ${used.size} 件素材已经存进手机。") +
+                        (if (missed.isEmpty()) "" else "有 ${missed.size} 件素材没拿到（网站不给或打不开），作品里那几处会显示成带名字的占位：" + missed.take(5).joinToString("、") + "。"),
+                )
+            }
+        }
+        if (preview == null) publish() else preview(page, missed, publish)
     }
 }

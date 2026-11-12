@@ -6,6 +6,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Job
 import org.json.JSONArray
 import org.json.JSONObject
@@ -121,9 +122,9 @@ object WorkJobs {
             var made: String? = null
             var err: String? = null
             try {
+                ArtworkJob.saveOrder(key, o.metadata())
                 val (p, c, model, effort) = o.author
                 if (artwork) {
-                    ArtworkJob.saveOrder(key, o.metadata())
                     err = kotlinx.coroutines.withTimeout(15 * 60_000L) { ArtworkJob.run(key, title, editId, o.pid, a.optBoolean("quick"), o.author, o.reviewer,
                         o.request, order(o, title, editId, artwork = true),
                         onStage = { phase, preview -> state[key]?.let { state[key] = it.copy(stage = phase, preview = preview ?: it.preview) } },
@@ -131,25 +132,84 @@ object WorkJobs {
                         onMade = { made = it }) }
                 } else {
                     val make = Works.specs.first { it.name == Works.MAKE }
+                    val present = "present_work"
+                    val sees = Attach.vision(p.id, model)
+                    var candidate: (suspend () -> ToolOut)? = null
+                    var round = 0
+                    var reviewedRound = 0
+                    var thoughtEntry: ArtworkRuns.Entry? = null
+                    val thought = StringBuilder()
+                    suspend fun finishThought() {
+                        thoughtEntry?.let { ArtworkRuns.finishThought(key, it, thought.toString().trim()) }
+                        thoughtEntry = null
+                        thought.clear()
+                    }
                     val tools = Tools(
-                        listOf(make),
+                        listOf(ToolSpec(make.name, make.description + "。在这个后台流程中只生成预览，检查后再调用 $present 交付。", make.schema),
+                            ToolSpec(present, "交付最近一次检查过的作品预览。", JSONObject().put("type", "object"))),
                         run = { n, args ->
-                            if (n != Works.MAKE) ToolOut("这里只用 ${Works.MAKE}。")
-                            else {
-                                args.put("title", title).put("kind", a.optString("kind").ifBlank { args.optString("kind") })
-                                if (editId != null) args.put("id", editId)
-                                Works.run(Works.MAKE, args, o.pid) { id -> made = id }.let { r -> if (made != null) ToolOut("好了，不用再说话。") else r }
+                            when (n) {
+                                Works.MAKE -> {
+                                    args.put("title", title).put("kind", a.optString("kind").ifBlank { args.optString("kind") })
+                                    args.remove("id")
+                                    if (editId != null) args.put("id", editId)
+                                    state[key]?.let { state[key] = it.copy(stage = "正在检查预览") }
+                                    Works.run(Works.MAKE, args, o.pid, preview = { page, missing, publish ->
+                                        val review = WorkReview.inspect(page, missing, sees || o.reviewer != null)
+                                        val image = review.image
+                                        val reviewer = o.reviewer
+                                        val visual = if (!sees && image != null && reviewer != null) {
+                                            try {
+                                                AttachLook.describe(reviewer.provider, reviewer.config, reviewer.name, image, "image/png",
+                                                    "按原始要求检查这个作品的首屏截图，给出具体问题和修改方向。不能从截图确认的交互不要判定通过。\n" + a.optString("brief").take(3000))
+                                            } catch (e: CancellationException) { throw e }
+                                            catch (_: Exception) { "视觉检查请求未成功。" }
+                                        } else ""
+                                        withContext(Dispatchers.Main) {
+                                            if (review.ready) {
+                                                candidate = publish
+                                                reviewedRound = round
+                                            }
+                                            ArtworkRuns.note(key, "review", if (review.ready) "已检查作品预览" else "预览未通过打开检查")
+                                            state[key]?.let { state[key] = it.copy(stage = if (review.ready) "已检查预览" else "预览检查未通过") }
+                                        }
+                                        val text = when {
+                                            sees && image != null -> review.text + "\n附实际首屏截图，请查看画面后决定。"
+                                            visual.isNotBlank() -> review.text + "\n视觉检查：$visual"
+                                            else -> review.text + "\n本轮未完成截图视觉检查。"
+                                        }
+                                        ToolOut(text, if (sees && image != null) listOf(WorkReview.image(image)) else emptyList())
+                                    }) { id -> made = id }
+                                }
+                                present -> when {
+                                    candidate == null -> ToolOut("还没有可交付预览。先制作并检查。")
+                                    reviewedRound == round -> ToolOut("先阅读预览检查结果，再决定是否交付。")
+                                    else -> checkNotNull(candidate).invoke().also {
+                                        if (made != null) ArtworkRuns.note(key, "present", "已交付作品")
+                                    }
+                                }
+                                else -> ToolOut("这里只能制作预览和交付。")
                             }
                         },
-                        onUse = { },
-                        onDraft = { _, len, _ -> state[key]?.let { s -> state[key] = s.copy(chars = len) } },
+                        onUse = {},
+                        onDraft = { _, len, _ -> state[key]?.let { s -> state[key] = s.copy(chars = len, stage = "正在制作") } },
+                        finished = { made != null },
                     )
-                    ChatApi.stream(p, c, model, system(editId), listOf(ChatMsg("user", order(o, title, editId))), effort, onThink = { }, tools = tools) {
-                        if (made != null) throw CancellationException("写好了")
+                    try {
+                        kotlinx.coroutines.withTimeout(15 * 60_000L) {
+                            ChatApi.stream(p, c, model, system(editId), listOf(ChatMsg("user", order(o, title, editId))), effort,
+                                onThink = { chunk ->
+                                    if (thoughtEntry == null && chunk.isNotBlank()) thoughtEntry = ArtworkRuns.beginThought(key)
+                                    if (thoughtEntry != null) thought.append(chunk)
+                                }, tools = tools, onRoundEnd = { round++; finishThought() }, onText = {})
+                        }
+                    } finally {
+                        kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) { finishThought() }
                     }
+                    if (made == null && candidate != null) err = "预览已检查，模型未确认交付"
                 }
             } catch (e: CancellationException) {
-                if (made == null) err = if (e is kotlinx.coroutines.TimeoutCancellationException) "绘制超时，已保留可用稿件" else "停下了"
+                if (made == null) err = if (e is kotlinx.coroutines.TimeoutCancellationException) if (artwork) "绘制超时，已保留可用稿件" else "制作超时，未交付" else "停下了"
             } catch (e: Exception) {
                 err = (e.message ?: e.javaClass.simpleName).take(60)
             }
@@ -163,7 +223,7 @@ object WorkJobs {
 
     private fun system(editId: String?) =
         "你是 Vignette 里那位助理在后台动手做作品的那支笔。前台她已经答应了对方，现在由你把作品完整做出来：" +
-            "只调用一次 ${Works.MAKE}，把整件作品一次写完；不要回复别的话，不要贴代码。" +
+            "先规划，然后用 ${Works.MAKE} 生成完整预览。收到实际检查结果后，对照原始要求判断是否要返工。有问题就修改并再次预览，满意后调用 present_work 交付。轮数由结果决定。只有实际检查过的项目才可以说已验证；不要贴代码。" +
             (if (editId != null) "这是在以前那件作品的原稿上大改，保留对方喜欢的部分，按要求改。" else "") +
             "\n\n" + Craft.system()
 
