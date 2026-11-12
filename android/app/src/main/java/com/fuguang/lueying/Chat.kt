@@ -359,7 +359,13 @@ class ChatState(val history: ConvStore) {
                             else if (n == Pacts.SET || n == Pacts.DROP) Pacts.run(n, a, who) { ref -> pendingWorks.add(ref); pendingWorkAt.add(partial.length) }
                             else if (n == SentFiles.TOOL) SentFiles.run(a, photos()) { ref -> pendingWorks.add(ref); pendingWorkAt.add(partial.length) }
                             else if (n == SentPics.TOOL) SentPics.run(a, photos()) { r -> if (r !in pendingImgs) pendingImgs.add(r) }
-                            else if (n == WorkJobs.START) WorkJobs.start(a, this@ChatState, store, who.id, history) { ref -> pendingWorks.add(ref); pendingWorkAt.add(partial.length) }
+                            else if (n == WorkJobs.START) WorkJobs.start(a, this@ChatState, store, who.id, history) { ref ->
+                                pendingWorks.add(ref)
+                                pendingWorkAt.add(partial.length)
+                                if (a.optBoolean("artwork") && a.optString("kind") == "page" && idx < liveSteps.size) {
+                                    liveSteps[idx] = liveSteps[idx].copy(detail = ref)
+                                }
+                            }
                             else if (n == Works.MAKE || n == Works.READ || n == Works.EDIT) Works.run(n, a, who.id) { id -> made = true; if (id !in pendingWorks) { pendingWorks.add(id); pendingWorkAt.add(workDraft?.at ?: partial.length) } }
                             else if (n in WebHand.names) WebHand.run(n, a)
                             else if (Mcp.owns(n)) Mcp.run(n, a)

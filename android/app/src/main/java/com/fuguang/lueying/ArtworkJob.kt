@@ -29,7 +29,7 @@ internal object ArtworkJob {
         root = File(context.filesDir, "artwork-drafts").apply { mkdirs() }
     }
 
-    private fun directory(key: String) =
+    internal fun directory(key: String) =
         key.takeIf { it.length <= 32 && it.matches(Regex("[a-z0-9]+")) }?.let { File(root, it) }
 
     fun latestPreview(key: String): File? = directory(key)?.let { dir ->
@@ -114,9 +114,20 @@ internal object ArtworkJob {
                     val file = preview(version)
                     val bytes = try {
                         if (file.isFile) withContext(Dispatchers.IO) { file.readBytes() } else {
-                            val png = ArtworkPreview.render(context, data.getString("svg"), data.getInt("width"), data.getInt("height"))
-                            withContext(Dispatchers.IO) { AtomicFile(file).write(png) }
-                            png
+                            val entry = ArtworkRuns.begin(key, version)
+                            val start = android.os.SystemClock.elapsedRealtime()
+                            try {
+                                val png = ArtworkPreview.render(context, data.getString("svg"), data.getInt("width"), data.getInt("height"))
+                                withContext(Dispatchers.IO) { AtomicFile(file).write(png) }
+                                ArtworkRuns.finish(key, entry, start, "success", "已生成第 ${version} 稿的 PNG 预览")
+                                png
+                            } catch (e: CancellationException) {
+                                ArtworkRuns.finish(key, entry, start, "stopped")
+                                throw e
+                            } catch (e: Exception) {
+                                ArtworkRuns.finish(key, entry, start, "failed", e.message.orEmpty())
+                                throw e
+                            }
                         }
                     } catch (e: CancellationException) { throw e }
                     catch (e: Exception) {
