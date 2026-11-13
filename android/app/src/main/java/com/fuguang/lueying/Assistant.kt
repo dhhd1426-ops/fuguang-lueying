@@ -330,6 +330,7 @@ class Tools(
     val onDraft: (String, Int, String) -> Unit = { _, _, _ -> },
     val onEffort: (suspend (String?) -> Unit)? = null,
     val finished: () -> Boolean = { false },
+    val maxRounds: Int = 10,
 )
 
 /**
@@ -351,8 +352,8 @@ object Claims {
 private fun midTurn(q: String) = "（你在忙的时候，${Memory.userCall}又说：）\n$q\n\n（把这句也放在心上，接着做。）"
 
 /** 工具结果：文字，加上要给模型看的图片。 */
-class ToolOut(val text: String, val images: List<ToolImage> = emptyList())
-class ToolImage(val mime: String, val base64: String)
+class ToolOut(val text: String, val images: List<ToolImage> = emptyList(), val failed: Boolean = false)
+class ToolImage(val mime: String, val base64: String, val caption: String = "")
 
 /**
  * 流式对话：OpenAI 兼容接口（stream=true 的 SSE）或 Anthropic messages 接口。
@@ -473,29 +474,30 @@ object ChatApi {
             if (echo && it.role == "assistant") m.put("reasoning_content", it.think)
             msgs.put(m)
         } }
+        val maxRounds = tools?.maxRounds?.coerceIn(1, 40) ?: MAX_ROUNDS
         var round = 0
         var worked = false
         var nudged = false
         while (true) {
             // 工具次数到顶：以前是悄悄收走工具，她还以为能动手，写了调用也被丢掉，只能嘴上说「做好了」。现在明说
-            if (round == MAX_ROUNDS && tools != null) {
+            if (round == maxRounds && tools != null) {
                 slips += Lessons.CAP
                 val last = msgs.optJSONObject(msgs.length() - 1)
                 val arr = last?.optJSONArray("content")
                 if (anthropic && last?.optString("role") == "user" && arr != null) arr.put(JSONObject().put("type", "text").put("text", CAP_NOTE))
                 else msgs.put(JSONObject().put("role", "user").put("content", CAP_NOTE))
             }
-            val r = once(p, c, model, system, msgs, effort, if (round < MAX_ROUNDS) tools else null, round == 0, onThink, search, onText)
+            val r = once(p, c, model, system, msgs, effort, if (round < maxRounds) tools else null, round == 0, onThink, search, onText)
             onRoundEnd()
             if (r.calls.any { it.name.toString() in setOf(Works.MAKE, Works.EDIT, WorkJobs.START) }) worked = true
             // 嘴上说「做好了 / 卡在下面」，这一轮却没真的调用做作品的工具：提醒她一次，接着真的去做
-            if (r.calls.isEmpty() && tools != null && round < MAX_ROUNDS && !nudged && !worked && Claims.saysDone(r.text)) {
+            if (r.calls.isEmpty() && tools != null && round < maxRounds && !nudged && !worked && Claims.saysDone(r.text)) {
                 nudged = true; round++; slips += Lessons.CLAIM
                 if (r.text.isNotBlank()) msgs.put(if (anthropic) JSONObject().put("role", "assistant").put("content", r.blocks) else JSONObject().put("role", "assistant").put("content", r.text).apply { if (Effort.echoes(p, model) && (echo || r.reasoning.isNotEmpty())) put("reasoning_content", r.reasoning) })
                 msgs.put(JSONObject().put("role", "user").put("content", Claims.NUDGE))
                 continue
             }
-            if (r.calls.isEmpty() || tools == null || round >= MAX_ROUNDS) return
+            if (r.calls.isEmpty() || tools == null || round >= maxRounds) return
             round++
             if (anthropic) {
                 msgs.put(JSONObject().put("role", "assistant").put("content", r.blocks))
@@ -508,6 +510,7 @@ object ChatApi {
                     val content: Any = if (out.images.isEmpty()) out.text else JSONArray().apply {
                         put(JSONObject().put("type", "text").put("text", out.text))
                         out.images.forEach { im ->
+                            if (im.caption.isNotBlank()) put(JSONObject().put("type", "text").put("text", im.caption))
                             put(JSONObject().put("type", "image").put("source", JSONObject().put("type", "base64").put("media_type", im.mime).put("data", im.base64)))
                         }
                     }
@@ -538,6 +541,7 @@ object ChatApi {
                     val out = outs[k]
                     msgs.put(JSONObject().put("role", "tool").put("tool_call_id", call.id).put("content", out.text))
                     out.images.forEach { im ->
+                        if (im.caption.isNotBlank()) pics.put(JSONObject().put("type", "text").put("text", im.caption))
                         pics.put(JSONObject().put("type", "image_url").put("image_url", JSONObject().put("url", "data:${im.mime};base64,${im.base64}")))
                     }
                 }
@@ -848,5 +852,6 @@ object ChatApi {
         }
     }
 }
+
 
 

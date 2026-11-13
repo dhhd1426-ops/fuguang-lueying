@@ -65,7 +65,7 @@ fun rememberAttachPick(chat: ChatState): (Int) -> Unit {
     val scope = rememberCoroutineScope()
     var shot by remember { mutableStateOf<java.io.File?>(null) }
     val photos = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(9)) { us ->
-        scope.launch { us.forEach { u -> Attach.save(ctx, u, asImage = true)?.let { chat.atts.add(it) } } }
+        scope.launch { us.forEach { u -> Attach.save(ctx, u, asImage = false)?.let { chat.atts.add(it) } } }
     }
     val camera = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { ok ->
         val f = shot; shot = null
@@ -77,7 +77,7 @@ fun rememberAttachPick(chat: ChatState): (Int) -> Unit {
     return { k ->
         runCatching {
             when (k) {
-                0 -> photos.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                0 -> photos.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo))
                 1 -> { val (f, u) = Attach.cameraTarget(ctx); shot = f; camera.launch(u) }
                 else -> files.launch(arrayOf("*/*"))
             }
@@ -111,12 +111,16 @@ private fun TrayItem(ref: String, chat: ChatState, onRemove: () -> Unit) {
     val k = remember { Animatable(if (PhotoView.landing == ref) 1f else 0f) }
     LaunchedEffect(Unit) { k.animateTo(1f, tween(320, easing = Curves.decel)) }
     val marked = PhotoView.marks.containsKey(ref)
+    val ctx = LocalContext.current
     Box(Modifier.graphicsLayer { alpha = k.value; val s = .6f + .4f * k.value; scaleX = s; scaleY = s; translationY = (1f - k.value) * 8.dp.toPx() }) {
         if (Attach.isImage(ref)) Pressable({ PhotoView.show(ref, chat, tray = true) }, label = "看照片") { _ ->
             Box {
                 Thumb(ref, Modifier.size(58.dp).clip(RoundedCornerShape(14.dp)), spot = true)
                 if (marked) Txt("圈过", Page.INK, 9.5.sp, Modifier.align(Alignment.BottomStart).padding(4.dp).background(Color.Black.copy(alpha = .5f), RoundedCornerShape(5.dp)).padding(horizontal = 4.dp, vertical = 1.dp))
             }
+        }
+        else if (Attach.isVideo(ref)) VideoAttachment(ref, Modifier.widthIn(max = 240.dp)) {
+            openVideoAttachment(ctx, ref)
         }
         else FileChip(ref, Modifier.widthIn(max = 180.dp).height(58.dp))
         Pressable(onRemove, Modifier.align(Alignment.TopEnd).offset(x = 6.dp, y = (-6).dp).size(24.dp), label = "去掉") { p ->
@@ -184,6 +188,37 @@ fun SentFiles(files: List<String>, compact: Boolean, chat: ChatState) {
                 row.forEach { r -> Pressable({ PhotoView.show(r, chat) }, label = "看照片") { _ -> Thumb(r, Modifier.size(w / 2 - 2.dp).clip(RoundedCornerShape(14.dp)), 600, spot = true) } }
             }
         }
-        docs.forEach { r -> Pressable({ open(r) }, label = "打开文件") { _ -> FileChip(r, Modifier.widthIn(max = w).height(54.dp)) } }
+        docs.forEach { r ->
+            if (Attach.isVideo(r)) VideoAttachment(r, Modifier.widthIn(max = w)) { openVideoAttachment(ctx, r) }
+            else Pressable({ open(r) }, label = "打开文件") { _ -> FileChip(r, Modifier.widthIn(max = w).height(54.dp)) }
+        }
+    }
+}
+
+
+private fun openVideoAttachment(ctx: android.content.Context, ref: String) {
+    runCatching {
+        val u = androidx.core.content.FileProvider.getUriForFile(ctx, ctx.packageName + ".files", Attach.file(ref))
+        ctx.startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(u, "video/*")
+            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK))
+    }
+}
+
+@Composable
+private fun VideoAttachment(ref: String, modifier: Modifier, open: () -> Unit) {
+    val cover by produceState<android.graphics.Bitmap?>(null, ref) { value = VideoFrames.cover(ref) }
+    DisposableEffect(cover) { onDispose { cover?.recycle() } }
+    Pressable(open, modifier, label = "播放视频 ${Attach.name(ref)}") { pressed ->
+        Row(Modifier.background(veil(if (pressed) .11f else .07f), RoundedCornerShape(14.dp)).padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(54.dp).clip(RoundedCornerShape(9.dp)), contentAlignment = Alignment.Center) {
+                cover?.let { Image(it.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
+                SvgIcon(Icons.play, Color.White, 22.dp)
+            }
+            Spacer(Modifier.width(10.dp))
+            Column(Modifier.widthIn(max = 180.dp)) {
+                Txt(Attach.name(ref), Page.ink, 12.5.sp, maxLines = 1)
+                Txt("视频 · " + Attach.kb(Attach.size(ref)), Page.muted, 10.5.sp)
+            }
+        }
     }
 }

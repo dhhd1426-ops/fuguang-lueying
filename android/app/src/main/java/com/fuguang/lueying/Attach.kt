@@ -26,11 +26,12 @@ object Attach {
     /** 一个文件读出来的字最多带多少给她。 */
     private const val TEXT_MAX = 40_000
 
-    fun init(ctx: Context) { root = File(ctx.filesDir, "attach").apply { mkdirs() } }
+    fun init(ctx: Context) { root = File(ctx.filesDir, "attach").apply { mkdirs() }; VideoFrames.init(ctx); MotionPreview.init(ctx) }
 
     fun file(ref: String): File = File(root, ref)
     fun name(ref: String): String = ref.substringAfter('/')
     fun isImage(ref: String): Boolean = name(ref).substringAfterLast('.', "").lowercase() in setOf("jpg", "jpeg", "png", "webp", "heic", "heif", "gif")
+    fun isVideo(ref: String): Boolean = name(ref).substringAfterLast('.', "").lowercase() in setOf("mp4", "mov", "m4v", "webm", "mkv", "avi", "3gp", "ts", "mts")
     fun size(ref: String): Long = file(ref).length()
 
     /**
@@ -55,10 +56,11 @@ object Attach {
             val mime = cr.getType(uri).orEmpty()
             var name = cr.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c -> if (c.moveToFirst()) c.getString(0) else null }
                 ?: uri.lastPathSegment?.substringAfterLast('/') ?: "文件"
+            if (mime.startsWith("video/") && !isVideo(name)) name += "." + (android.webkit.MimeTypeMap.getSingleton().getExtensionFromMimeType(mime) ?: "mp4")
             name = name.replace(Regex("[/\\\\:*?\"<>|]"), "_").take(80)
             val id = System.currentTimeMillis().toString(36) + (0..999).random().toString(36)
             val dir = File(root, id).apply { mkdirs() }
-            if (asImage || mime.startsWith("image/")) {
+            if (!mime.startsWith("video/") && !isVideo(name) && (asImage || mime.startsWith("image/"))) {
                 val bytes = cr.openInputStream(uri)!!.use { it.readBytes() }
                 val jpg = shrink(bytes) ?: return@runCatching null
                 val f = File(dir, name.substringBeforeLast('.').ifBlank { "照片" } + ".jpg")
@@ -123,7 +125,9 @@ object Attach {
         val parts = JSONArray()
         val notes = StringBuilder()
         val imgs = m.files.filter(::isImage)
-        val docs = m.files.filterNot(::isImage)
+        val videos = m.files.filter(::isVideo)
+        val docs = m.files.filterNot { isImage(it) || isVideo(it) }
+        videos.forEach { r -> notes.append("（视频附件《${name(r)}》，source=$r。可以调用 inspect_video / view_video_frames 自己抽帧查看；视频文件尚未直接进入视觉输入。）\n") }
         if (imgs.isNotEmpty()) when {
             !full -> notes.append("（这句话之前他发来过 ${imgs.size} 张照片。）\n")
             !vision -> imgs.forEachIndexed { k, r ->
@@ -170,3 +174,4 @@ object Attach {
 
     fun kb(n: Long): String = if (n >= 1_048_576) "%.1f MB".format(n / 1_048_576f) else "${(n / 1024).coerceAtLeast(1)} KB"
 }
+

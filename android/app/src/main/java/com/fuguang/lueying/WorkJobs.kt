@@ -28,7 +28,7 @@ object WorkJobs {
     val state = mutableStateMapOf<String, State>()
 
     private class Order(val a: JSONObject, val chat: ChatState, val pid: String, val talk: String, val conv: String?,
-                        val author: ArtworkJob.Model, val reviewer: ArtworkJob.Model?, val request: ChatMsg?)
+                        val author: ArtworkJob.Model, val reviewer: ArtworkJob.Model?, val request: ChatMsg?, val references: List<String>)
     private val orders = mutableMapOf<String, Order>()
     private fun ArtworkJob.Model.metadata() = JSONObject()
         .put("provider", provider.id).put("name", name).put("effort", effort ?: JSONObject.NULL)
@@ -43,6 +43,7 @@ object WorkJobs {
         .put("conv", conv ?: JSONObject.NULL).put("author", author.metadata())
         .put("reviewer", reviewer?.metadata() ?: JSONObject.NULL)
         .put("request", request?.let { JSONObject().put("text", it.text).put("files", JSONArray(it.files)) } ?: JSONObject.NULL)
+        .put("references", JSONArray(references))
 
     private val running = mutableMapOf<String, Job>()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
@@ -62,6 +63,7 @@ object WorkJobs {
                 .put("artwork", JSONObject().put("type", "boolean").put("description", "用户明确要画静态插画、山水画、月亮、水彩等单幅画面时设 true，kind 填 page"))
                 .put("quick", JSONObject().put("type", "boolean").put("description", "只有用户明确要快速初稿时才设 true；绘画默认看图精修"))
                 .put("brief", JSONObject().put("type", "string").put("description", "交代给后台那支笔的完整要求"))
+                .put("references", JSONObject().put("type", "array").put("items", JSONObject().put("type", "string")).put("description", "复刻视频时填写视频 source 附件引用；后台可反复抽帧查看。未填默认本条用户消息的视频；与视频无关时传空数组"))
                 .put("id", JSONObject().put("type", "string").put("description", "大改以前的作品时填它的 id；新作品不填")),
         ).put("required", JSONArray(listOf("title", "kind", "brief"))),
     )
@@ -73,6 +75,11 @@ object WorkJobs {
     fun start(a: JSONObject, chat: ChatState, store: AssistantStore, pid: String, history: List<ChatMsg>, onCard: (String) -> Unit): ToolOut {
         val title = a.optString("title").trim().ifEmpty { "未命名" }.take(40)
         if (a.optString("brief").isBlank()) return ToolOut("brief 是空的：把要做什么、内容和风格写清楚再交代一次。")
+        val available = MotionTools.references(history)
+        val requested = a.optJSONArray("references")?.let { arr -> List(arr.length()) { arr.getString(it) } }
+            ?: history.lastOrNull { it.role == "user" }?.files.orEmpty().filter(Attach::isVideo)
+        if (requested.any { it !in available }) return ToolOut("参考视频必须来自本对话的附件，请照抄 source。", failed = true)
+        val references = requested.distinct()
         val key = java.util.UUID.randomUUID().toString().replace("-", "")
         val talk = history.takeLast(6).joinToString("\n") { m -> (if (m.role == "user") Memory.userCall else "你") + "：" + ToolText.clean(m.text).take(600) }.takeLast(3000)
         val providerId = store.activeProvider
@@ -82,7 +89,7 @@ object WorkJobs {
             ArtworkJob.Model(provider(id), store.config(id), name, store.effort(id, name))
         }
         orders[key] = Order(JSONObject(a.toString()), chat, pid, talk, chat.convId, author, reviewer,
-            history.lastOrNull { it.role == "user" })
+            history.lastOrNull { it.role == "user" }, references)
         onCard("$PREFIX$key|$title")
         run(key)
         val editing = a.optString("id").isNotBlank()
@@ -102,7 +109,8 @@ object WorkJobs {
                 }
                 Order(record.getJSONObject("args"), chat, record.getString("persona"), record.getString("talk"),
                     if (record.isNull("conv")) null else record.getString("conv"), restoreModel(record.getJSONObject("author"), store),
-                    record.optJSONObject("reviewer")?.let { restoreModel(it, store) }, request)
+                    record.optJSONObject("reviewer")?.let { restoreModel(it, store) }, request,
+                    record.optJSONArray("references")?.let { refs -> List(refs.length()) { refs.getString(it) } }.orEmpty())
             }.getOrNull() ?: return
             orders[key] = restored
         }
@@ -136,6 +144,8 @@ object WorkJobs {
                     val make = Works.specs.first { it.name == Works.MAKE }
                     val present = "present_work"
                     val sees = Attach.vision(p.id, model)
+                    val motion = MotionTools.Session(o.references, sees, o.reviewer, ArtworkJob.directory(key))
+                    val resumed = motion.restore()
                     var candidate: (suspend () -> ToolOut)? = null
                     var round = 0
                     var reviewedRound = 0
@@ -148,15 +158,17 @@ object WorkJobs {
                     }
                     val tools = Tools(
                         listOf(ToolSpec(make.name, make.description + "。在这个后台流程中只生成预览，检查后再调用 $present 交付。", make.schema),
-                            ToolSpec(present, "交付最近一次检查过的作品预览。", JSONObject().put("type", "object"))),
+                            ToolSpec(present, "交付最近一次检查过的作品预览。视频复刻必须先检查本稿的动画过程并对照参考。", JSONObject().put("type", "object"))) + MotionTools.specs,
                         run = { n, args ->
                             when (n) {
                                 Works.MAKE -> {
+                                    candidate = null
                                     args.put("title", title).put("kind", a.optString("kind").ifBlank { args.optString("kind") })
                                     args.remove("id")
                                     if (editId != null) args.put("id", editId)
                                     state[key]?.let { state[key] = it.copy(stage = "正在检查预览") }
                                     Works.run(Works.MAKE, args, o.pid, preview = { page, missing, publish ->
+                                        motion.draft(page)
                                         val review = WorkReview.inspect(page, missing, sees || o.reviewer != null)
                                         val image = review.image
                                         val reviewer = o.reviewer
@@ -180,11 +192,23 @@ object WorkJobs {
                                             visual.isNotBlank() -> review.text + "\n视觉检查：$visual"
                                             else -> review.text + "\n本轮未完成截图视觉检查。"
                                         }
-                                        ToolOut(text, if (sees && image != null) listOf(WorkReview.image(image)) else emptyList())
+                                        ToolOut(text + "\nmotion_revision=${motion.revision}。参考视频复刻请继续查看动画过程并 compare_motion，再决定是否交付。", if (sees && image != null) listOf(WorkReview.image(image)) else emptyList())
                                     }) { id -> made = id }
+                                }
+                                in MotionTools.names -> {
+                                    state[key]?.let { state[key] = it.copy(stage = when (n) {
+                                        MotionTools.INSPECT -> "正在查看参考视频"
+                                        MotionTools.FRAMES -> "正在细看动作"
+                                        MotionTools.RENDER -> "正在检查动画过程"
+                                        else -> "正在对照参考修改"
+                                    }) }
+                                    val out = motion.run(n, args)
+                                    ArtworkRuns.note(key, "motion", Trail.liveTitle(n).removePrefix("正在") + "\n" + out.text, motion.revision)
+                                    out
                                 }
                                 present -> when {
                                     candidate == null -> ToolOut("还没有可交付预览。先制作并检查。")
+                                    !motion.canPresent -> ToolOut("参考视频复刻尚未完成本稿的真实画面对比。先调用 compare_motion，再阅读结果决定。", failed = true)
                                     reviewedRound == round -> ToolOut("先阅读预览检查结果，再决定是否交付。")
                                     else -> checkNotNull(candidate).invoke().also {
                                         if (made != null) ArtworkRuns.note(key, "present", "已交付作品")
@@ -196,10 +220,11 @@ object WorkJobs {
                         onUse = {},
                         onDraft = { _, len, _ -> state[key]?.let { s -> state[key] = s.copy(chars = len, stage = "正在制作") } },
                         finished = { made != null },
+                        maxRounds = if (o.references.isEmpty()) 10 else 32,
                     )
                     try {
                         kotlinx.coroutines.withTimeout(15 * 60_000L) {
-                            ChatApi.stream(p, c, model, system(editId), listOf(ChatMsg("user", order(o, title, editId))), effort,
+                            ChatApi.stream(p, c, model, system(editId) + (if (o.references.isEmpty()) "" else "\n" + MotionTools.authorRule), listOf(ChatMsg("user", order(o, title, editId) + resumed)), effort,
                                 onThink = { chunk ->
                                     if (thoughtEntry == null && chunk.isNotBlank()) thoughtEntry = ArtworkRuns.beginThought(key)
                                     if (thoughtEntry != null) thought.append(chunk)
@@ -236,6 +261,8 @@ object WorkJobs {
         append("作品名：《$title》，种类：${o.a.optString("kind").ifBlank { "page" }}。\n\n她交代的要求：\n").append(o.a.optString("brief").trim())
         if (o.talk.isNotBlank()) append("\n\n最近几句聊天（帮你理解语气和来龙去脉）：\n").append(o.talk)
         if (editId != null) Works.source(editId)?.let { src -> append("\n\n原稿：\n").append(WorkEdit.body(src).take(60_000)) }
-        if (!artwork) append("\n\n现在就调用 ${Works.MAKE} 做出来。")
+        append(MotionTools.context(o.references))
+        if (!artwork) append(if (o.references.isEmpty()) "\n\n现在就调用 ${Works.MAKE} 做出来。" else "\n\n先查看参考视频，再制作；交付前必须对照当前稿的实际动画画面。")
     }
 }
+
