@@ -44,7 +44,7 @@ class ReplyLive : Service() {
             ReplyRuntime.serviceStarted()
             ReplyRuntime.watchNetwork()
             if (wakeLock == null) {
-                val pm = getSystemService(PowerManager::class.java)
+                val pm = getSystemService(PowerManager::class.java) ?: return@onSuccess
                 wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "vignette:reply").apply { setReferenceCounted(false) }
                 runCatching { renew.run() }.onFailure { ReplyRuntime.note("wake_lock_failed ${it.javaClass.simpleName}") }
             }
