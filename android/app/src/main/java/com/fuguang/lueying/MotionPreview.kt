@@ -65,7 +65,8 @@ internal object MotionPreview {
                         javaScriptEnabled = true
                         allowFileAccess = false
                         allowContentAccess = false
-                        blockNetworkLoads = true
+                        // Every HTTP request is fulfilled or rejected by the client below.
+                        blockNetworkLoads = false
                         useWideViewPort = true
                     }
                     view.setBackgroundColor(android.graphics.Color.WHITE)
@@ -80,19 +81,27 @@ internal object MotionPreview {
                     screen.window?.addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN)
                     screen.show()
                     screen.window?.setLayout(width, height)
+                    val reviewUrl = "https://${MaterialStore.HOST}/__motion_review__/${java.util.UUID.randomUUID()}"
+                    val viewport = "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
+                    val page = if (html.contains(Regex("name\\s*=\\s*['\"]viewport", RegexOption.IGNORE_CASE))) html
+                        else if (html.contains("<head>", true)) html.replaceFirst(Regex("<head>", RegexOption.IGNORE_CASE), "<head>$viewport")
+                        else "$viewport$html"
+                    val content = Kit.inject(screen.context, page).toByteArray(Charsets.UTF_8)
                     suspendCancellableCoroutine<Unit> { cont ->
                         view.webViewClient = object : WebViewClient() {
                             override fun shouldOverrideUrlLoading(v: WebView, req: WebResourceRequest) = true
-                            override fun shouldInterceptRequest(v: WebView, req: WebResourceRequest): WebResourceResponse =
-                                MaterialStore.serve(req) ?: WebResourceResponse("text/plain", "UTF-8", 403, "Blocked", emptyMap(), ByteArrayInputStream(ByteArray(0)))
-                            override fun onPageFinished(v: WebView, url: String) { if (cont.isActive) cont.resume(Unit) }
+                            override fun shouldInterceptRequest(v: WebView, req: WebResourceRequest): WebResourceResponse {
+                                if (req.isForMainFrame && req.url.toString() == reviewUrl)
+                                    return WebResourceResponse("text/html", "UTF-8", ByteArrayInputStream(content))
+                                return MaterialStore.serve(req) ?: WebResourceResponse("text/plain", "UTF-8", 403, "Blocked", emptyMap(), ByteArrayInputStream(ByteArray(0)))
+                            }
+                            override fun onPageFinished(v: WebView, url: String) {
+                                if (url == reviewUrl && cont.isActive) cont.resume(Unit)
+                            }
                         }
-                        val viewport = "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
-                        val page = if (html.contains(Regex("name\\s*=\\s*['\"]viewport", RegexOption.IGNORE_CASE))) html
-                            else if (html.contains("<head>", true)) html.replaceFirst(Regex("<head>", RegexOption.IGNORE_CASE), "<head>$viewport")
-                            else "$viewport$html"
-                        view.loadDataWithBaseURL("https://${MaterialStore.HOST}/", Kit.inject(screen.context, page), "text/html", "UTF-8", null)
+                        view.loadUrl(reviewUrl)
                     }
+                    check(view.js("document.documentElement.innerHTML.length").toIntOrNull()?.let { it > 0 } == true) { "实际预览文档未加载" }
                     view.js(context.assets.open("motion-review.js").bufferedReader().use { it.readText() })
                     for ((index, time) in (times + times.first()).withIndex()) {
                         view.seek(time)

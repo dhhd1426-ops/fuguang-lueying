@@ -36,7 +36,7 @@ class MotionPreviewTest {
         try {
             MotionPreview.render("<canvas width='100' height='100'></canvas>", listOf(0), 320, 240)
             fail("canvas without time adapter accepted")
-        } catch (e: IllegalStateException) { assertTrue(e.message.orEmpty().contains("seek")) }
+        } catch (e: IllegalStateException) { assertTrue(e.message.orEmpty(), e.message.orEmpty().contains("seek")) }
     }
 
     @Test fun nonDeterministicSeekIsRejectedAndResourcesCanBeReused() = runBlocking {
@@ -46,7 +46,7 @@ class MotionPreviewTest {
         try {
             MotionPreview.render(bad, listOf(0, 500), 320, 240)
             fail("non-repeatable rendering accepted")
-        } catch (e: IllegalStateException) { assertTrue(e.message.orEmpty().contains("重复")) }
+        } catch (e: IllegalStateException) { assertTrue(e.message.orEmpty(), e.message.orEmpty().contains("重复")) }
         val shots = MotionPreview.render(page, listOf(0), 320, 240)
         shots.forEach { it.bitmap.recycle() }
     }
