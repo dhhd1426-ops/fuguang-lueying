@@ -331,6 +331,7 @@ class Tools(
     val onEffort: (suspend (String?) -> Unit)? = null,
     val finished: () -> Boolean = { false },
     val maxRounds: Int = 10,
+    val imageHistoryBatches: Int = 0,
 )
 
 /**
@@ -487,6 +488,7 @@ object ChatApi {
                 if (anthropic && last?.optString("role") == "user" && arr != null) arr.put(JSONObject().put("type", "text").put("text", CAP_NOTE))
                 else msgs.put(JSONObject().put("role", "user").put("content", CAP_NOTE))
             }
+            ToolImages.trim(msgs, tools?.imageHistoryBatches ?: 0)
             val r = once(p, c, model, system, msgs, effort, if (round < maxRounds) tools else null, round == 0, onThink, search, onText)
             onRoundEnd()
             if (r.calls.any { it.name.toString() in setOf(Works.MAKE, Works.EDIT, WorkJobs.START) }) worked = true

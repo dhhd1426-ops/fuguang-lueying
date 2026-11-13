@@ -421,6 +421,7 @@ class ChatState(val history: ConvStore) {
                         },
                         { },
                         inbox = { takeQueue() },
+                        imageHistoryBatches = if (videoRefs.isEmpty()) 0 else 3,
                         onDraft = { n, len, head -> val d = workDraft; workDraft = WorkDraft(d?.at ?: partial.length, n, len, WorkDraft.title(n, head) ?: d?.title) },
                     ) else null,
                     fallback = if (specs.isNotEmpty()) ({

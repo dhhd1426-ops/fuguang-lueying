@@ -225,6 +225,7 @@ object WorkJobs {
                         onDraft = { _, len, _ -> state[key]?.let { s -> state[key] = s.copy(chars = len, stage = "正在制作") } },
                         finished = { made != null },
                         maxRounds = if (o.references.isEmpty()) 10 else 32,
+                        imageHistoryBatches = if (o.references.isEmpty()) 0 else 3,
                     )
                     try {
                         kotlinx.coroutines.withTimeout(15 * 60_000L) {

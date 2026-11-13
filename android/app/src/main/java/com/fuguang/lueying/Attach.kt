@@ -60,7 +60,7 @@ object Attach {
             name = name.replace(Regex("[/\\\\:*?\"<>|]"), "_").take(80)
             val id = System.currentTimeMillis().toString(36) + (0..999).random().toString(36)
             val dir = File(root, id).apply { mkdirs() }
-            if (!mime.startsWith("video/") && !isVideo(name) && (asImage || mime.startsWith("image/"))) {
+            if (!mime.startsWith("video/") && !isVideo(name) && (asImage || mime.startsWith("image/") || isImage(name))) {
                 val bytes = cr.openInputStream(uri)!!.use { it.readBytes() }
                 val jpg = shrink(bytes) ?: return@runCatching null
                 val f = File(dir, name.substringBeforeLast('.').ifBlank { "照片" } + ".jpg")
