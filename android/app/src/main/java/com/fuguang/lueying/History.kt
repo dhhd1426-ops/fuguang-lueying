@@ -56,7 +56,7 @@ class ConvStore(private val prefs: Prefs) {
                             m.optJSONArray("v")?.let { a -> List(a.length()) { a.optString(it) } } ?: emptyList(),
                             m.optJSONArray("f")?.let { a -> List(a.length()) { a.optString(it) } } ?: emptyList(),
                             m.optJSONArray("wa")?.let { a -> List(a.length()) { a.optInt(it) } } ?: emptyList(),
-                            m.optString("pv"), m.optLong("tm"), lesson = m.optString("ls"), pact = m.optString("pc"))
+                            m.optString("pv"), m.optLong("tm"), lesson = m.optString("ls"), pact = m.optString("pc"), interrupted = m.optBoolean("ip"))
                     },
                     who = o.optString("a"),
                     gist = o.optString("g"),
@@ -166,7 +166,7 @@ class ConvStore(private val prefs: Prefs) {
             val arr = JSONArray()
             snap.sortedByDescending { it.updated }.forEach { c ->
                 val ms = JSONArray()
-                c.msgs.forEach { m -> ms.put(JSONObject().put("r", m.role).put("x", m.text).apply { if (m.think.isNotEmpty()) put("k", m.think); if (m.imgs.isNotEmpty()) put("i", JSONArray(m.imgs)); if (m.works.isNotEmpty()) put("w", JSONArray(m.works)); if (m.workAt.isNotEmpty()) put("wa", JSONArray(m.workAt)); if (m.clips.isNotEmpty()) put("v", JSONArray(m.clips)); if (m.files.isNotEmpty()) put("f", JSONArray(m.files)); if (m.steps.isNotEmpty()) put("s", JSONArray(m.steps.map { s -> JSONObject().put("a", s.at).put("n", s.name).put("t", s.title).put("d", s.detail) })); if (m.at > 0) put("t", m.at); if (m.pid.isNotEmpty()) put("pv", m.pid); if (m.thinkMs > 0) put("tm", m.thinkMs); if (m.lesson.isNotEmpty()) put("ls", m.lesson); if (m.pact.isNotEmpty()) put("pc", m.pact) }) }
+                c.msgs.forEach { m -> ms.put(JSONObject().put("r", m.role).put("x", m.text).apply { if (m.think.isNotEmpty()) put("k", m.think); if (m.imgs.isNotEmpty()) put("i", JSONArray(m.imgs)); if (m.works.isNotEmpty()) put("w", JSONArray(m.works)); if (m.workAt.isNotEmpty()) put("wa", JSONArray(m.workAt)); if (m.clips.isNotEmpty()) put("v", JSONArray(m.clips)); if (m.files.isNotEmpty()) put("f", JSONArray(m.files)); if (m.steps.isNotEmpty()) put("s", JSONArray(m.steps.map { s -> JSONObject().put("a", s.at).put("n", s.name).put("t", s.title).put("d", s.detail) })); if (m.at > 0) put("t", m.at); if (m.pid.isNotEmpty()) put("pv", m.pid); if (m.thinkMs > 0) put("tm", m.thinkMs); if (m.lesson.isNotEmpty()) put("ls", m.lesson); if (m.pact.isNotEmpty()) put("pc", m.pact); if (m.interrupted) put("ip", true) }) }
                 arr.put(JSONObject().put("id", c.id).put("t", c.title).put("c", c.created).put("u", c.updated).put("p", c.pinned).put("a", c.who).put("m", ms).apply { if (c.gist.isNotEmpty()) put("g", c.gist).put("ga", c.gistAt); c.fold?.let { put("fd", it.json()) } })
             }
             arr.toString()

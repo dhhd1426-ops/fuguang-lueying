@@ -23,6 +23,7 @@ class MainActivity : ComponentActivity() {
         )
         super.onCreate(savedInstanceState)
         CrashLog.arm(this)
+        ReplyRuntime.init(this)
         Notify.init(this)
         ClockTools.init(this)
         Yiyan.init(this)
@@ -111,6 +112,6 @@ class MainActivity : ComponentActivity() {
     }
 
     // 看得见 App 时不发通知
-    override fun onStart() { super.onStart(); Notify.foreground = true }
-    override fun onStop() { Notify.foreground = false; Reflect.flush(); super.onStop() }
+    override fun onStart() { super.onStart(); Notify.foreground = true; Notify.resumeLive() }
+    override fun onStop() { Notify.foreground = false; Chats.checkpoint(); ConvStore.Saver.flush(); Reflect.flush(); super.onStop() }
 }
