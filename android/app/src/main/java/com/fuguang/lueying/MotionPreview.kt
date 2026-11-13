@@ -40,6 +40,7 @@ internal object MotionPreview {
     @android.annotation.SuppressLint("SetJavaScriptEnabled")
     suspend fun render(html: String, times: List<Long>, width: Int, height: Int): List<Shot> = lock.withLock {
         require(times.size in 1..12 && times.all { it >= 0 }) { "每次预览 1–12 个有效时刻" }
+        require(width.toLong() * height * times.size <= 6_000_000) { "这一批预览画面过大，请减少帧数或画布尺寸" }
         require(width in 240..960 && height in 128..1600 && width.toLong() * height <= 1_536_000) { "预览画布超出范围" }
         withContext(Dispatchers.Main) {
             withTimeout(60_000) {
@@ -47,10 +48,10 @@ internal object MotionPreview {
                 val reader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 3)
                 reader.setOnImageAvailableListener({ r -> r.acquireLatestImage()?.close() }, handler)
                 val manager = context.getSystemService(DisplayManager::class.java)
-                val display = checkNotNull(manager.createVirtualDisplay("Vignette motion review", width, height, 160,
+                val display = try { checkNotNull(manager.createVirtualDisplay("Vignette motion review", width, height, 160,
                     reader.surface, DisplayManager.VIRTUAL_DISPLAY_FLAG_PRESENTATION or DisplayManager.VIRTUAL_DISPLAY_FLAG_OWN_CONTENT_ONLY)) {
                     "设备无法创建实际渲染预览"
-                }
+                } } catch (e: Exception) { reader.close(); throw e }
                 var presentation: Presentation? = null
                 var web: WebView? = null
                 val shots = mutableListOf<Shot>()
@@ -99,20 +100,22 @@ internal object MotionPreview {
                         view.visual()
                         // PixelCopy reads the actual composed browser surface, rather than WebView.draw's software approximation.
                         val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+                        var copyFinished = false
                         try {
                             suspendCancellableCoroutine<Unit> { cont ->
                                 PixelCopy.request(checkNotNull(screen.window), bitmap, { code ->
+                                    copyFinished = true
                                     if (cont.isActive) {
                                         if (code == PixelCopy.SUCCESS) cont.resume(Unit)
                                         else cont.resumeWithException(IllegalStateException("实际预览截图失败（$code）"))
-                                    }
+                                    } else bitmap.recycle()
                                 }, handler)
                             }
                             if (index == times.size) {
                                 check(shots.first().bitmap.sameAs(bitmap)) { "同一时刻重复渲染不一致，请固定随机种子并修复 seek，使时间定位可重复" }
                                 bitmap.recycle()
                             } else shots += Shot(time, bitmap)
-                        } catch (e: Exception) { bitmap.recycle(); throw e }
+                        } catch (e: Exception) { if (copyFinished) bitmap.recycle(); throw e }
                     }
                     shots.toList()
                 } catch (e: Exception) {

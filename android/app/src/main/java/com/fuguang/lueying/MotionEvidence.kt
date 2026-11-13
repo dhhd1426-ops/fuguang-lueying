@@ -76,7 +76,8 @@ internal object MotionEvidence {
                     ?.let { BitmapFactory.decodeFile(File(VideoFrames.root, "evidence/$id/$it").path) }
             }
         }
-        DisposableEffect(bitmap) { onDispose { bitmap?.recycle() } }
+        val ownedBitmap = bitmap
+        DisposableEffect(ownedBitmap) { onDispose { ownedBitmap?.recycle() } }
         Dialog(onDismissRequest = { shown = null }) {
             Column(Modifier.fillMaxWidth().background(Page.ground, RoundedCornerShape(20.dp)).padding(16.dp)
                 .verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {

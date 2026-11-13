@@ -24,6 +24,13 @@ internal object MotionTimes {
         "gte(t,$t)*if(isnan(prev_pts),1,lt(prev_pts*TB,$t))"
     }
 
+    fun seekUs(times: List<Long>, originUs: Long): Long = (originUs + times.min() * 1000 - 250_000).coerceAtLeast(0)
+    fun filter(times: List<Long>, originTicks: Long): String =
+        "setpts=PTS-$originTicks,select='${select(times)}',showinfo"
+
+    fun firstPtsTicks(log: String): Long = Regex("\\bn:\\s*0\\s+pts:\\s*(-?\\d+)").find(log)?.groupValues?.get(1)?.toLong()
+        ?: error("无法读取首帧原始 PTS")
+
     fun pts(log: String): List<Long> = Regex("\\bn:\\s*\\d+.*?\\bpts_time:([0-9.eE+\\-]+)")
         .findAll(log).map { (it.groupValues[1].toDouble() * 1_000_000).toLong() }.toList()
 

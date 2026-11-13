@@ -7,6 +7,8 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.RectF
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -47,7 +49,13 @@ internal object MotionTools {
             .put("required", JSONArray(if (name == RENDER) emptyList<String>() else listOf("source"))))
     }
 
-    fun references(history: List<ChatMsg>) = history.filter { it.role == "user" }.flatMap { it.files }.filter(Attach::isVideo).distinct()
+    fun references(history: List<ChatMsg>): List<String> {
+        val attached = history.filter { it.role == "user" }.flatMap { it.files }
+        val saved = history.flatMap { it.works }.distinct().flatMap { id ->
+            Works.source(id)?.optJSONArray("motion_references")?.let { a -> List(a.length()) { a.optString(it) } }.orEmpty()
+        }
+        return (attached + saved).filter { it.matches(Regex("[a-z0-9]+/[^/\\\\]+")) && Attach.isVideo(it) }.distinct()
+    }
     fun context(refs: List<String>) = if (refs.isEmpty()) "" else "\n可查看的视频附件（source 原样传入工具）：\n" +
         refs.joinToString("\n") { "source=$it，文件名=${Attach.name(it)}" }
     val rule = "用户上传的视频可用 inspect_video、view_video_frames 自己查看；先看全片，再按需缩小区间看动作，不能把封面当看过视频。" +
@@ -63,6 +71,7 @@ internal object MotionTools {
         private var html: String? = null
         var revision = 0; private set
         var comparedRevision = -1; private set
+        var lastEvidencePreview: File? = null; private set
         private var spent = 0
         private var inspected = false
         suspend fun draft(page: String) { html = page; revision++; comparedRevision = -1; checkpoint() }
@@ -107,7 +116,10 @@ internal object MotionTools {
                 RENDER, COMPARE -> review(name, args)
                 else -> ToolOut("没有这个视频工具", failed = true)
             }
-        } catch (e: CancellationException) { throw e }
+        } catch (e: CancellationException) {
+            currentCoroutineContext().ensureActive()
+            ToolOut("画面提取或渲染超时，已保留制作进度；请缩小区间或减少帧数后重试。", failed = true)
+        }
         catch (e: Exception) { ToolOut("画面检查未完成：${e.message ?: e.javaClass.simpleName}。不能据此声称已验证。", failed = true) }
         finally { checkpoint() } }
 
@@ -176,6 +188,7 @@ internal object MotionTools {
             require(pictures.sumOf { it.bytes.size.toLong() } <= 16L * 1024 * 1024) { "帧图过大，请减少帧数或降低 max_edge" }
             spent += pictures.size
             val evidence = withContext(Dispatchers.IO) { MotionEvidence.save(text, pictures) }
+            lastEvidencePreview = File(VideoFrames.root, "evidence/$evidence/0.${if (pictures.first().mime == "image/jpeg") "jpg" else "png"}")
             val summary = "$text\n证据：$evidence\n本次已查看 $spent/192 张画面；需要时继续局部查看。"
             return if (vision) ToolOut(summary, pictures.map { picture ->
                 ToolImage(picture.mime, android.util.Base64.encodeToString(picture.bytes, android.util.Base64.NO_WRAP), picture.caption)

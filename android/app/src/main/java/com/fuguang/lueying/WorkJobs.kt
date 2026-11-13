@@ -75,9 +75,10 @@ object WorkJobs {
     fun start(a: JSONObject, chat: ChatState, store: AssistantStore, pid: String, history: List<ChatMsg>, onCard: (String) -> Unit): ToolOut {
         val title = a.optString("title").trim().ifEmpty { "未命名" }.take(40)
         if (a.optString("brief").isBlank()) return ToolOut("brief 是空的：把要做什么、内容和风格写清楚再交代一次。")
-        val available = MotionTools.references(history)
+        val previousRefs = Works.source(a.optString("id"))?.optJSONArray("motion_references")?.let { refs -> List(refs.length()) { refs.optString(it) } }.orEmpty()
+        val available = MotionTools.references(history) + previousRefs
         val requested = a.optJSONArray("references")?.let { arr -> List(arr.length()) { arr.getString(it) } }
-            ?: history.lastOrNull { it.role == "user" }?.files.orEmpty().filter(Attach::isVideo)
+            ?: history.lastOrNull { it.role == "user" }?.files.orEmpty().filter(Attach::isVideo).ifEmpty { previousRefs }
         if (requested.any { it !in available }) return ToolOut("参考视频必须来自本对话的附件，请照抄 source。", failed = true)
         val references = requested.distinct()
         val key = java.util.UUID.randomUUID().toString().replace("-", "")
@@ -164,6 +165,7 @@ object WorkJobs {
                                 Works.MAKE -> {
                                     candidate = null
                                     args.put("title", title).put("kind", a.optString("kind").ifBlank { args.optString("kind") })
+                                    args.put("motion_references", JSONArray(o.references))
                                     args.remove("id")
                                     if (editId != null) args.put("id", editId)
                                     state[key]?.let { state[key] = it.copy(stage = "正在检查预览") }
@@ -203,6 +205,8 @@ object WorkJobs {
                                         else -> "正在对照参考修改"
                                     }) }
                                     val out = motion.run(n, args)
+                                    if (n == MotionTools.COMPARE && !out.failed) reviewedRound = round
+                                    motion.lastEvidencePreview?.let { image -> state[key]?.let { state[key] = it.copy(preview = image) } }
                                     ArtworkRuns.note(key, "motion", Trail.liveTitle(n).removePrefix("正在") + "\n" + out.text, motion.revision)
                                     out
                                 }

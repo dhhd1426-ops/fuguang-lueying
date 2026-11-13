@@ -50,4 +50,36 @@ class MotionTimesTest {
             assertTrue(pts.none { it >= 999_000 })
         } finally { dir.deleteRecursively() }
     }
+
+    @Test fun seekingPreservesMeasuredTimeAndPixelsWithDelayedVideoTrack() {
+        val dir = Files.createTempDirectory("motion-seek").toFile()
+        try {
+            fun command(vararg args: String): String {
+                val p = ProcessBuilder(listOf("ffmpeg", "-hide_banner", "-nostdin", "-y") + args).redirectErrorStream(true).start()
+                val output = p.inputStream.bufferedReader().readText()
+                assertEquals(output, 0, p.waitFor())
+                return output
+            }
+            val video = File(dir, "delayed.mp4")
+            command("-loglevel", "error", "-f", "lavfi", "-i", "testsrc2=size=96x64:rate=24:duration=2",
+                "-f", "lavfi", "-i", "anullsrc=r=48000:cl=mono", "-filter_complex", "[0:v]setpts=PTS+0.5/TB[v]",
+                "-map", "[v]", "-map", "1:a", "-t", "2.5", "-vsync", "0", "-c:v", "libx264", "-c:a", "aac", video.path)
+            val probe = command("-loglevel", "info", "-copyts", "-start_at_zero", "-i", video.path, "-map", "0:v:0", "-an", "-vf", "showinfo", "-frames:v", "1", "-f", "null", "-")
+            val origin = MotionTimes.pts(probe).first()
+            assertTrue("fixture must have a delayed video track", origin >= 490_000)
+            val times = listOf(510L, 800L, 1500L)
+            val baseline = command("-loglevel", "info", "-i", video.path, "-an", "-vf",
+                "setpts=PTS-STARTPTS,select='${MotionTimes.select(times)}',showinfo", "-vsync", "0", File(dir, "base-%03d.jpg").path)
+            val seek = MotionTimes.seekUs(times, origin)
+            val sampled = command("-loglevel", "info", "-copyts", "-start_at_zero", "-ss", "${seek / 1_000_000.0}", "-i", video.path, "-an", "-vf",
+                MotionTimes.filter(times, MotionTimes.firstPtsTicks(probe)), "-vsync", "0", File(dir, "seek-%03d.jpg").path)
+            val expected = MotionTimes.pts(baseline)
+            val actual = MotionTimes.pts(sampled)
+            assertEquals(expected.size, actual.size)
+            for (i in expected.indices) {
+                assertTrue("PTS differs: $expected / $actual", kotlin.math.abs(expected[i] - actual[i]) <= 2)
+                assertArrayEquals(File(dir, "base-%03d.jpg".format(i + 1)).readBytes(), File(dir, "seek-%03d.jpg".format(i + 1)).readBytes())
+            }
+        } finally { dir.deleteRecursively() }
+    }
 }

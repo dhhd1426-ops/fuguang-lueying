@@ -185,6 +185,8 @@ object Works {
         val old = a.optString("id").trim().takeIf { it.isNotEmpty() && File(d, "$it.json").exists() }
         val id = old ?: (System.currentTimeMillis().toString(36) + (100..999).random())
         val o = JSONObject().put("title", title).put("kind", kind).put("updated", System.currentTimeMillis())
+        val motionRefs = a.optJSONArray("motion_references") ?: old?.let { source(it)?.optJSONArray("motion_references") }
+        if (motionRefs != null) o.put("motion_references", motionRefs)
         // 用到的网上素材：存进手机，原稿里换成本地地址
         val mats = ArrayList<Pair<List<StoredMat>, List<String>>>()
         val page = when (kind) {
@@ -241,3 +243,4 @@ object Works {
         if (preview == null) publish() else preview(page, missed, publish)
     }
 }
+

@@ -40,6 +40,7 @@ internal object VideoFrames {
         .digest(text.toByteArray()).joinToString("") { "%02x".format(it) }
 
     suspend fun info(ref: String): Info = withContext(Dispatchers.IO) {
+        require(ref.matches(Regex("[a-z0-9]+/[^/\\\\]+"))) { "视频引用无效" }
         require(Attach.isVideo(ref)) { "附件不是支持的视频" }
         val file = Attach.file(ref)
         require(file.isFile && file.length() > 0) { "视频附件不存在或为空" }
@@ -73,7 +74,7 @@ internal object VideoFrames {
             require(edge in 320..1600) { "max_edge 必须为 320–1600" }
             if (crop != null) require(crop.size == 4 && crop.all(Double::isFinite) && crop[0] >= 0 && crop[1] >= 0 &&
                 crop[2] > 0 && crop[3] > 0 && crop[0] + crop[2] <= 1 && crop[1] + crop[3] <= 1) { "crop 为归一化的 [x,y,width,height]，必须在画面内" }
-            val folder = File(root, "frames/${info.id}/${hash("v1:$points:$edge:$crop")}").apply { mkdirs() }
+            val folder = File(root, "frames/${info.id}/${hash("v3:$points:$edge:$crop")}").apply { mkdirs() }
             val manifest = File(folder, "frames.json")
             fun read(): Batch? = runCatching {
                 val a = JSONArray(manifest.readText())
@@ -91,19 +92,29 @@ internal object VideoFrames {
             val bin = File(context.applicationInfo.nativeLibraryDir, "libffmpeg.so")
             check(bin.isFile) { "本机 FFmpeg 不可用" }
             val log = File(folder, "decode.log")
-            val filters = mutableListOf("setpts=PTS-STARTPTS", "select='${MotionTimes.select(points)}'", "showinfo")
+            // Probe the real first video PTS once. Input seeking then preserves video-relative timestamps,
+            // including files whose audio starts before the video and files with a nonzero container origin.
+            val originFile = File(folder.parentFile, "origin-v3.json")
+            val origin = if (originFile.isFile) JSONObject(originFile.readText()) else {
+                val probe = File(folder, "origin.log")
+                try {
+                    execute(listOf(bin.path, "-hide_banner", "-nostdin", "-loglevel", "info", "-copyts", "-start_at_zero", "-i", Attach.file(info.ref).path,
+                        "-map", "0:v:0", "-an", "-sn", "-dn", "-vf", "showinfo", "-frames:v", "1", "-f", "null", "-"), probe)
+                    val probeText = probe.readText()
+                    val first = MotionTimes.pts(probeText).firstOrNull() ?: error("无法确定视频时间起点")
+                    JSONObject().put("first_pts_us", first).put("first_pts_ticks", MotionTimes.firstPtsTicks(probeText)).also { atomic(originFile, it.toString()) }
+                } finally { probe.delete() }
+            }
+            val seek = MotionTimes.seekUs(points, origin.getLong("first_pts_us"))
+            val filters = mutableListOf(MotionTimes.filter(points, origin.getLong("first_pts_ticks")))
             if (crop != null) filters += String.format(Locale.US, "crop=iw*%.8f:ih*%.8f:iw*%.8f:ih*%.8f", crop[2], crop[3], crop[0], crop[1])
             filters += "scale=w='min($edge,iw)':h='min($edge,ih)':force_original_aspect_ratio=decrease"
-            val args = listOf(bin.path, "-hide_banner", "-nostdin", "-y", "-loglevel", "info", "-i", Attach.file(info.ref).path,
+            val args = listOf(bin.path, "-hide_banner", "-nostdin", "-y", "-loglevel", "info", "-copyts", "-start_at_zero",
+                "-ss", String.format(Locale.US, "%.6f", seek / 1_000_000.0), "-i", Attach.file(info.ref).path,
                 "-map", "0:v:0", "-an", "-sn", "-dn", "-vf", filters.joinToString(","),
                 "-frames:v", points.size.toString(), "-vsync", "0", "-q:v", "3", File(folder, "f-%03d.jpg").path)
-            val pb = ProcessBuilder(args).redirectErrorStream(true).redirectOutput(log)
-            val pk = File(context.noBackupFilesDir, "youtubedl-android/packages")
-            pb.environment()["LD_LIBRARY_PATH"] = "${pk.path}/python/usr/lib:${pk.path}/ffmpeg/usr/lib"
-            val process = pb.start()
             try {
-                val exit = withTimeout(90_000) { runInterruptible { process.waitFor() } }
-                check(exit == 0) { "视频解码失败，可能是本机不支持的编码或损坏的文件" }
+                execute(args, log)
                 val pts = MotionTimes.pts(log.readText())
                 val files = folder.listFiles { f -> f.name.matches(Regex("f-\\d+\\.jpg")) }.orEmpty().sortedBy { it.name }
                 check(files.isNotEmpty() && files.size == pts.size) { "未得到带实际时间戳的帧图，不能确认抽帧结果" }
@@ -113,11 +124,22 @@ internal object VideoFrames {
                 trimCache(folder)
                 result
             } finally {
-                if (process.isAlive) process.destroyForcibly()
                 log.delete()
                 if (!manifest.isFile) folder.deleteRecursively()
             }
         }
+    }
+
+    private suspend fun execute(args: List<String>, log: File) {
+        val pb = ProcessBuilder(args).redirectErrorStream(true).redirectOutput(log)
+        val pk = File(context.noBackupFilesDir, "youtubedl-android/packages")
+        pb.environment()["LD_LIBRARY_PATH"] = "${pk.path}/python/usr/lib:${pk.path}/ffmpeg/usr/lib"
+        val process = pb.start()
+        try {
+            check(withTimeout(90_000) { runInterruptible { process.waitFor() } } == 0) {
+                "视频解码失败，可能是本机不支持的编码或损坏的文件"
+            }
+        } finally { if (process.isAlive) process.destroyForcibly() }
     }
 
     private fun batch(info: Info, frames: List<Frame>, points: List<Long>, crop: List<Double>?): Batch {
@@ -134,7 +156,7 @@ internal object VideoFrames {
     }
 
     private fun trimCache(except: File) {
-        val folders = File(root, "frames").listFiles().orEmpty().flatMap { it.listFiles().orEmpty().toList() }
+        val folders = File(root, "frames").listFiles().orEmpty().flatMap { it.listFiles().orEmpty().filter { f -> f.isDirectory } }
         var total = folders.sumOf { d -> d.listFiles().orEmpty().sumOf { it.length() } }
         for (d in folders.sortedBy { it.lastModified() }) {
             if (total <= 256L * 1024 * 1024) break

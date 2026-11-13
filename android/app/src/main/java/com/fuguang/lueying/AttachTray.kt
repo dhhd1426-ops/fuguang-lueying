@@ -207,7 +207,8 @@ private fun openVideoAttachment(ctx: android.content.Context, ref: String) {
 @Composable
 private fun VideoAttachment(ref: String, modifier: Modifier, open: () -> Unit) {
     val cover by produceState<android.graphics.Bitmap?>(null, ref) { value = VideoFrames.cover(ref) }
-    DisposableEffect(cover) { onDispose { cover?.recycle() } }
+    val ownedCover = cover
+    DisposableEffect(ownedCover) { onDispose { ownedCover?.recycle() } }
     Pressable(open, modifier, label = "播放视频 ${Attach.name(ref)}") { pressed ->
         Row(Modifier.background(veil(if (pressed) .11f else .07f), RoundedCornerShape(14.dp)).padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.size(54.dp).clip(RoundedCornerShape(9.dp)), contentAlignment = Alignment.Center) {
