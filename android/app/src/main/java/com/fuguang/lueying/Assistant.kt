@@ -6,6 +6,10 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -286,7 +290,8 @@ data class ChatMsg(val role: String, val text: String, val think: String = "", v
     /** 这条是哪家答的（定思考样式）；旧记录是空的。 */ val pid: String = "",
     /** 想了多久（毫秒）；旧记录是 0。 */ val thinkMs: Long = 0,
     /** 这一轮之后她记下的做事经验（Mem.id，Lessons.kt）；回复下面多一行「记住了一件事」。 */ val lesson: String = "",
-    /** 她按约定主动来找你说的这句（Pacts.kt）：约定的名字；回复上面一行小字「早报 · 按约定」。 */ val pact: String = "")
+    /** 她按约定主动来找你说的这句（Pacts.kt）：约定的名字；回复上面一行小字「早报 · 按约定」。 */ val pact: String = "",
+    /** Durable partial reply; never treated as a successfully finished turn. */ val interrupted: Boolean = false)
 
 /** 把思考原文切成段：按空行分；只有一段时按句号分成几小段。 */
 fun thinkSegments(raw: String): List<String> {
@@ -594,7 +599,30 @@ object ChatApi {
 
     private fun args(call: Call) = runCatching { JSONObject(call.args.toString().ifBlank { "{}" }) }.getOrDefault(JSONObject())
 
+    /** Retry only this unfinished model request, never the conversation/tool execution loop. */
     private suspend fun once(
+        p: Provider, c: ProviderConfig, model: String, system: String, msgs: JSONArray,
+        effort: String?, tools: Tools?, canReject: Boolean, onThink: suspend (String) -> Unit,
+        search: (() -> Unit)?, onText: suspend (String) -> Unit,
+    ): Round {
+        var attempt = 0
+        var received = false
+        val tracked = tools?.let { t -> Tools(t.specs, t.run, t.onUse, t.inbox,
+            onDraft = { name, len, head -> received = true; t.onDraft(name, len, head) },
+            onEffort = t.onEffort, finished = t.finished) }
+        while (true) {
+            try {
+                return readOnce(p, c, model, system, msgs, effort, tracked, canReject,
+                    { received = true; onThink(it) }, search, { received = true; onText(it) })
+            } catch (e: StreamTransportException) {
+                if (!StreamRecovery.retry(attempt, received)) throw e
+                ReplyRuntime.note("model_transport_retry attempt=${attempt + 1}")
+                kotlinx.coroutines.delay(StreamRecovery.delayMillis(attempt++, kotlin.random.Random.nextDouble()))
+            }
+        }
+    }
+
+    private suspend fun readOnce(
         p: Provider,
         c: ProviderConfig,
         model: String,
@@ -613,7 +641,11 @@ object ChatApi {
         else trim(c.base) + c.path.trim().let { if (it.startsWith("/")) it else "/$it" }
         val conn = URL(url).openConnection() as HttpURLConnection
         val job = coroutineContext[Job]
-        val handle = job?.invokeOnCompletion { runCatching { conn.disconnect() } }
+        // A completion handler runs too late when readLine is blocked. This child closes
+        // the socket as soon as cancellation starts, so explicit Stop releases the lease.
+        val closer = CoroutineScope(coroutineContext).launch(Dispatchers.IO, start = CoroutineStart.UNDISPATCHED) {
+            try { awaitCancellation() } finally { runCatching { conn.disconnect() } }
+        }
         val text = StringBuilder()
         val reasoning = StringBuilder()
         val calls = sortedMapOf<Int, Call>()
@@ -622,6 +654,7 @@ object ChatApi {
         val partial = mutableMapOf<Int, StringBuilder>()
         // DeepSeek 把工具调用写进正文时（DSML 标记）：不显示，抠出来照样去做
         val inline = ToolText()
+        val boundary = StreamBoundary()
         try {
             conn.requestMethod = "POST"
             conn.connectTimeout = 15_000
@@ -680,6 +713,7 @@ object ChatApi {
                 // 思考、工具都退掉了还被拒、又带着自带搜索：就是它，记下、不带再发
                 if (body.has("enable_search")) { ModelFit.learn(p.id, model, "search"); throw Adapted() }
             }
+            if (code in 500..599 || code == 408) throw StreamTransportException("服务器暂时不可用（$code）")
             if (code !in 200..299) {
                 val msg = runCatching { JSONObject(err).optJSONObject("error")?.optString("message") }.getOrNull()
                 throw IllegalStateException(
@@ -698,10 +732,14 @@ object ChatApi {
                     val line = r.readLine() ?: break
                     if (!line.startsWith("data:")) continue
                     val data = line.removePrefix("data:").trim()
-                    if (data == "[DONE]") break
+                    if (data == "[DONE]") { boundary.stop(); break }
                     val o = runCatching { JSONObject(data) }.getOrNull() ?: continue
+                    if (!anthropic && o.optJSONObject("error") != null)
+                        throw IllegalStateException("模型服务返回流式错误，已保留收到的内容")
                     if (anthropic) {
                         when (o.optString("type")) {
+                            "message_stop" -> boundary.stop()
+                            "message_delta" -> boundary.finish(o.optJSONObject("delta")?.optString("stop_reason"))
                             "error" -> {
                                 val em = o.optJSONObject("error")?.optString("message").orEmpty()
                                 CtxWin.overflow(em)?.let { throw ContextFull(it) }
@@ -742,7 +780,9 @@ object ChatApi {
                     } else {
                         if (search != null && QwenSearch.searched(o)) search()
                         o.optJSONObject("usage")?.let { u -> val n = u.optInt("prompt_tokens", u.optInt("input_tokens")); if (n > 0 && firstInput == 0) firstInput = n }
-                        val d = o.optJSONArray("choices")?.optJSONObject(0)?.optJSONObject("delta") ?: continue
+                        val choice = o.optJSONArray("choices")?.optJSONObject(0) ?: continue
+                        if (!choice.isNull("finish_reason")) boundary.finish(choice.optString("finish_reason"))
+                        val d = choice.optJSONObject("delta") ?: continue
                         if (!d.isNull("reasoning_content")) d.optString("reasoning_content").takeIf { it.isNotEmpty() }?.let {
                             reasoning.append(it); withContext(Dispatchers.Main) { onThink(it) }
                         }
@@ -764,6 +804,7 @@ object ChatApi {
                     }
                 }
             }
+            boundary.verify()
             if (!anthropic) {
                 val (rest, all, found) = inline.finish()
                 if (rest.isNotEmpty()) withContext(Dispatchers.Main) { onText(rest) }
@@ -792,14 +833,17 @@ object ChatApi {
         } catch (e: ContextFull) {
             throw e
         } catch (e: java.net.UnknownHostException) {
-            throw IllegalStateException("连不上服务器，检查网络或地址")
+            throw StreamTransportException("连不上服务器，检查网络或地址")
         } catch (e: java.net.SocketTimeoutException) {
-            throw IllegalStateException("等太久没有回应，稍后再试")
+            throw StreamTransportException("等太久没有回应，已保留收到的内容")
+        } catch (e: java.io.IOException) {
+            if (job?.isActive == false) throw CancellationException()
+            throw StreamTransportException("连接中断，已保留收到的内容")
         } catch (e: Exception) {
             if (job?.isActive == false) throw CancellationException()
             throw IllegalStateException("连接中断：" + (e.message ?: e.javaClass.simpleName).take(60))
         } finally {
-            handle?.dispose()
+            closer.cancel()
             runCatching { conn.disconnect() }
         }
     }

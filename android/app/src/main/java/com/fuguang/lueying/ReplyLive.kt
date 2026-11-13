@@ -7,26 +7,62 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
+import android.os.Handler
+import android.os.Looper
+import android.os.PowerManager
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.app.RemoteInput
 
 /**
- * 她回答期间开着的前台服务：你切走了她也能把这轮回完（安卓不会把 App 停掉）。
+ * Protects application-owned chat and artwork tasks while the UI is away.
+ * Foreground priority reduces reclaim risk; it does not guarantee process survival.
  * 通知栏里一张安静的「X 正在回答…」；安卓 12 起前 10 秒不显示，回得快的根本看不见。回完就关。
  */
 class ReplyLive : Service() {
+    private var wakeLock: PowerManager.WakeLock? = null
+    private val handler = Handler(Looper.getMainLooper())
+    private val renew = object : Runnable {
+        override fun run() {
+            if (!Notify.hasLiveTasks) return
+            val lock = wakeLock ?: return
+            // A finite lease also expires if cleanup is unexpectedly skipped.
+            runCatching { lock.acquire(20 * 60_000L) }
+                .onFailure { ReplyRuntime.note("wake_lock_failed ${it.javaClass.simpleName}") }
+            handler.postDelayed(this, 10 * 60_000L)
+        }
+    }
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (!Notify.hasLiveTasks) { stopSelf(startId); return START_NOT_STICKY }
         val n = Notify.liveNote(this, conv, history, mine)
         runCatching {
             if (Build.VERSION.SDK_INT >= 34) startForeground(Notify.LIVE_ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
             else startForeground(Notify.LIVE_ID, n)
-        }.onFailure { stopSelf() }
+        }.onSuccess {
+            ReplyRuntime.serviceStarted()
+            ReplyRuntime.watchNetwork()
+            if (wakeLock == null) {
+                val pm = getSystemService(PowerManager::class.java)
+                wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "vignette:reply").apply { setReferenceCounted(false) }
+                runCatching { renew.run() }.onFailure { ReplyRuntime.note("wake_lock_failed ${it.javaClass.simpleName}") }
+            }
+        }.onFailure { ReplyRuntime.serviceFailed(it); stopSelf(startId) }
         return START_NOT_STICKY
     }
 
+    override fun onTimeout(startId: Int, fgsType: Int) {
+        ReplyRuntime.serviceFailed(IllegalStateException("foreground service timeout"))
+        stopSelf()
+    }
+
     override fun onDestroy() {
+        handler.removeCallbacks(renew)
+        wakeLock?.let { if (it.isHeld) it.release() }
+        wakeLock = null
+        ReplyRuntime.unwatchNetwork()
+        ReplyRuntime.note("service_destroyed tasks=${Notify.hasLiveTasks}")
         runCatching { stopForeground(STOP_FOREGROUND_REMOVE) }
         super.onDestroy()
     }

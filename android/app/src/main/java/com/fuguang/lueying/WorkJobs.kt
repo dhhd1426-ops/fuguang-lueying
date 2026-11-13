@@ -118,7 +118,9 @@ object WorkJobs {
         val editId = a.optString("id").trim().takeIf { it.isNotEmpty() && Works.get(it) != null }
         val artwork = a.optBoolean("artwork") && a.optString("kind") == "page"
         state[key] = State(title, editId != null, stage = if (artwork) "正在起稿" else null, preview = state[key]?.preview)
+        val live = Notify.startLive(o.conv, o.chat.history, title)
         running[key] = scope.launch {
+            try {
             var made: String? = null
             var err: String? = null
             try {
@@ -217,7 +219,10 @@ object WorkJobs {
             val id = made
             if (id != null) { state[key] = s.copy(done = id); o.chat.swapWork(o.conv, "$PREFIX$key|$title", id); Notify.work(o.conv, o.chat.history, title) }
             else state[key] = s.copy(fail = err ?: "后台没把作品写出来")
-            running.remove(key)
+            } finally {
+                running.remove(key)
+                Notify.stopLive(live)
+            }
         }
     }
 

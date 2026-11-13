@@ -86,6 +86,7 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -158,6 +159,9 @@ class ChatState(val history: ConvStore) {
     var sent by mutableIntStateOf(0)
     private var streamDone = false
     private var job: Job? = null
+    private var replyAt = 0L
+    private var checkpointKey = ""
+    private var userStopped = false
     /** 是不是手上正看着的这段；切走后在后台写完（Chats.kt）。 */
     var onScreen = true
 
@@ -174,6 +178,8 @@ class ChatState(val history: ConvStore) {
         reset()
         messages.addAll(c.msgs)
         convId = c.id
+        if (messages.lastOrNull()?.interrupted == true)
+            error = "上次回答中断，已恢复收到的内容，可以继续"
         Notify.cancel(c.id)
         sent++
     }
@@ -221,7 +227,7 @@ class ChatState(val history: ConvStore) {
         Reflect.daily(Memory.active)
         persist()
         sent++
-        ask(scope, store)
+        ask(store)
         return messages.lastIndex
     }
 
@@ -233,17 +239,20 @@ class ChatState(val history: ConvStore) {
         error = null; needsSetup = false
         slips += Lessons.REDO
         persist()
-        ask(scope, store)
+        ask(store)
     }
 
     /** 上一次出错时，用同样的对话再问一次。 */
     fun retry(scope: CoroutineScope, store: AssistantStore) {
-        if (busy || messages.lastOrNull()?.role != "user") return
+        if (busy) return
+        val last = messages.lastOrNull() ?: return
+        if (last.role != "user" && !last.interrupted) return
         error = null; needsSetup = false
-        ask(scope, store)
+        ask(store)
     }
 
-    private fun ask(scope: CoroutineScope, store: AssistantStore) {
+    private fun ask(store: AssistantStore) {
+        val scope = ReplyRuntime.scope
         val p = provider(store.activeProvider)
         val c = store.config(store.activeProvider)
         if (!c.configured || store.activeModel.isBlank()) {
@@ -254,7 +263,12 @@ class ChatState(val history: ConvStore) {
         busy = true; thinking = false; thinkText = ""; partial = ""; shown = 0f; streamDone = false; landed = -1; turnPid = store.activeProvider; thinkAt = 0L; thinkEnd = 0L
         pendingImgs.clear(); pendingWorks.clear(); pendingWorkAt.clear(); workDraft = null; pendingClips.clear(); liveSteps.clear(); happened.clear()
         val who = Memory.active
-        val history = messages.toList()
+        userStopped = false
+        replyAt = System.currentTimeMillis()
+        checkpointKey = ""
+        val previous = messages.toList()
+        val history = if (previous.lastOrNull()?.interrupted == true) previous + ChatMsg("user",
+            "上一条回答因连接中断未完成，请接着已有内容继续，不要重复前文。已完成的工具操作不要重做；需要操作时先确认当前结果。") else previous
         // 做事经验：按这一轮要做的事想起几条，时间线上记一步「想起上次」
         val pv = store.activeProvider + "|" + store.activeModel.trim().lowercase()
         shownLessons = Lessons.pick(who, history, pv)
@@ -267,9 +281,16 @@ class ChatState(val history: ConvStore) {
         // 你切走了她也接着回完；回好了、你不在这里，就发通知（Notify.kt）
         val roundAt = System.currentTimeMillis()
         val mine = history.lastOrNull { it.role == "user" }?.text
-        Notify.startLive(convId, this@ChatState.history, mine)
+        val live = Notify.startLive(convId, this@ChatState.history, mine)
+        ReplyRuntime.note("turn_started")
         val model0 = store.activeModel
         job = scope.launch {
+            val checkpoints = launch {
+                while (true) {
+                    delay(1_000)
+                    runCatching { checkpoint() }.onFailure { ReplyRuntime.note("checkpoint_failed ${it.javaClass.simpleName}") }
+                }
+            }
             // 前情（Fold.kt）：这段聊长了整理过，发出去的是前情 + 后面的原话；sentEst 是估的这轮发出去多少
             var sentEst = 0
             var tooLong = false
@@ -338,6 +359,7 @@ class ChatState(val history: ConvStore) {
                     onRoundEnd = {
                         if (thinkText.length > (liveSteps.lastOrNull { it.name == THINK_ROUND_END }?.at ?: 0))
                             liveSteps.add(ToolStep(thinkText.length, THINK_ROUND_END, ""))
+                        checkpoint()
                     },
                     tools = if (specs.isNotEmpty()) Tools(
                         specs,
@@ -384,6 +406,7 @@ class ChatState(val history: ConvStore) {
                                 if (!made) slips += Lessons.WORK
                                 if (idx < liveSteps.size) liveSteps[idx] = liveSteps[idx].copy(title = t, done = true, detail = if (n == Recall.OPEN) Recall.lastOpen.ifEmpty { liveSteps[idx].detail } else liveSteps[idx].detail)
                                 if (n == Works.MAKE || n == Works.EDIT) workDraft = null
+                                checkpoint()
                             }
                         },
                         { },
@@ -430,7 +453,8 @@ class ChatState(val history: ConvStore) {
                     }
                 } else error = "没有收到回复，换个模型再试"
             } catch (e: kotlinx.coroutines.CancellationException) {
-                if (partial.isNotBlank() || pendingWorks.isNotEmpty() || pendingClips.isNotEmpty()) messages.add(replyMsg(partial.take(ceil(shown).toInt()).trim()))
+                if (partial.isNotBlank() || thinkText.isNotBlank() || liveSteps.isNotEmpty() || pendingWorks.isNotEmpty() || pendingClips.isNotEmpty())
+                    messages.add(replyMsg(partial.trim()).copy(interrupted = !userStopped))
                 throw e
             } catch (e: ContextFull) {
                 // 太长了被拒：记下这个模型的窗口，收尾后整理前情、再发一遍（finally 里）
@@ -438,14 +462,18 @@ class ChatState(val history: ConvStore) {
                 CtxWin.full(p.id, model0, e.limit, CtxWin.tokens(p.id, model0, sentEst))
                 tooLong = true
             } catch (e: Exception) {
-                if (partial.isNotBlank() || pendingWorks.isNotEmpty() || pendingClips.isNotEmpty()) messages.add(replyMsg(partial.trim()))
-                error = e.message ?: "出错了"
+                if (partial.isNotBlank() || thinkText.isNotBlank() || liveSteps.isNotEmpty() || pendingWorks.isNotEmpty() || pendingClips.isNotEmpty())
+                    messages.add(replyMsg(partial.trim()).copy(interrupted = true))
+                error = ReplyRuntime.failureHint().ifBlank { e.message ?: "出错了" }
+                ReplyRuntime.note("turn_failed ${e.javaClass.simpleName}")
             } finally {
+                checkpoints.cancel()
                 val stopped = job?.isCancelled == true
                 slips.clear(); shownLessons = emptyList()
                 partial = ""; shown = 0f; busy = false; thinking = false; thinkText = ""; pendingImgs.clear(); pendingWorks.clear(); pendingWorkAt.clear(); workDraft = null; pendingClips.clear(); liveSteps.clear()
                 persist()
-                Notify.stopLive()
+                Notify.stopLive(live)
+                ReplyRuntime.note("turn_finished stopped=$stopped failed=${error != null}")
                 if (!stopped) {
                     val err = error
                     val r = messages.lastOrNull()?.takeIf { it.role == "assistant" && it.at >= roundAt }
@@ -459,7 +487,7 @@ class ChatState(val history: ConvStore) {
                     if (id != null && Memory.active.foldOn && overflowAt != messages.size) {
                         overflowAt = messages.size
                         scope.launch {
-                            if (Fold.run(this@ChatState.history, id, true)) { if (convId == id && !busy && messages.lastOrNull()?.role == "user") ask(scope, store) }
+                            if (Fold.run(this@ChatState.history, id, true)) { if (convId == id && !busy && messages.lastOrNull()?.role == "user") ask(store) }
                             else if (convId == id) error = "这段聊天太长了，前面没整理成：" + MemModel.lastError.ifBlank { "整理用的模型没回应" }
                         }
                     } else error = if (Memory.active.foldOn) "这段聊天太长了，开个新对话接着聊吧" else "这段聊天太长了。开个新对话，或者在记忆页打开前情"
@@ -473,7 +501,22 @@ class ChatState(val history: ConvStore) {
         }
     }
 
-    fun stop() { job?.cancel() }
+    fun stop() { userStopped = true; job?.cancel() }
+
+    /** Immutable snapshot, independent of animation position; saving must not reset think timing. */
+    fun checkpoint() {
+        if (!busy || convId == null) return
+        val key = "${messages.size}:${partial.length}:${thinkText.length}:${liveSteps.hashCode()}:${pendingWorks.hashCode()}:${pendingClips.hashCode()}:${pendingImgs.hashCode()}"
+        if (key == checkpointKey) return
+        checkpointKey = key
+        val text = partial.trim()
+        val lead = partial.length - partial.trimStart().length
+        val pending = ChatMsg("assistant", text, thinkText, pendingImgs.toList(), at = replyAt,
+            works = pendingWorks.toList(), steps = liveSteps.toList(), clips = pendingClips.toList(),
+            workAt = pendingWorkAt.map { (it - lead).coerceIn(0, text.length) }, pid = turnPid,
+            thinkMs = if (thinkAt > 0) (thinkEnd - thinkAt).coerceAtLeast(0) else 0, interrupted = true)
+        history.save(convId, messages.toList() + pending)
+    }
 
     /** 「立即发送」：她在做就先停下（写好的留着），然后马上发。 */
     fun sendNow(scope: CoroutineScope, store: AssistantStore) {
@@ -487,7 +530,7 @@ class ChatState(val history: ConvStore) {
         error = null; needsSetup = false
         messages.add(ChatMsg("user", text))
         persist(); sent++
-        ask(scope, store)
+        ask(store)
     }
 
     /** 做完一步工具时收排着的话：这一段先收成一条回复，你的话进对话，她接着做。 */
@@ -498,6 +541,7 @@ class ChatState(val history: ConvStore) {
             messages.add(replyMsg(partial.trim()))
         messages.add(ChatMsg("user", q))
         partial = ""; shown = 0f; thinkText = ""; liveSteps.clear(); pendingImgs.clear(); pendingWorks.clear(); pendingWorkAt.clear(); workDraft = null; pendingClips.clear()
+        replyAt = System.currentTimeMillis(); checkpointKey = ""
         persist(); sent++
         return q
     }
@@ -928,7 +972,15 @@ private fun Conversation(
                         Spacer(Modifier.height(10.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                             if (chat.needsSetup) SmallButton("去设置", onSetup)
-                            else SmallButton("重试", onRetry)
+                            else SmallButton(if (chat.messages.lastOrNull()?.interrupted == true) "继续" else "重试", onRetry)
+                            if (err.contains("后台联网") || err.contains("后台保活")) {
+                                val ctx = androidx.compose.ui.platform.LocalContext.current
+                                SmallButton("后台运行设置", {
+                                    Keep.needs(ctx).firstOrNull { it.key == "battery" || it.key == "vendor" }?.go?.invoke(ctx)
+                                        ?: ctx.startActivity(android.content.Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                                            android.net.Uri.parse("package:" + ctx.packageName)))
+                                })
+                            }
                         }
                     }
                 }

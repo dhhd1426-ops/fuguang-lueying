@@ -41,6 +41,11 @@ object Chats {
         running[id] = s
     }
 
+    /** Snapshot before the system can reclaim a hidden process. */
+    fun checkpoint() {
+        (running.values.toList() + listOfNotNull(current)).distinct().forEach { it.checkpoint() }
+    }
+
     /** 后台那段写完了：从后台名单里拿掉（它已经存回自己的对话）。 */
     fun finished(s: ChatState) {
         val id = s.convId ?: return
