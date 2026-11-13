@@ -1,0 +1,98 @@
+name: Motion video verification
+on:
+  push:
+    branches: [check]
+    paths:
+      - "android/**"
+      - ".github/workflows/motion.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  browser:
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '视频抽帧')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --prefix /tmp/motion-tests playwright
+      - name: Browser timeline verification
+        env:
+          NODE_PATH: /tmp/motion-tests/node_modules
+          CHROMIUM_PATH: /usr/bin/google-chrome
+        run: node --test android/tools/motion-review.test.cjs
+  android:
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '视频抽帧')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v5
+      - name: Fetch fonts
+        run: |
+          # 聊天页问候字体：Cormorant Garamond（OFL 开源可商用），取 Light 300 斜体生成静态字体
+          set -e
+          pip install --quiet fonttools
+          curl -fsSL -o cg.ttf "https://github.com/google/fonts/raw/main/ofl/cormorantgaramond/CormorantGaramond-Italic%5Bwght%5D.ttf"
+          mkdir -p android/app/src/main/res/font
+          fonttools varLib.instancer cg.ttf wght=300 -o android/app/src/main/res/font/cormorant_light_italic.ttf
+          # 深度思考 max 字样：Bodoni Moda 斜体 600（OFL），光学尺寸取 28
+          curl -fsSL -o bm.ttf "https://github.com/google/fonts/raw/main/ofl/bodonimoda/BodoniModa-Italic%5Bopsz%2Cwght%5D.ttf"
+          fonttools varLib.instancer bm.ttf wght=600 opsz=28 -o android/app/src/main/res/font/bodoni_moda_semibold_italic.ttf
+          # 全局界面字体（照 Claude App 的无衬线）：DM Sans（OFL），取 400 / 500 / 600 三个静态字重；中文缺字自动落到系统黑体
+          curl -fsSL -o dm.ttf "https://github.com/google/fonts/raw/main/ofl/dmsans/DMSans%5Bopsz%2Cwght%5D.ttf"
+          for w in 400:regular 500:medium 600:semibold; do
+            fonttools varLib.instancer dm.ttf wght=${w%%:*} opsz=14 -o android/app/src/main/res/font/dm_sans_${w##*:}.ttf
+          done
+          ls -la android/app/src/main/res/font
+
+      - name: Fetch TDLib
+        # Telegram 官方 TDLib（tdlib.yml 单独编好放在 Releases 的 tdlib-<版本>）：Java 绑定放进源码，libtdjni.so 放进 jniLibs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          gh release download tdlib-1.8.69 -p tdlib.zip -D /tmp/td -R "${{ github.repository }}"
+          cd /tmp/td && unzip -q tdlib.zip
+          so=$(find /tmp/td -name libtdjni.so -path "*arm64-v8a*" | head -n 1)
+          java=$(dirname "$(find /tmp/td -name Client.java -path "*org/drinkless/tdlib*" | head -n 1)")
+          mkdir -p "$GITHUB_WORKSPACE/android/app/src/main/jniLibs/arm64-v8a" "$GITHUB_WORKSPACE/android/app/src/main/java/org/drinkless/tdlib"
+          cp "$so" "$GITHUB_WORKSPACE/android/app/src/main/jniLibs/arm64-v8a/"
+          cp "$java"/*.java "$GITHUB_WORKSPACE/android/app/src/main/java/org/drinkless/tdlib/"
+          ls -la "$GITHUB_WORKSPACE/android/app/src/main/jniLibs/arm64-v8a" "$GITHUB_WORKSPACE/android/app/src/main/java/org/drinkless/tdlib"
+
+      - name: Build instrumentation APKs
+        working-directory: android
+        run: chmod +x gradlew && ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest -PmotionProbe=true --console=plain
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Verify actual Android rendering
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          target: google_apis
+          cores: 4
+          ram-size: 4096M
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot
+          disable-animations: false
+          script: cd android && ./gradlew :app:connectedDebugAndroidTest -PmotionProbe=true -Pandroid.testInstrumentationRunnerArguments.class=com.fuguang.lueying.MotionPreviewTest --console=plain
+      - name: Save rendering reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: motion-rendering-report
+          retention-days: 3
+          path: |
+            android/app/build/reports/androidTests/
+            android/app/build/outputs/androidTest-results/

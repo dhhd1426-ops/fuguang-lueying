@@ -322,7 +322,10 @@ class ChatState(val history: ConvStore) {
                 val native = store.search()
                 val web = WebSearch.usable && !native
                 val skills = Skills.specs()
-                val specs = (if (who.noteOn) Memory.toolSpecs else emptyList()) + Works.specs.filter { it.name != Works.MAKE } + WorkJobs.spec + SentFiles.spec + SentPics.spec + Pacts.specs + Materials.specs + VideoParse.specs + PanTools.specs + ClockTools.specs + WebHand.specs + skills + (if (web) listOf(WebSearch.spec) else emptyList()) + (if (yu) Yu.tools else emptyList()) + (if (recall) listOf(Recall.spec, Recall.openSpec) else emptyList()) + (if (folded != null) listOf(Fold.spec) else emptyList()) + mcp
+                val videoRefs = MotionTools.references(history)
+                val motionReviewer = AttachLook.helper(store)?.let { (id, name) -> ArtworkJob.Model(provider(id), store.config(id), name, store.effort(id, name)) }
+                val motion = MotionTools.Session(videoRefs, Attach.vision(p.id, store.activeModel), motionReviewer)
+                val specs = (if (who.noteOn) Memory.toolSpecs else emptyList()) + Works.specs.filter { it.name != Works.MAKE } + WorkJobs.spec + SentFiles.spec + SentPics.spec + Pacts.specs + Materials.specs + VideoParse.specs + MotionTools.specs + PanTools.specs + ClockTools.specs + WebHand.specs + skills + (if (web) listOf(WebSearch.spec) else emptyList()) + (if (yu) Yu.tools else emptyList()) + (if (recall) listOf(Recall.spec, Recall.openSpec) else emptyList()) + (if (folded != null) listOf(Fold.spec) else emptyList()) + mcp
                 val convTitle0 = store0.get(cur)?.title ?: firstSentence(question, 18)
                 // 对方发来的照片，最近的在前：send_image / send_file 里 photo:1 就是最近那张
                 fun photos(): List<java.io.File> = history.filter { it.role == "user" }.flatMap { it.files }.filter { Attach.isImage(it) }.reversed().map { Attach.file(it) }
@@ -335,6 +338,7 @@ class ChatState(val history: ConvStore) {
                     append("\n").append(Pacts.system(who, Memory.userCall))
                     append("\n").append(Materials.system())
                     append("\n").append(VideoParse.system(Memory.userCall))
+                    append("\n").append(MotionTools.rule).append(MotionTools.context(videoRefs))
                     append("\n").append(PanTools.system(Memory.userCall))
                     append("\n").append(ClockTools.system(Memory.userCall))
                     append("\n").append(WebHand.system(Memory.userCall))
@@ -375,6 +379,12 @@ class ChatState(val history: ConvStore) {
                             else if (n == Recall.TOOL) Recall.run(store0, cur, a.optString("query"))
                             else if (n == Recall.OPEN) Recall.open(store0, a)
                             else if (n == WebSearch.TOOL) WebSearch.run(a.optString("query"))
+                            else if (n in MotionTools.names) {
+                                val out = motion.run(n, a)
+                                made = !out.failed
+                                if (idx < liveSteps.size) liveSteps[idx] = liveSteps[idx].copy(detail = out.text)
+                                out
+                            }
                             else if (n == VideoParse.TOOL || n == VideoParse.SAVE) VideoParse.run(n, a) { l -> if (messages.none { l in it.clips } && l !in pendingClips) pendingClips.add(l) }
                             else if (n == PanTools.OPEN || n == PanTools.GET) PanTools.run(n, a) { l -> if (messages.none { l in it.clips } && l !in pendingClips) pendingClips.add(l) }
                             else if (n in ClockTools.names) ClockTools.run(n, a, who.id) { l -> if (l !in pendingClips) pendingClips.add(l) }
@@ -403,7 +413,7 @@ class ChatState(val history: ConvStore) {
                             } finally {
                                 // 没做成的作品如实标出来，不显示「做好了」
                                 val t = if (made) Trail.doneTitle(n, a) else Trail.failTitle(n, a)
-                                if (!made) slips += Lessons.WORK
+                                if (!made && n !in MotionTools.names) slips += Lessons.WORK
                                 if (idx < liveSteps.size) liveSteps[idx] = liveSteps[idx].copy(title = t, done = true, detail = if (n == Recall.OPEN) Recall.lastOpen.ifEmpty { liveSteps[idx].detail } else liveSteps[idx].detail)
                                 if (n == Works.MAKE || n == Works.EDIT) workDraft = null
                                 checkpoint()
@@ -411,6 +421,7 @@ class ChatState(val history: ConvStore) {
                         },
                         { },
                         inbox = { takeQueue() },
+                        imageHistoryBatches = if (videoRefs.isEmpty()) 0 else 3,
                         onDraft = { n, len, head -> val d = workDraft; workDraft = WorkDraft(d?.at ?: partial.length, n, len, WorkDraft.title(n, head) ?: d?.title) },
                     ) else null,
                     fallback = if (specs.isNotEmpty()) ({
@@ -1404,3 +1415,4 @@ private fun UsedSkills(steps: List<ToolStep>) {
         }
     }
 }
+

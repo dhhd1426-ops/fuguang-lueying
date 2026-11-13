@@ -80,6 +80,8 @@ private val saveIcon = Ic("M12 4v11m-4.5-4.5L12 15l4.5-4.5M5 19h14")
 /** 每种工具在时间线上的说法和图标。 */
 object Trail {
     fun liveTitle(n: String): String = when (n) {
+        MotionTools.INSPECT -> "正在查看参考视频"; MotionTools.FRAMES -> "正在细看视频动作"
+        MotionTools.RENDER -> "正在检查动画过程"; MotionTools.COMPARE -> "正在对照参考画面"
         Lessons.STEP -> "想起上次"; QwenSearch.STEP -> "正在上网查"; Fold.LOOK -> Fold.liveTitle()
         Memory.REMEMBER -> "正在记下"; Memory.READ -> "正在翻记忆"; Memory.FORGET -> "正在忘掉"; Recall.TOOL -> "正在翻看以前的聊天"; Recall.OPEN -> "正在回忆"; Recall.AUTO -> "想起之前聊过的"; WebSearch.TOOL -> "正在上网查"
         Skills.OPEN -> "正在翻开本事"; Skills.FIND -> "正在 GitHub 上找本事"; Skills.LEARN -> "等你点头"
@@ -92,6 +94,8 @@ object Trail {
     }
 
     fun doneTitle(n: String, a: JSONObject): String = when (n) {
+        MotionTools.INSPECT -> "查看了视频概览"; MotionTools.FRAMES -> "查看了视频帧图"
+        MotionTools.RENDER -> "检查了动画过程"; MotionTools.COMPARE -> "对照了参考画面"
         Lessons.STEP -> "想起上次"; QwenSearch.STEP -> "用千问自带搜索查过了"; Fold.LOOK -> Fold.doneTitle(a)
         Memory.REMEMBER -> "记下了一条"; Memory.READ -> "翻了 ${a.optJSONArray("ids")?.length() ?: 1} 条记忆"; Memory.FORGET -> "忘掉了一些"; Recall.TOOL -> "翻了以前的聊天"; Recall.OPEN -> "回忆起那段聊天"; Recall.AUTO -> "想起之前聊过的"; WebSearch.TOOL -> "上网查了「${a.optString("query").trim().take(16)}」"
         Skills.OPEN -> a.optJSONArray("names")?.takeIf { it.length() > 1 }?.let { arr -> "翻开了 ${arr.length()} 样本事，合成一种做法" } ?: "翻开了「${(a.optJSONArray("names")?.optString(0) ?: a.optString("name")).trim().take(12)}」"; Skills.FIND -> "在 GitHub 上找了「${a.optString("query").trim().take(16)}」"
@@ -114,11 +118,12 @@ object Trail {
     }
 
     fun failTitle(n: String, a: JSONObject): String =
-        if (n == Works.EDIT) "「${workTitle(a)}」没改成" else "作品「${a.optString("title").trim().ifEmpty { "未命名" }.take(20)}」没做成"
+        if (n in MotionTools.names) "画面检查未完成" else if (n == Works.EDIT) "「${workTitle(a)}」没改成" else "作品「${a.optString("title").trim().ifEmpty { "未命名" }.take(20)}」没做成"
 
     private fun workTitle(a: JSONObject) = a.optString("title").trim().ifEmpty { Works.get(a.optString("id").trim())?.title ?: "作品" }.take(20)
 
     fun detail(n: String, a: JSONObject): String = when (n) {
+        in MotionTools.names -> a.optString("source").ifBlank { "指定时刻的作品画面" }
         Lessons.STEP -> a.optString("text")
         Fold.LOOK -> Fold.detail(a)
         Memory.REMEMBER, Memory.FORGET -> a.optString("text")
@@ -138,6 +143,7 @@ object Trail {
 
     /** 作品用和作品卡同一个图标（圆 + 方）。 */
     fun icon(n: String): Ic = when (n) {
+        in MotionTools.names -> Icons.play
         Lessons.STEP -> bulb
         Memory.REMEMBER, Memory.READ -> bookmark; Memory.FORGET -> eraser; Recall.TOOL, Recall.AUTO -> bubble; Recall.OPEN, Fold.LOOK -> folder; WebSearch.TOOL, Materials.OPEN, QwenSearch.STEP -> globe; Materials.LOOK, SentPics.TOOL -> picture; VideoParse.TOOL -> Icons.play; VideoParse.SAVE, PanTools.GET -> saveIcon; PanTools.OPEN -> globe
         Skills.OPEN, Skills.FIND, Skills.LEARN -> skillIcon
@@ -457,6 +463,7 @@ private fun RenderTrailNode(job: String, run: ArtworkRuns.Entry, last: Boolean) 
     var expanded by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val title = when {
+        run.kind == "motion" -> run.output.lineSequence().firstOrNull().orEmpty()
         run.kind in setOf("draft", "present", "review") -> run.output
         run.status == "running" -> "正在渲染预览"
         run.status == "success" -> "已运行渲染"
@@ -509,6 +516,7 @@ private fun RenderTrailNode(job: String, run: ArtworkRuns.Entry, last: Boolean) 
                         }
                     }
                     if (run.output.isNotBlank()) Txt(run.output, tint, 13.sp, lineHeight = 20.sp)
+                    MotionEvidence.Button(run.output)
                     if (run.kind == "render" && run.status == "success" && run.version > 0) {
                         ArtworkProgress(ArtworkJob.directory(job)?.let { java.io.File(it, "${run.version}.png") })
                     }
@@ -555,6 +563,7 @@ private fun TrailNode(it: TrailItem, last: Boolean, open: Boolean, delay: Int = 
                 if (it.detail.isNotEmpty()) {
                     Spacer(Modifier.height(6.dp))
                     Txt(it.detail, trailSecondary, 14.sp, lineHeight = 25.sp, maxLines = if (full) Int.MAX_VALUE else if (it.tool != null) 1 else 2)
+                    if (full) MotionEvidence.Button(it.detail)
                 }
             }
         }
@@ -628,3 +637,4 @@ private fun ThoughtTrailNode(text: String, live: Boolean, last: Boolean, summary
         }
     }
 }
+

@@ -251,6 +251,7 @@ fun FuguangApp(prefs: Prefs, fullscreen: Boolean, setFullscreen: (Boolean) -> Un
         SentFileLayer()
         // 看照片、圈画：盖在最上面
         PhotoLayer()
+        MotionEvidence.Layer()
     }
 }
 
@@ -290,3 +291,4 @@ private fun Modifier.pageIn(a: Float): Modifier = graphicsLayer {
     val sc = 1f + (1f - a) * .035f
     scaleX = sc; scaleY = sc
 }
+

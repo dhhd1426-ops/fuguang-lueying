@@ -74,13 +74,19 @@ jobs:
             echo "::error::${line}"
           done
 
+      - name: Install frame verification dependency
+        if: github.ref == 'refs/heads/check'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg
+
       - name: Office samples
         # check 分支上顺便生成样例 PPT / Word，传上来核对导出
         if: github.ref == 'refs/heads/check'
         working-directory: android
         run: |
           set -o pipefail
-          ./gradlew :app:testDebugUnitTest --tests "com.fuguang.lueying.OfficeSampleTest" --tests "com.fuguang.lueying.StreamRecoveryTest" --console=plain 2>&1 | tee test.log || {
+          ./gradlew :app:testDebugUnitTest --tests "com.fuguang.lueying.OfficeSampleTest" --tests "com.fuguang.lueying.StreamRecoveryTest" --tests "com.fuguang.lueying.MotionTimesTest" --console=plain 2>&1 | tee test.log || {
             { grep -E "^e: |Exception|Error|FAILED|expected" test.log | head -n 30; grep -A 20 "What went wrong" test.log | head -n 20; } | while IFS= read -r line; do echo "::error::${line}"; done
             find app/build/test-results -name "*.xml" -exec grep -h -A8 "<failure" {} \; 2>/dev/null | head -n 20 | while IFS= read -r line; do echo "::error::${line}"; done
             exit 1
@@ -144,3 +150,4 @@ jobs:
           body: 手机上直接下载下面的 APK 安装。每次更新都用同一个签名，可以直接覆盖安装。
           prerelease: true
           files: out/*.apk
+
