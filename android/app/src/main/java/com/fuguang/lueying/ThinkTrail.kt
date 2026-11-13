@@ -404,6 +404,7 @@ fun ThinkDrawer(open: Boolean, raw: String, savedSteps: List<ToolStep>, live: Bo
             }
             val scroll = rememberScrollState()
             val opened = remember { mutableStateOf(setOf<String>()) }
+            val collapsedJobs = remember { mutableStateOf(setOf<String>()) }
             LaunchedEffect(items.size, items.lastOrNull()?.title?.length) {
                 val near = scroll.maxValue - scroll.value < 160
                 withFrameNanos { }
@@ -424,9 +425,9 @@ fun ThinkDrawer(open: Boolean, raw: String, savedSteps: List<ToolStep>, live: Bo
                                 value = ArtworkRuns.load(art)
                             }
                             val runs = ArtworkRuns.live(art) ?: saved
-                            val expanded = it.key in opened.value
+                            val expanded = art !in collapsedJobs.value
                             TrailNode(TrailItem(it.key, it.tool, it.title, "", it.live), last && (!expanded || runs.isEmpty()), expanded, expandable = true) {
-                                opened.value = if (expanded) opened.value - it.key else opened.value + it.key
+                                collapsedJobs.value = if (expanded) collapsedJobs.value + art else collapsedJobs.value - art
                             }
                             if (expanded && runs.isEmpty()) {
                                 val state = WorkJobs.state[art]
