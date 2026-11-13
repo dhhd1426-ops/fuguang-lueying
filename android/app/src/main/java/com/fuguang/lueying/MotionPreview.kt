@@ -78,7 +78,13 @@ internal object MotionPreview {
                         }
                     }
                     screen.setContentView(view)
-                    screen.window?.addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN)
+                    screen.window?.apply {
+                        addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN or WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED)
+                        setWindowAnimations(0)
+                        setDimAmount(0f)
+                        setBackgroundDrawable(android.graphics.drawable.ColorDrawable(android.graphics.Color.WHITE))
+                        decorView.setPadding(0, 0, 0, 0)
+                    }
                     screen.show()
                     screen.window?.setLayout(width, height)
                     val reviewUrl = "https://${MaterialStore.HOST}/__motion_review__/${java.util.UUID.randomUUID()}"
@@ -161,10 +167,22 @@ internal object MotionPreview {
         }
     }
 
-    private suspend fun WebView.visual() = suspendCancellableCoroutine<Unit> { cont ->
-        postVisualStateCallback(0, object : WebView.VisualStateCallback() {
-            override fun onComplete(id: Long) { if (cont.isActive) cont.resume(Unit) }
-        })
-        invalidate()
+    private suspend fun WebView.visual() {
+        suspendCancellableCoroutine<Unit> { cont ->
+            postVisualStateCallback(0, object : WebView.VisualStateCallback() {
+                override fun onComplete(id: Long) { if (cont.isActive) cont.resume(Unit) }
+            })
+            invalidate()
+        }
+        // A visual-state callback only promises readiness for the NEXT draw. PixelCopy must wait
+        // until the Android render thread has actually submitted that frame to the surface.
+        check(isHardwareAccelerated) { "设备未启用实际硬件渲染，不能验证动画截图" }
+        suspendCancellableCoroutine<Unit> { cont ->
+            val callback = Runnable { if (cont.isActive) cont.resume(Unit) }
+            val observer = viewTreeObserver
+            observer.registerFrameCommitCallback(callback)
+            cont.invokeOnCancellation { if (observer.isAlive) observer.unregisterFrameCommitCallback(callback) }
+            invalidate()
+        }
     }
 }
