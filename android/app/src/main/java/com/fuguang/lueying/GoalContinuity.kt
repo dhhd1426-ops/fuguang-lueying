@@ -11,7 +11,7 @@ import org.json.JSONObject
  */
 internal object GoalContinuity {
     enum class Intent { CONTINUE, REFINE, EXPLORE, PAUSE, SWITCH, CANCEL }
-    enum class Status { ACTIVE, PAUSED, COMPLETED, CANCELLED }
+    enum class Status { ACTIVE, PAUSED, NEEDS_VERIFICATION, COMPLETED, CANCELLED }
     data class Snapshot(
         val conversationId: String,
         val goal: String?,
@@ -123,9 +123,9 @@ internal object GoalContinuity {
     fun completed(id: String, evidence: String) = synchronized(lock) {
         require(evidence.isNotBlank()) { "Completion requires verifiable evidence" }
         val s = read(id)
-        s.put("status", Status.COMPLETED.name).put("completion_evidence", evidence.take(2000))
+        s.put("status", Status.NEEDS_VERIFICATION.name).put("completion_claim", evidence.take(2000))
         persist(id, s)
-        event(id, "completed")
+        event(id, "completion_claimed")
     }
     /** Store event types only; no model output, credentials, or prompt text in logs. */
     private fun event(id: String, type: String) {
@@ -167,7 +167,7 @@ internal object GoalContinuity {
 
     val spec get() = ToolSpec(
         "manage_goal",
-        "管理当前对话的长期主线任务。开始长任务时 set_goal，执行进度更新 step，临时调研 branch，回到主线 resume，明确暂停 pause、取消 cancel，明确换目标 switch。普通闲聊不必调用。完成必须提供实际验证证据。",
+        "管理当前对话的长期主线任务。开始长任务时 set_goal，执行进度更新 step，临时调研 branch，回到主线 resume，明确暂停 pause、取消 cancel，明确换目标 switch。普通闲聊不必调用。完成需提交实际验证依据，账本会标记为待验收，不能自行宣布已验证完成。",
         JSONObject().put("type", "object")
             .put("properties", JSONObject()
                 .put("action", JSONObject().put("type", "string").put("enum",
