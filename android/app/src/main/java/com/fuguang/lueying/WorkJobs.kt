@@ -27,6 +27,59 @@ object WorkJobs {
                      val stage: String? = null, val effort: String? = null, val preview: java.io.File? = null)
     val state = mutableStateMapOf<String, State>()
 
+    /** A read-only view of actual background jobs. Never infer progress from elapsed time. */
+    val statusSpec get() = ToolSpec(
+        "get_work_status",
+        "查询后台作品实际进度和执行记录。用户问做到了哪里、是否完成、是否卡住时必须调用；没有证据不要声称正在运行或已经完成。task_id 可不填，默认查当前对话的任务。",
+        JSONObject().put("type", "object").put("properties",
+            JSONObject().put("task_id", JSONObject().put("type", "string")
+                .put("description", "start_work 返回的 job id 或完整 job: 引用；不填查询本对话任务"))))
+
+    fun brief(conv: String?): String {
+        val rows = orders.entries.filter { it.value.conv == conv }.mapNotNull { (id, order) ->
+            val s = state[id] ?: return@mapNotNull null
+            "《${s.title}》 id=$id；" + when {
+                s.done != null -> "已交付"
+                s.fail != null -> "已停止：${s.fail}"
+                running[id]?.isActive == true -> "后台执行中：${s.stage ?: "阶段未知"}"
+                else -> "状态待核实"
+            }
+        }
+        return if (rows.isEmpty()) "" else "\n后台任务状态（仅来自本地执行记录，不等于已经验收）：\n" + rows.takeLast(5).joinToString("\n") +
+            "\n用户追问时调用 get_work_status 查看实际记录；不要凭进度文字猜测完成时间。"
+    }
+
+    suspend fun status(args: JSONObject, conv: String?): ToolOut {
+        val requested = args.optString("task_id").trim().removePrefix(PREFIX).substringBefore('|')
+        val ids = if (requested.isNotEmpty()) listOf(requested) else
+            orders.entries.filter { it.value.conv == conv }.map { it.key }.takeLast(5)
+        if (ids.isEmpty()) return ToolOut("没有找到本对话可查询的后台任务。若任务来自旧会话，请提供任务 id；不能据此推断任务已经完成。")
+        val rows = ids.map { id ->
+            val s = state[id]
+            val persisted = ArtworkJob.loadOrder(id)
+            if (s == null && persisted == null) return@map "任务 $id：找不到本地任务记录。"
+            val events = ArtworkRuns.load(id).takeLast(8)
+            val active = running[id]?.isActive == true
+            val status = when {
+                s?.done != null -> "已交付，作品 id=${s.done}"
+                s?.fail != null -> "失败或停止：${s.fail}"
+                active -> "正在执行：${s?.stage ?: "等待最新步骤"}"
+                else -> "未在运行；可能已中断，可从作品卡片尝试继续"
+            }
+            buildString {
+                append("任务 $id《${s?.title ?: persisted?.optJSONObject("args")?.optString("title") ?: "作品"}》：").append(status)
+                if (s?.chars != null && s.chars > 0) append("；本轮已生成参数约 ${s.chars} 字")
+                if (s?.preview != null || ArtworkJob.latestPreview(id) != null) append("；有本地预览")
+                if (events.isNotEmpty()) {
+                    append("\n最近真实执行记录：")
+                    events.forEach { e -> append("\n- ").append(e.kind).append(" / ").append(e.status).append("：").append(e.output.take(200)) }
+                }
+                append("\n说明：没有服务端任务进度查询，以上仅为设备本地可核实状态。")
+            }
+        }
+        return ToolOut(rows.joinToString("\n\n"))
+    }
+
     private class Order(val a: JSONObject, val chat: ChatState, val pid: String, val talk: String, val conv: String?,
                         val author: ArtworkJob.Model, val reviewer: ArtworkJob.Model?, val request: ChatMsg?, val references: List<String>)
     private val orders = mutableMapOf<String, Order>()
