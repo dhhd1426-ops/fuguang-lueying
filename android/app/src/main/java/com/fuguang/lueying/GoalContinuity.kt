@@ -69,7 +69,8 @@ internal object GoalContinuity {
             s.put("goal", description.trim()).put("criteria", JSONArray(criteria))
                 .put("status", Status.ACTIVE.name)
                 .put("step", step ?: JSONObject.NULL)
-                .remove("branch").remove("resume")
+                
+            s.remove("branch"); s.remove("resume")
             persist(id, s)
             event(id, "goal_set")
         }
@@ -90,7 +91,8 @@ internal object GoalContinuity {
             Intent.CONTINUE -> {
                 s.put("status", Status.ACTIVE.name)
                 if (s.optString("branch").isNotBlank()) {
-                    s.put("step", s.optString("resume")).remove("branch").remove("resume")
+                    s.put("step", s.optString("resume"))
+                    s.remove("branch"); s.remove("resume")
                 }
             }
             Intent.SWITCH -> {
@@ -99,7 +101,8 @@ internal object GoalContinuity {
                 if (previous.isNotBlank()) s.put("previous_goal", previous)
                 s.put("goal", text.take(2000)).put("criteria", JSONArray())
                     .put("status", Status.ACTIVE.name)
-                    .remove("step").remove("branch").remove("resume")
+                    
+                s.remove("step"); s.remove("branch"); s.remove("resume")
             }
             Intent.REFINE -> Unit
         }
