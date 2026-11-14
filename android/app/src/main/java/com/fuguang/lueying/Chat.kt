@@ -332,7 +332,7 @@ class ChatState(val history: ConvStore) {
                 val extra = buildString {
                     append("\n\n你手边还有这些东西，需要时再用，不需要就不用：")
                     if (who.noteOn) append("\n").append(Memory.toolRule())
-                    append("\n").append(GoalContinuity.rule(cur))
+                    append("\n").append(GoalContinuity.rule(cur, question))
                     append("\n").append(Works.system(Memory.userCall, history, who.id))
                     append(WorkJobs.brief(cur, history.flatMap { it.works }))
                     append("\n").append(SentFiles.system(Memory.userCall))
