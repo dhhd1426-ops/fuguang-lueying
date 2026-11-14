@@ -24,6 +24,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         CrashLog.arm(this)
         ReplyRuntime.init(this)
+        GoalContinuity.init(this)
         Notify.init(this)
         ClockTools.init(this)
         Yiyan.init(this)
