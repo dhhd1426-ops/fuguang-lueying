@@ -138,7 +138,7 @@ internal object GoalContinuity {
     }
 
     /** Context for the model. Facts are read from durable state, not chat summaries. */
-    fun rule(id: String?): String {
+    fun rule(id: String?, latestUser: String = ""): String {
         if (id.isNullOrBlank()) return ""
         val s = snapshot(id)
         return buildString {
@@ -152,6 +152,7 @@ internal object GoalContinuity {
                 if (s.pendingBranch != null) append("\n当前探索支线：").append(s.pendingBranch)
                 if (s.resumeStep != null) append("\n支线结束后返回：").append(s.resumeStep)
             }
+            if (latestUser.isNotBlank()) append("\n本轮意图提醒：").append(GoalIntentPolicy.modelNote(latestUser))
             append("""
             
             # 防偏航原则
@@ -180,22 +181,6 @@ internal object GoalContinuity {
             .put("required", JSONArray(listOf("action")))
     )
 
-    /**
-     * A verbatim quote alone is insufficient authorization: quoting a hypothetical
-     * or asking "what if I cancel?" must not destroy the active goal.
-     * This is a conservative guard; ambiguous instructions remain unchanged.
-     */
-    private fun explicitChange(action: String, message: String): Boolean {
-        val normalized = message.trim()
-        val hypothetical = listOf("如果", "假如", "假设", "举例", "例如", "会怎样", "怎么办", "what if", "suppose")
-        if (hypothetical.any { normalized.contains(it, ignoreCase = true) }) return false
-        val commands = if (action == "cancel")
-            listOf("取消任务", "取消这个任务", "不做了", "停止这个任务", "放弃这个任务", "cancel this task", "stop this task")
-        else
-            listOf("换个目标", "切换目标", "改做", "先不做", "换成", "改成新的任务", "switch goal", "instead work on")
-        return commands.any { normalized.contains(it, ignoreCase = true) }
-    }
-
     fun runTool(id: String?, args: JSONObject, latestUser: String): ToolOut {
         if (id.isNullOrBlank()) return ToolOut("对话尚未建立，无法记录目标；请在本轮消息持久化后重试。")
         val action = args.optString("action")
@@ -203,7 +188,7 @@ internal object GoalContinuity {
         return runCatching {
             if (action == "switch" || action == "cancel") {
                 val quote = args.optString("user_quote").trim()
-                require(quote.length >= 3 && latestUser.contains(quote) && explicitChange(action, latestUser)) {
+                require(quote.length >= 3 && latestUser.contains(quote) && GoalIntentPolicy.authorizes(action, latestUser, quote)) {
                     "更换或取消主线必须来自用户本轮明确指令，不得根据模型推断自行决定。"
                 }
             }
