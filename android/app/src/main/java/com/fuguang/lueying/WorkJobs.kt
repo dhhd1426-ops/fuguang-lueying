@@ -35,13 +35,16 @@ object WorkJobs {
             JSONObject().put("task_id", JSONObject().put("type", "string")
                 .put("description", "start_work 返回的 job id 或完整 job: 引用；不填查询本对话任务"))))
 
-    fun brief(conv: String?): String {
-        val rows = orders.entries.filter { it.value.conv == conv }.mapNotNull { (id, order) ->
-            val s = state[id] ?: return@mapNotNull null
-            "《${s.title}》 id=$id；" + when {
-                s.done != null -> "已交付"
-                s.fail != null -> "已停止：${s.fail}"
-                running[id]?.isActive == true -> "后台执行中：${s.stage ?: "阶段未知"}"
+    fun brief(conv: String?, refs: List<String>): String {
+        val ids = (orders.entries.filter { it.value.conv == conv }.map { it.key } + refs.filter { it.startsWith(PREFIX) }.map(::keyOf)).distinct().takeLast(5)
+        val rows = ids.mapNotNull { id ->
+            val s = state[id]
+            val record = if (s == null) ArtworkJob.loadOrder(id) else null
+            if (s == null && record == null) return@mapNotNull null
+            "《${s?.title ?: record?.optJSONObject("args")?.optString("title") ?: "作品"}》 id=$id；" + when {
+                s?.done != null -> "已交付"
+                s?.fail != null -> "已停止：${s.fail}"
+                running[id]?.isActive == true -> "后台执行中：${s?.stage ?: "阶段未知"}"
                 else -> "状态待核实"
             }
         }
@@ -49,10 +52,10 @@ object WorkJobs {
             "\n用户追问时调用 get_work_status 查看实际记录；不要凭进度文字猜测完成时间。"
     }
 
-    suspend fun status(args: JSONObject, conv: String?): ToolOut {
+    suspend fun status(args: JSONObject, conv: String?, refs: List<String>): ToolOut {
         val requested = args.optString("task_id").trim().removePrefix(PREFIX).substringBefore('|')
         val ids = if (requested.isNotEmpty()) listOf(requested) else
-            orders.entries.filter { it.value.conv == conv }.map { it.key }.takeLast(5)
+            (orders.entries.filter { it.value.conv == conv }.map { it.key } + refs.filter { it.startsWith(PREFIX) }.map(::keyOf)).distinct().takeLast(5)
         if (ids.isEmpty()) return ToolOut("没有找到本对话可查询的后台任务。若任务来自旧会话，请提供任务 id；不能据此推断任务已经完成。")
         val rows = ids.map { id ->
             val s = state[id]
