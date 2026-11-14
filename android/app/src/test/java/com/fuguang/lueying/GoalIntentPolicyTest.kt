@@ -22,9 +22,9 @@ class GoalIntentPolicyTest {
 
     @Test fun explicitGoalChangeRequiresCurrentUserQuote() {
         val message = "后台任务先不做了，改做绘画模块"
-        assertEquals(GoalIntentPolicy.Hint.CANCEL, GoalIntentPolicy.hint(message))
-        assertFalse(GoalIntentPolicy.authorizes("switch", message, "改做绘画模块"))
-        assertTrue(GoalIntentPolicy.authorizes("cancel", message, "先不做了"))
+        assertEquals(GoalIntentPolicy.Hint.SWITCH, GoalIntentPolicy.hint(message))
+        assertTrue(GoalIntentPolicy.authorizes("switch", message, "改做绘画模块"))
+        assertFalse(GoalIntentPolicy.authorizes("cancel", message, "先不做了"))
         assertTrue(GoalIntentPolicy.authorizes("switch", "换个目标，改做绘画模块", "改做绘画模块"))
         assertFalse(GoalIntentPolicy.authorizes("switch", "换个目标，改做绘画模块", "不存在的用户原话"))
     }
