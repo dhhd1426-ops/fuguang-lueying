@@ -376,7 +376,7 @@ class ChatState(val history: ConvStore) {
                             if (!made && workDraft == null) workDraft = WorkDraft(partial.length, n, 0, WorkDraft.title(n, a.toString()))
                             when (n) { Works.MAKE, Works.EDIT, WorkJobs.START, SentFiles.TOOL -> happened += "work"; SentPics.TOOL -> happened += "photo"; Materials.LOOK -> happened += "photo"; WebSearch.TOOL -> happened += "web" }
                             try {
-                            if (n == "manage_goal") GoalContinuity.runTool(cur, a, question)
+                            if (n == "manage_goal") GoalContinuity.runTool(cur, a, messages.lastOrNull { it.role == "user" }?.text.orEmpty())
                             else if (n == Memory.REMEMBER || n == Memory.FORGET || n == Memory.READ) Memory.runTool(who, n, a, cur.orEmpty(), convTitle0)
                             else if (n == Fold.LOOK) Fold.look(store0, cur, a)
                             else if (n == Recall.TOOL) Recall.run(store0, cur, a.optString("query"))
