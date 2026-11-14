@@ -29,6 +29,14 @@ class GoalIntentPolicyTest {
         assertFalse(GoalIntentPolicy.authorizes("switch", "换个目标，改做绘画模块", "不存在的用户原话"))
     }
 
+    @Test fun quotedInstructionsDoNotAuthorizeDestructiveActions() {
+        val reported = "他说换个目标，改做绘画模块"
+        assertEquals(GoalIntentPolicy.Hint.UNSURE, GoalIntentPolicy.hint(reported))
+        assertFalse(GoalIntentPolicy.authorizes("switch", reported, "改做绘画模块"))
+        val example = "例如取消任务会发生什么"
+        assertFalse(GoalIntentPolicy.authorizes("cancel", example, "取消任务"))
+    }
+
     @Test fun differentChatsDoNotImplyASwitch() {
         assertEquals(GoalIntentPolicy.Hint.UNSURE, GoalIntentPolicy.hint("你现在进行到哪里了？"))
         assertFalse(GoalIntentPolicy.authorizes("cancel", "取消的话会怎样", "取消的话"))
