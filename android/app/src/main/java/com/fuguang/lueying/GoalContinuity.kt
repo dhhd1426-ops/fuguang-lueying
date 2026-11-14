@@ -40,18 +40,20 @@ internal object GoalContinuity {
         // commit is synchronous: checkpoint is on disk before the UI reports success.
         check(prefs.edit().putString(key(id), state.toString()).commit()) { "Goal checkpoint could not be saved" }
     }
+    private fun value(s: JSONObject, key: String): String? =
+        if (s.isNull(key)) null else s.optString(key).takeIf { it.isNotBlank() }
     private fun entries(array: JSONArray?): List<String> =
         if (array == null) emptyList() else (0 until array.length()).map { array.optString(it) }
 
     fun snapshot(id: String): Snapshot = synchronized(lock) {
         val s = read(id)
         Snapshot(
-            id, s.optString("goal").takeIf { it.isNotBlank() },
+            id, value(s, "goal"),
             entries(s.optJSONArray("criteria")),
-            s.optString("step").takeIf { it.isNotBlank() },
+            value(s, "step"),
             runCatching { Status.valueOf(s.optString("status", "ACTIVE")) }.getOrDefault(Status.ACTIVE),
-            s.optString("branch").takeIf { it.isNotBlank() },
-            s.optString("resume").takeIf { it.isNotBlank() },
+            value(s, "branch"),
+            value(s, "resume"),
             s.optLong("revision")
         )
     }
