@@ -333,7 +333,7 @@ class ChatState(val history: ConvStore) {
                     append("\n\n你手边还有这些东西，需要时再用，不需要就不用：")
                     if (who.noteOn) append("\n").append(Memory.toolRule())
                     append("\n").append(Works.system(Memory.userCall, history, who.id))
-                    append(WorkJobs.brief(cur))
+                    append(WorkJobs.brief(cur, history.flatMap { it.works }))
                     append("\n").append(SentFiles.system(Memory.userCall))
                     append("\n").append(SentPics.system(Memory.userCall))
                     append("\n").append(Pacts.system(who, Memory.userCall))
@@ -394,7 +394,7 @@ class ChatState(val history: ConvStore) {
                             else if (n == Pacts.SET || n == Pacts.DROP) Pacts.run(n, a, who) { ref -> pendingWorks.add(ref); pendingWorkAt.add(partial.length) }
                             else if (n == SentFiles.TOOL) SentFiles.run(a, photos()) { ref -> pendingWorks.add(ref); pendingWorkAt.add(partial.length) }
                             else if (n == SentPics.TOOL) SentPics.run(a, photos()) { r -> if (r !in pendingImgs) pendingImgs.add(r) }
-                            else if (n == "get_work_status") WorkJobs.status(a, cur)
+                            else if (n == "get_work_status") WorkJobs.status(a, cur, history.flatMap { it.works })
                             else if (n == WorkJobs.START) WorkJobs.start(a, this@ChatState, store, who.id, history) { ref ->
                                 pendingWorks.add(ref)
                                 pendingWorkAt.add(partial.length)
