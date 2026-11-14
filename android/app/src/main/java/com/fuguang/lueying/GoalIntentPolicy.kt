@@ -12,12 +12,14 @@ internal object GoalIntentPolicy {
     private val switch = listOf("换个目标", "切换目标", "改做", "先不做", "换成", "改成新的任务", "switch goal", "instead work on")
     private val pause = listOf("暂停这个任务", "先暂停", "暂时停下", "pause this task")
     private val explore = listOf("看看", "查一下", "搜一下", "对比", "研究一下", "有没有类似", "compare", "research")
+    private val reportedSpeech = listOf("他说", "她说", "有人说", "比如说", "示例：", "例子：", "quoted:", "he said", "she said")
     private val continueWords = setOf("继续", "继续跟进", "接着做", "继续执行", "continue", "go on")
 
     fun hint(input: String): Hint {
         val message = input.trim()
         if (message.isEmpty()) return Hint.UNSURE
-        if (hypothetical.any { message.contains(it, ignoreCase = true) }) return Hint.UNSURE
+        if (hypothetical.any { message.contains(it, ignoreCase = true) } ||
+            reportedSpeech.any { message.contains(it, ignoreCase = true) }) return Hint.UNSURE
         if (continueWords.contains(message.lowercase())) return Hint.CONTINUE
         if (switch.any { message.contains(it, ignoreCase = true) }) return Hint.SWITCH
         if (cancel.any { message.contains(it, ignoreCase = true) }) return Hint.CANCEL
