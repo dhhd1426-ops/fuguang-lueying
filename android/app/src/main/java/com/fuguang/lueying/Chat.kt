@@ -226,6 +226,14 @@ class ChatState(val history: ConvStore) {
         // 每天第一次来找她：后台把之前没理过的记忆理一遍、过完的周月年收拢（MemoryLearn.kt）
         Reflect.daily(Memory.active)
         persist()
+        // Exact follow-up "continue" restores an unfinished side branch's mainline
+        // checkpoint before the next model request; unrelated messages never do so.
+        if (GoalIntentPolicy.hint(text) == GoalIntentPolicy.Hint.CONTINUE) {
+            convId?.let { id ->
+                runCatching { GoalContinuity.route(id, GoalContinuity.Intent.CONTINUE) }
+                    .onFailure { ReplyRuntime.note("goal_resume_failed " + it.javaClass.simpleName) }
+            }
+        }
         sent++
         ask(store)
         return messages.lastIndex
