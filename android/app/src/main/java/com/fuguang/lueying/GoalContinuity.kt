@@ -136,4 +136,84 @@ internal object GoalContinuity {
         for (i in maxOf(0, list.length() - 80) until list.length()) kept.put(list.get(i))
         check(prefs.edit().putString(name, kept.toString()).commit())
     }
+
+    /** Context for the model. Facts are read from durable state, not chat summaries. */
+    fun rule(id: String?): String {
+        if (id.isNullOrBlank()) return ""
+        val s = snapshot(id)
+        return buildString {
+            append("\n\n# 当前对话的工作目标（本地持久化任务账本）")
+            if (s.goal == null) append("\n尚未建立明确主线。普通聊天无需创建任务。")
+            else {
+                append("\n主线：").append(s.goal)
+                if (s.successCriteria.isNotEmpty()) append("\n验收：").append(s.successCriteria.joinToString("；"))
+                if (s.step != null) append("\n正在进行：").append(s.step)
+                append("\n状态：").append(s.status.name)
+                if (s.pendingBranch != null) append("\n当前探索支线：").append(s.pendingBranch)
+                if (s.resumeStep != null) append("\n支线结束后返回：").append(s.resumeStep)
+            }
+            append("""
+            
+            # 防偏航原则
+            - 用户提出关联问题、查资料、比较方案、质疑设计时，保留既定主线，把它当临时探索。得出结论后回归主线，不无限扩展支线。
+            - 用户说「继续」时，优先恢复上一次尚未完成的主线步骤；不凭空声称已执行。
+            - 用户明确要求暂停、取消或改为另一项任务时，服从最新指令；不要强迫用户回到旧任务。
+            - 修改方案不等于替换目标。行动先检查是否真正推进验收条件；信息足够就执行，不要无止境分析。
+            - 对长期任务用 manage_goal 维护目标和步骤。只有用户明确改变主线才允许 switch；完成须有实际验证证据。
+            - 当前账本只是计划与记录，不能证明工具已执行、测试通过或成果已交付。
+            """.trimIndent())
+        }
+    }
+
+    val spec get() = ToolSpec(
+        "manage_goal",
+        "管理当前对话的长期主线任务。开始长任务时 set_goal，执行进度更新 step，临时调研 branch，回到主线 resume，明确暂停 pause、取消 cancel，明确换目标 switch。普通闲聊不必调用。完成必须提供实际验证证据。",
+        JSONObject().put("type", "object")
+            .put("properties", JSONObject()
+                .put("action", JSONObject().put("type", "string").put("enum",
+                    JSONArray(listOf("set_goal", "step", "branch", "resume", "pause", "cancel", "switch", "complete", "status"))))
+                .put("text", JSONObject().put("type", "string").put("description", "目标、步骤、支线问题或已核实的完成证据"))
+                .put("criteria", JSONObject().put("type", "array").put("items",
+                    JSONObject().put("type", "string")))
+                .put("user_quote", JSONObject().put("type", "string")
+                    .put("description", "switch/cancel 时引用本轮用户原话，以便核对授权")))
+            .put("required", JSONArray(listOf("action")))
+    )
+
+    fun runTool(id: String?, args: JSONObject, latestUser: String): ToolOut {
+        if (id.isNullOrBlank()) return ToolOut("对话尚未建立，无法记录目标；请在本轮消息持久化后重试。")
+        val action = args.optString("action")
+        val body = args.optString("text").trim()
+        return runCatching {
+            if (action == "switch" || action == "cancel") {
+                val quote = args.optString("user_quote").trim()
+                require(quote.length >= 3 && latestUser.contains(quote)) {
+                    "更换或取消主线必须来自用户本轮明确指令，不得根据模型推断自行决定。"
+                }
+            }
+            when (action) {
+                "set_goal" -> {
+                    require(body.isNotBlank())
+                    require(snapshot(id).goal == null) { "主线已存在；请用 step/refine，明确切换才用 switch" }
+                    val arr = args.optJSONArray("criteria")
+                    setGoal(id, body, entries(arr), body.take(120))
+                }
+                "step" -> updateStep(id, body)
+                "branch" -> route(id, Intent.EXPLORE, body)
+                "resume" -> route(id, Intent.CONTINUE)
+                "pause" -> route(id, Intent.PAUSE)
+                "cancel" -> route(id, Intent.CANCEL)
+                "switch" -> route(id, Intent.SWITCH, body)
+                "complete" -> completed(id, body)
+                "status" -> Unit
+                else -> error("未知目标动作")
+            }
+            val s = snapshot(id)
+            ToolOut("目标账本已核实：主线=" + (s.goal ?: "未设置") +
+                "；状态=" + s.status.name + "；步骤=" + (s.step ?: "未设置") +
+                "；临时分支=" + (s.pendingBranch ?: "无") + "；版本=" + s.revision +
+                "。这仅确认任务账本更新，不代表执行、编译或交付已经完成。")
+        }.getOrElse { ToolOut("目标账本更新失败：" + (it.message ?: it.javaClass.simpleName).take(160)) }
+    }
+
 }
