@@ -184,7 +184,7 @@ class ChatState(val history: ConvStore) {
         sent++
     }
 
-    private fun persist() { convId = history.save(convId, messages) }
+    private fun persist() { convId = history.save(convId, messages); GoalContinuity.touch(convId) }
 
     /** 她按约定主动来找你，正好开着这段：接在后面，存好，返回对话 id。 */
     fun arrive(m: ChatMsg): String? { messages.add(m); persist(); return convId }
@@ -325,13 +325,14 @@ class ChatState(val history: ConvStore) {
                 val videoRefs = MotionTools.references(history)
                 val motionReviewer = AttachLook.helper(store)?.let { (id, name) -> ArtworkJob.Model(provider(id), store.config(id), name, store.effort(id, name)) }
                 val motion = MotionTools.Session(videoRefs, Attach.vision(p.id, store.activeModel), motionReviewer)
-                val specs = (if (who.noteOn) Memory.toolSpecs else emptyList()) + Works.specs.filter { it.name != Works.MAKE } + WorkJobs.spec + WorkJobs.statusSpec + SentFiles.spec + SentPics.spec + Pacts.specs + Materials.specs + VideoParse.specs + MotionTools.specs + PanTools.specs + ClockTools.specs + WebHand.specs + skills + (if (web) listOf(WebSearch.spec) else emptyList()) + (if (yu) Yu.tools else emptyList()) + (if (recall) listOf(Recall.spec, Recall.openSpec) else emptyList()) + (if (folded != null) listOf(Fold.spec) else emptyList()) + mcp
+                val specs = listOf(GoalContinuity.spec) + (if (who.noteOn) Memory.toolSpecs else emptyList()) + Works.specs.filter { it.name != Works.MAKE } + WorkJobs.spec + WorkJobs.statusSpec + SentFiles.spec + SentPics.spec + Pacts.specs + Materials.specs + VideoParse.specs + MotionTools.specs + PanTools.specs + ClockTools.specs + WebHand.specs + skills + (if (web) listOf(WebSearch.spec) else emptyList()) + (if (yu) Yu.tools else emptyList()) + (if (recall) listOf(Recall.spec, Recall.openSpec) else emptyList()) + (if (folded != null) listOf(Fold.spec) else emptyList()) + mcp
                 val convTitle0 = store0.get(cur)?.title ?: firstSentence(question, 18)
                 // 对方发来的照片，最近的在前：send_image / send_file 里 photo:1 就是最近那张
                 fun photos(): List<java.io.File> = history.filter { it.role == "user" }.flatMap { it.files }.filter { Attach.isImage(it) }.reversed().map { Attach.file(it) }
                 val extra = buildString {
                     append("\n\n你手边还有这些东西，需要时再用，不需要就不用：")
                     if (who.noteOn) append("\n").append(Memory.toolRule())
+                    append("\n").append(GoalContinuity.rule(cur))
                     append("\n").append(Works.system(Memory.userCall, history, who.id))
                     append(WorkJobs.brief(cur, history.flatMap { it.works }))
                     append("\n").append(SentFiles.system(Memory.userCall))
@@ -375,7 +376,8 @@ class ChatState(val history: ConvStore) {
                             if (!made && workDraft == null) workDraft = WorkDraft(partial.length, n, 0, WorkDraft.title(n, a.toString()))
                             when (n) { Works.MAKE, Works.EDIT, WorkJobs.START, SentFiles.TOOL -> happened += "work"; SentPics.TOOL -> happened += "photo"; Materials.LOOK -> happened += "photo"; WebSearch.TOOL -> happened += "web" }
                             try {
-                            if (n == Memory.REMEMBER || n == Memory.FORGET || n == Memory.READ) Memory.runTool(who, n, a, cur.orEmpty(), convTitle0)
+                            if (n == "manage_goal") GoalContinuity.runTool(cur, a, question)
+                            else if (n == Memory.REMEMBER || n == Memory.FORGET || n == Memory.READ) Memory.runTool(who, n, a, cur.orEmpty(), convTitle0)
                             else if (n == Fold.LOOK) Fold.look(store0, cur, a)
                             else if (n == Recall.TOOL) Recall.run(store0, cur, a.optString("query"))
                             else if (n == Recall.OPEN) Recall.open(store0, a)
