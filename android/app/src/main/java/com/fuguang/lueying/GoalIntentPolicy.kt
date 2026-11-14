@@ -19,8 +19,8 @@ internal object GoalIntentPolicy {
         if (message.isEmpty()) return Hint.UNSURE
         if (hypothetical.any { message.contains(it, ignoreCase = true) }) return Hint.UNSURE
         if (continueWords.contains(message.lowercase())) return Hint.CONTINUE
-        if (cancel.any { message.contains(it, ignoreCase = true) }) return Hint.CANCEL
         if (switch.any { message.contains(it, ignoreCase = true) }) return Hint.SWITCH
+        if (cancel.any { message.contains(it, ignoreCase = true) }) return Hint.CANCEL
         if (pause.any { message.contains(it, ignoreCase = true) }) return Hint.PAUSE
         if (explore.any { message.contains(it, ignoreCase = true) }) return Hint.EXPLORE
         return Hint.UNSURE
