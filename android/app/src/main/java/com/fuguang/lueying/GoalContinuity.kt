@@ -84,7 +84,7 @@ internal object GoalContinuity {
         when (intent) {
             Intent.EXPLORE -> {
                 require(!text.isNullOrBlank()) { "Branch needs a purpose" }
-                if (s.optString("branch").isBlank()) {
+                if (value(s, "branch") == null) {
                     s.put("resume", s.optString("step")).put("branch", text.take(500))
                 }
             }
@@ -92,14 +92,14 @@ internal object GoalContinuity {
             Intent.CANCEL -> s.put("status", Status.CANCELLED.name)
             Intent.CONTINUE -> {
                 s.put("status", Status.ACTIVE.name)
-                if (s.optString("branch").isNotBlank()) {
-                    s.put("step", s.optString("resume"))
+                if (value(s, "branch") != null) {
+                    s.put("step", value(s, "resume") ?: JSONObject.NULL)
                     s.remove("branch"); s.remove("resume")
                 }
             }
             Intent.SWITCH -> {
                 require(!text.isNullOrBlank()) { "Switch needs an explicit new goal" }
-                val previous = s.optString("goal")
+                val previous = value(s, "goal").orEmpty()
                 if (previous.isNotBlank()) s.put("previous_goal", previous)
                 s.put("goal", text.take(2000)).put("criteria", JSONArray())
                     .put("status", Status.ACTIVE.name)
@@ -180,6 +180,22 @@ internal object GoalContinuity {
             .put("required", JSONArray(listOf("action")))
     )
 
+    /**
+     * A verbatim quote alone is insufficient authorization: quoting a hypothetical
+     * or asking "what if I cancel?" must not destroy the active goal.
+     * This is a conservative guard; ambiguous instructions remain unchanged.
+     */
+    private fun explicitChange(action: String, message: String): Boolean {
+        val normalized = message.trim()
+        val hypothetical = listOf("如果", "假如", "假设", "举例", "例如", "会怎样", "怎么办", "what if", "suppose")
+        if (hypothetical.any { normalized.contains(it, ignoreCase = true) }) return false
+        val commands = if (action == "cancel")
+            listOf("取消任务", "取消这个任务", "不做了", "停止这个任务", "放弃这个任务", "cancel this task", "stop this task")
+        else
+            listOf("换个目标", "切换目标", "改做", "先不做", "换成", "改成新的任务", "switch goal", "instead work on")
+        return commands.any { normalized.contains(it, ignoreCase = true) }
+    }
+
     fun runTool(id: String?, args: JSONObject, latestUser: String): ToolOut {
         if (id.isNullOrBlank()) return ToolOut("对话尚未建立，无法记录目标；请在本轮消息持久化后重试。")
         val action = args.optString("action")
@@ -187,7 +203,7 @@ internal object GoalContinuity {
         return runCatching {
             if (action == "switch" || action == "cancel") {
                 val quote = args.optString("user_quote").trim()
-                require(quote.length >= 3 && latestUser.contains(quote)) {
+                require(quote.length >= 3 && latestUser.contains(quote) && explicitChange(action, latestUser)) {
                     "更换或取消主线必须来自用户本轮明确指令，不得根据模型推断自行决定。"
                 }
             }
