@@ -120,6 +120,8 @@ class ChatState(val history: ConvStore) {
     val messages = mutableStateListOf<ChatMsg>()
     /** 当前这段对话在记录里的 id；还没发过消息时为 null。 */
     var convId by mutableStateOf<String?>(null)
+    /** 这段对话在哪个项目里（Projects.kt）；项目里点「新建会话」时先定下，第一次存盘时记进项目。 */
+    var project by mutableStateOf<String?>(null)
     var partial by mutableStateOf("")
     var shown by mutableFloatStateOf(0f)
     var busy by mutableStateOf(false)
@@ -173,6 +175,7 @@ class ChatState(val history: ConvStore) {
         job?.cancel(); job = null
         messages.clear(); queue.clear(); partial = ""; shown = 0f; busy = false; thinking = false; thinkText = ""; error = null; needsSetup = false
         convId = null
+        project = null
     }
 
     /** 打开记录里的一段对话。 */
@@ -182,13 +185,18 @@ class ChatState(val history: ConvStore) {
         reset()
         messages.addAll(c.msgs)
         convId = c.id
+        project = Projects.of(c.id)
         if (messages.lastOrNull()?.interrupted == true)
             error = "上次回答中断，已恢复收到的内容，可以继续"
         Notify.cancel(c.id)
         sent++
     }
 
-    private fun persist() { convId = history.save(convId, messages) }
+    private fun persist() {
+        convId = history.save(convId, messages)
+        val pj = project; val id = convId
+        if (pj != null && id != null) Projects.link(id, pj)
+    }
 
     /** 她按约定主动来找你，正好开着这段：接在后面，存好，返回对话 id。 */
     fun arrive(m: ChatMsg): String? { messages.add(m); persist(); return convId }
@@ -363,7 +371,8 @@ class ChatState(val history: ConvStore) {
                 if (hits.isNotEmpty()) liveSteps.add(0, Recall.step(hits))
                 val stepNudge = Steps.Nudge()
                 var searchedOnce = false
-                val sys0 = Prompt.system(who, model0)
+                // 项目里的对话：自定义指令和文字资料接在最后（每轮一样，能缓存）
+                val sys0 = Prompt.system(who, model0) + Projects.system(this@ChatState.project ?: Projects.of(cur))
                 sentEst = CtxWin.est(sent0) + CtxWin.est(sys0) + CtxWin.est(extra)
                 ChatApi.stream(
                     p, c, model0, sys0, Entries.weave(who, sent0, Prompt.aside(who, history, who.prevAt) + Lessons.aside(shownLessons, slips) + Recall.note(hits).let { if (it.isEmpty()) "" else "\n$it" } + Fold.note(conv0).let { if (it.isEmpty()) "" else "\n$it" }), effort,
@@ -693,6 +702,7 @@ fun ChatPage(
     var editFly by remember { mutableStateOf<Pair<String, androidx.compose.ui.geometry.Rect>?>(null) }
     var flyHost by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
     androidx.activity.compose.BackHandler(enabled = menu) { menu = false }
+    LaunchedEffect(Projects.chatTick) { if (Projects.chatTick > 0) menu = false }
     // 侧栏滑出 320ms：值只在 graphicsLayer 里读，整页只在「开始露出 / 完全收起」时重组
     val menuA = androidx.compose.animation.core.animateFloatAsState(
         if (menu) 1f else 0f, tween(320, easing = androidx.compose.animation.core.CubicBezierEasing(.2f, .8f, .2f, 1f)), label = "menu",
@@ -725,7 +735,7 @@ fun ChatPage(
                 .imePadding()
                 .padding(start = side, end = side, top = if (compact) 26.dp else 38.dp, bottom = if (compact) 22.dp else 30.dp),
         ) {
-            ChatHeader(compact, chat.messages.isEmpty() && !chat.busy, false, chat.convId?.let { chat.history.get(it) }, onMenu = { menu = true }) { Chats.fresh() }
+            ChatHeader(compact, chat.messages.isEmpty() && !chat.busy, false, chat.convId?.let { chat.history.get(it) }, chat.project, onMenu = { menu = true }) { Chats.fresh() }
             Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                 if (chat.messages.isEmpty() && !chat.busy) ChatHello(compact, store, chat)
                 else Conversation(chat, store, compact, flight, onSetup = onSetup, onRetry = { chat.retry(scope, store) }, onThink = { thinkOf = it; thinkOpen = true }, onImage = { viewing = it }, onWork = { workOpen = it },
@@ -851,11 +861,31 @@ fun ChatPage(
 }
 
 @Composable
-private fun ChatHeader(compact: Boolean, empty: Boolean, busy: Boolean, conv: Conv?, onMenu: () -> Unit, onNew: () -> Unit) {
+private fun ChatHeader(compact: Boolean, empty: Boolean, busy: Boolean, conv: Conv?, project: String?, onMenu: () -> Unit, onNew: () -> Unit) {
     // 左：侧栏（对话、作品、手记、切换助理、新对话）；右：新对话（照 Claude App），有话了再加一个 ⋮（ConvMenu.kt）
     Box(Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
         Pressable(onMenu, Modifier.align(Alignment.CenterStart), label = "对话和助理") { pressed ->
             SvgIcon(Ic("M4 6.5h15M4 12h10M4 17.5h13"), if (pressed) Page.ink else Page.ink.copy(alpha = .85f), 22.dp, modifier = Modifier.padding(6.dp))
+        }
+        // 项目里的对话：正中一枚「项目名」，点了回到这个项目（ProjectsUi.kt）
+        val pj = Projects.get(project)
+        androidx.compose.animation.AnimatedVisibility(
+            pj != null, Modifier.align(Alignment.Center),
+            enter = androidx.compose.animation.fadeIn(tween(240)) + androidx.compose.animation.slideInVertically(tween(240, easing = Curves.standard)) { -it / 4 },
+            exit = androidx.compose.animation.fadeOut(tween(160)),
+        ) {
+            var last by remember { mutableStateOf("") }
+            if (pj != null) last = pj.name
+            Pressable({ if (pj != null) { Projects.showing = pj.id; Projects.open = true } }, label = last) { pr ->
+                Row(
+                    Modifier.widthIn(max = 220.dp).background(veil(if (pr) .1f else 0f), RoundedCornerShape(50)).padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    SvgIcon(ProjIcons.proj, Page.muted, 16.dp, stroke = 1.5f)
+                    Spacer(Modifier.width(6.dp))
+                    Txt(last, Page.muted, 14.sp, maxLines = 1)
+                }
+            }
         }
         Row(Modifier.align(Alignment.CenterEnd), verticalAlignment = Alignment.CenterVertically) {
             NewChatButton(empty, busy, compact, onNew)

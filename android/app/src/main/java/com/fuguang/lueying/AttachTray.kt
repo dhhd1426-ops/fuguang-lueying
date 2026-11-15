@@ -145,7 +145,7 @@ private fun FileChip(ref: String, modifier: Modifier) {
 
 /** 小图：按要的大小缩着读，免得大照片撑爆内存。 */
 @Composable
-private fun Thumb(ref: String, modifier: Modifier, px: Int = 360, spot: Boolean = false) {
+internal fun Thumb(ref: String, modifier: Modifier, px: Int = 360, spot: Boolean = false) {
     val img by produceState<ImageBitmap?>(null, ref) {
         value = withContext(Dispatchers.IO) {
             runCatching {

@@ -65,6 +65,7 @@ internal object SideIcons {
 /** 这段对话的图标：置顶是四角星，做过作品是作品图标，其余是对话气泡。 */
 internal fun convIcon(c: Conv): Ic = when {
     c.pinned -> Icons.spark
+    Projects.of(c.id) != null -> ProjIcons.proj
     c.msgs.any { it.works.isNotEmpty() } -> SideIcons.work
     else -> SideIcons.chat
 }
@@ -134,6 +135,10 @@ private fun androidx.compose.foundation.layout.ColumnScope.SideBody(
             SideRow(SideIcons.pen, "手记", onJournal, modifier = Modifier.onGloballyPositioned { NoteCard.from = it.boundsInRoot().center })
             // 下载：右边有在下的进度圈 / 没看过的杏色小点；点了从右边滑进下载页（侧栏留着，返回回到这里）
             SideRow(Ic("M12 4v11M7.5 10.5L12 15l4.5-4.5M5 19h14"), "下载", { Downloads.open = true }) { DlSideTrail() }
+            // 项目（ProjectsUi.kt）：盖在聊天页上面，跟下载页一样
+            SideRow(ProjIcons.proj, "项目", { Projects.showing = null; Projects.open = true }) {
+                if (Projects.all.isNotEmpty()) Txt("${Projects.all.size}", SideFaint, 13.sp)
+            }
             // 一道不碰边的细线
             Box(Modifier.padding(horizontal = 12.dp, vertical = 8.dp).fillMaxWidth().height(1.dp).background(veil(.07f)))
             // 换了助理：她的对话列表交叉换上来（旧的淡出上移，新的淡入从下浮起）

@@ -39,6 +39,7 @@ class MainActivity : ComponentActivity() {
         Illust.init(this)
         Avatars.init(this)
         Attach.init(this)
+        Projects.init(this)
         ThinkTidy.dir = java.io.File(filesDir, "tidy")
         Memory.init(prefs)
         MemModel.init(prefs)
