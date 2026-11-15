@@ -135,8 +135,6 @@ private fun MineCardBody(t: Float, onGo: (String) -> Unit, onSpot: (SettingSpot)
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
                     Txt("我的", Page.ink, 19.sp, spacing = ls(2.6f, 19f), family = Serif)
-                    Spacer(Modifier.height(2.dp))
-                    Txt("${me.ifEmpty { "你" }} · 在这台手机上", Page.muted.copy(alpha = .62f), 11.5.sp, maxLines = 1)
                 }
             }
         }
@@ -155,7 +153,7 @@ private fun MineCardBody(t: Float, onGo: (String) -> Unit, onSpot: (SettingSpot)
 
 @Composable
 private fun MineCardList(t: Float, onGo: (String) -> Unit) {
-    MineRow(1, t, "助理", "名字、提示词、记忆", { onGo("assistant") }, glyph = { SvgIcon(person, warm, 19.dp) }) {
+    MineRow(1, t, "助理", "", { onGo("assistant") }, glyph = { SvgIcon(person, warm, 19.dp) }) {
         PersonaDot(Memory.active, 20.dp)
         Spacer(Modifier.width(6.dp))
         Txt(Memory.active.name, Page.muted, 13.5.sp, Modifier.widthIn(max = 96.dp), maxLines = 1)
@@ -163,7 +161,9 @@ private fun MineCardList(t: Float, onGo: (String) -> Unit) {
         SvgIcon(chevron, Page.muted.copy(alpha = .6f), 15.dp, stroke = 1.8f)
     }
     Spacer(Modifier.height(6.dp))
-    MineRow(2, t, "功能", if (WebSearch.enabledCount > 0) "已启用 ${WebSearch.enabledCount} 项" else "都关着", { onGo("features") }, glyph = { SvgIcon(tune, warm, 19.dp, stroke = 1.6f) }) {
+    MineRow(2, t, "功能", "", { onGo("features") }, glyph = { SvgIcon(tune, warm, 19.dp, stroke = 1.6f) }) {
+        Txt(if (WebSearch.enabledCount > 0) "${WebSearch.enabledCount} 项" else "关", Page.muted, 13.5.sp, maxLines = 1)
+        Spacer(Modifier.width(4.dp))
         SvgIcon(chevron, Page.muted.copy(alpha = .6f), 15.dp, stroke = 1.8f)
     }
     Txt("连接器", Page.muted, 11.sp, Modifier.padding(start = 8.dp, top = 14.dp, bottom = 8.dp).mineRise(2, t), spacing = ls(2.75f, 11f))
@@ -175,7 +175,7 @@ private fun MineCardList(t: Float, onGo: (String) -> Unit) {
     val on = Mcp.enabled().size
     MineRow(
         4, t, "MCP 服务",
-        if (n == 0) "地图、车票、搜索……接上就能用" else Mcp.servers.filter { it.enabled }.joinToString("、") { it.name }.ifEmpty { "都关着" },
+        if (n == 0) "" else Mcp.servers.filter { it.enabled }.joinToString("、") { it.name }.ifEmpty { "都关着" },
         { onGo("mcp") },
         glyph = { Txt("M", warm, 16.sp, family = Serif) },
     ) {
@@ -187,14 +187,17 @@ private fun MineCardList(t: Float, onGo: (String) -> Unit) {
         }
         SvgIcon(chevron, Page.muted.copy(alpha = .6f), 15.dp, stroke = 1.8f)
     }
-    Txt("主题", Page.muted, 11.sp, Modifier.padding(start = 8.dp, top = 14.dp, bottom = 8.dp).mineRise(5, t), spacing = ls(2.75f, 11f))
-    MineRow(5, t, "主题", Skin.name(), { onGo("theme") }, glyph = { ThemeGlyph(warm) }) {
+    // 分组靠间距，不再给只有一两行的组写标题
+    Spacer(Modifier.height(18.dp))
+    MineRow(5, t, "主题", "", { onGo("theme") }, glyph = { ThemeGlyph(warm) }) {
+        Txt(Skin.name(), Page.muted, 13.5.sp, maxLines = 1)
+        Spacer(Modifier.width(4.dp))
         SvgIcon(chevron, Page.muted.copy(alpha = .6f), 15.dp, stroke = 1.8f)
     }
-    Txt("其他", Page.muted, 11.sp, Modifier.padding(start = 8.dp, top = 14.dp, bottom = 8.dp).mineRise(5, t), spacing = ls(2.75f, 11f))
+    Spacer(Modifier.height(6.dp))
     Column(Modifier.spot("backup")) { BackupRow(6, t) }
     Spacer(Modifier.height(6.dp))
-    MineRow(7, t, "关于 Vignette", "背景作品 · 版权", { onGo("about") }, glyph = { SvgIcon(Icons.spark, warm, 18.dp, stroke = 1.1f) }) {
+    MineRow(7, t, "关于 Vignette", "", { onGo("about") }, glyph = { SvgIcon(Icons.spark, warm, 18.dp, stroke = 1.1f) }) {
         SvgIcon(chevron, Page.muted.copy(alpha = .6f), 15.dp, stroke = 1.8f)
     }
     Spacer(Modifier.height(8.dp))

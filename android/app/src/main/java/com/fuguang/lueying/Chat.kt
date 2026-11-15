@@ -1233,7 +1233,7 @@ private fun ChatInput(
         Modifier
             .fillMaxWidth()
             .padding(end = sep * t.coerceAtLeast(0f))
-            .glass(shapeNow, blur, fill = Skin.tint(.42f), border = Color.Transparent)
+            .glass(shapeNow, blur, fill = Skin.tint(.42f), border = if (chat.editing >= 0) Skin.accent.copy(alpha = .55f) else Color.Transparent)
             .pointerInput(Unit) { detectTapGestures { runCatching { inputFocus.requestFocus() } } }
             .layout { m, c ->
                 val pl = m.measure(c)
@@ -1268,21 +1268,7 @@ private fun ChatInput(
                     }
                 }
             }
-            // 编辑重发：输入框上方一条杏色提示，点 × 放弃
-            androidx.compose.animation.AnimatedVisibility(
-                chat.editing >= 0,
-                enter = androidx.compose.animation.expandVertically(tween(260)) + androidx.compose.animation.fadeIn(tween(260)),
-                exit = androidx.compose.animation.shrinkVertically(tween(220)) + androidx.compose.animation.fadeOut(tween(180)),
-            ) {
-                Row(Modifier.fillMaxWidth().padding(start = 4.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                    SvgIcon(Ic("M13.5 6.5l4 4M5 19l1-4.5L15.5 5a1.5 1.5 0 0 1 2 0l1.5 1.5a1.5 1.5 0 0 1 0 2L9.5 18z"), Skin.accent, 15.dp)
-                    Spacer(Modifier.width(6.dp))
-                    Txt("编辑消息，发送后从这里重新回答", Skin.accent, 12.5.sp, Modifier.weight(1f), maxLines = 1)
-                    Pressable({ chat.editing = -1; chat.draft = "" }, label = "放弃编辑") { _ ->
-                        SvgIcon(Icons.close, Page.muted, 16.dp, modifier = Modifier.padding(4.dp))
-                    }
-                }
-            }
+            // 编辑重发：不再写提示句。输入框描一圈杏色边，右上角一个 ×；要重答的那条和后面的回复本来就变淡了
             AttachTray(chat, AttachLook.sees(provider, AttachLook.store, model), model)
             BasicTextField(
                 value = chat.draft,
@@ -1301,9 +1287,14 @@ private fun ChatInput(
                     .focusRequester(inputFocus)
                     .onGloballyPositioned { chat.inputAt = it.boundsInRoot() },
                 decorationBox = { inner ->
-                    Box {
-                        if (chat.draft.isEmpty()) Txt("回信给 $title…", Page.muted, if (compact) 15.sp else 16.sp)
-                        inner()
+                    Box(Modifier.fillMaxWidth()) {
+                        Box(Modifier.padding(end = if (chat.editing >= 0) 30.dp else 0.dp)) {
+                            if (chat.draft.isEmpty()) Txt("回信给 $title…", Page.muted, if (compact) 15.sp else 16.sp)
+                            inner()
+                        }
+                        if (chat.editing >= 0) Pressable({ chat.editing = -1; chat.draft = "" }, Modifier.align(Alignment.TopEnd), label = "放弃编辑") { pr ->
+                            SvgIcon(Icons.close, if (pr) Page.ink else Page.muted, 15.dp, modifier = Modifier.background(veil(if (pr) .14f else .08f), CircleShape).padding(5.dp))
+                        }
                     }
                 },
             )
@@ -1324,7 +1315,8 @@ private fun ChatInput(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Txt(model.ifBlank { "选择模型" }, Page.ink, 12.sp, maxLines = 1)
-                        if (think != null) Txt(" · " + (if (think == Effort.OFF) "不思考" else Effort.label(think)), if (think == Effort.OFF) Page.muted else Page.accent, 12.sp, maxLines = 1)
+                        // 关着思考就什么都不写：没有杏色后缀本身就是「不思考」
+                        if (think != null && think != Effort.OFF) Txt(" · " + Effort.label(think), Page.accent, 12.sp, maxLines = 1)
                     }
                 }
                 Spacer(Modifier.weight(1f))

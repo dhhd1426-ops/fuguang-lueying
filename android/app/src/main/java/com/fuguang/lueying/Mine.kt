@@ -421,7 +421,7 @@ private fun ColumnScope.BasicTab(store: AssistantStore, p: Persona, blur: Dp, na
                 SvgIcon(MineIcons.next, Page.muted, 18.dp)
             }
     }
-    Txt("回 答 的 手 感", Page.muted, 11.sp, Modifier.padding(start = 4.dp, top = 24.dp, bottom = 10.dp), spacing = ls(1f, 11f))
+    Spacer(Modifier.height(16.dp))
     // 第 381 版：三段拆成三块色块，中间 3dp 缝代替分割线；头尾两块外角 20、里角 8
     val top = RoundedCornerShape(20.dp, 20.dp, 8.dp, 8.dp)
     val mid = RoundedCornerShape(8.dp)
@@ -435,24 +435,20 @@ private fun ColumnScope.BasicTab(store: AssistantStore, p: Persona, blur: Dp, na
             }
             Spacer(Modifier.height(8.dp))
             FeelSlider(p.temp, 0f, 2f, .05f, onDone = { Memory.save() }) { p.temp = it }
-            Ends("稳重、可预期", "随性、跳脱")
         }
         // Top P
         Column(Modifier.fillMaxWidth().spot("topp").block(mid, blur).padding(horizontal = 18.dp, vertical = 16.dp).animateContentSize()) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            // 没自己设：右边写「默认」、滑杆变暗；拖一下就是自己设，点数值旁的 ↺ 回到默认
+            Row(verticalAlignment = Alignment.Bottom) {
                 Txt("Top P", Page.ink, 15.sp, Modifier.weight(1f))
-                ChoiceChip("用供应商默认", !p.topOn) { p.topOn = false; Memory.save() }
-                Spacer(Modifier.width(8.dp))
-                ChoiceChip("自己设", p.topOn) { p.topOn = true; Memory.save() }
-            }
-            if (p.topOn) {
-                Spacer(Modifier.height(12.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.weight(1f)) { FeelSlider(p.top, .1f, 1f, .05f, onDone = { Memory.save() }) { p.top = it } }
-                    Spacer(Modifier.width(12.dp))
-                    Txt(String.format(java.util.Locale.US, "%.2f", p.top), warm, 18.sp, Modifier.widthIn(min = 44.dp), family = Serif, align = androidx.compose.ui.text.style.TextAlign.End)
+                if (p.topOn) Pressable({ p.topOn = false; Memory.save() }, Modifier.padding(end = 6.dp), label = "回到默认") { pr ->
+                    SvgIcon(Ic("M5 12a7 7 0 1 0 2.1-5M5 4.5V8h3.5"), if (pr) Page.ink else Page.muted, 16.dp, stroke = 1.6f)
                 }
-                Ends("只挑最稳的词", "放开挑")
+                Txt(if (p.topOn) String.format(java.util.Locale.US, "%.2f", p.top) else "默认", if (p.topOn) warm else Page.muted, 18.sp, family = Serif)
+            }
+            Spacer(Modifier.height(8.dp))
+            Box(Modifier.graphicsLayer { alpha = if (p.topOn) 1f else .35f }) {
+                FeelSlider(if (p.topOn) p.top else 1f, .1f, 1f, .05f, onDone = { Memory.save() }) { p.top = it; p.topOn = true }
             }
         }
         // 上下文消息限制：10–200 条，最右边是「不限」
@@ -468,11 +464,7 @@ private fun ColumnScope.BasicTab(store: AssistantStore, p: Persona, blur: Dp, na
     }
     Spacer(Modifier.height(22.dp))
     if (p.id == Memory.activeId) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.size(5.dp).background(warm, CircleShape))
-            Spacer(Modifier.width(8.dp))
-            Txt("${p.name} 正在陪你聊天", Page.muted, 13.sp)
-        }
+        // 正在聊的这位：名片左上角一颗杏色点（NameCard），这里不再写一句
     } else {
         PillButton("让 ${p.name} 陪你聊天", null, primary = true, modifier = Modifier.fillMaxWidth()) { Memory.use(p) }
     }
@@ -499,6 +491,7 @@ private fun NameCard(p: Persona, blur: Dp) {
     }
     Box(Modifier.fillMaxWidth().block(RoundedCornerShape(20.dp), blur)) {
         NamePair(p, a, u, { a = it.take(16) }, { u = it.take(16) })
+        if (p.id == Memory.activeId) Box(Modifier.align(Alignment.TopStart).padding(14.dp).size(7.dp).background(warm, CircleShape))
         // 保存：杏色细线从左划到右，然后淡掉
         Box(
             Modifier.align(Alignment.BottomStart).fillMaxWidth().height(2.dp)
@@ -530,14 +523,6 @@ private fun NameField(label: String, value: String, hint: String, modifier: Modi
                 }
             },
         )
-    }
-}
-
-@Composable
-private fun Ends(left: String, right: String) {
-    Row(Modifier.fillMaxWidth().padding(top = 4.dp)) {
-        Txt(left, Page.muted, 11.5.sp, Modifier.weight(1f))
-        Txt(right, Page.muted, 11.5.sp)
     }
 }
 
@@ -618,7 +603,7 @@ private fun ColumnScope.PromptTab(p: Persona, blur: Dp) {
         modifier = Modifier.fillMaxWidth(),
         decorationBox = { inner ->
             Box(Modifier.fillMaxWidth().spot("sys").heightIn(min = 280.dp).glass(RoundedCornerShape(20.dp), blur, fill = glassFill).padding(18.dp)) {
-                if (draft.isEmpty()) Txt("用「你是…」写下 ${p.name} 本来的样子、怎么说话。留空就用默认的样子。", Page.muted.copy(alpha = .6f), 14.5.sp, lineHeight = 24.sp)
+                if (draft.isEmpty()) Txt("你是…", Page.muted.copy(alpha = .6f), 14.5.sp, lineHeight = 24.sp)
                 inner()
             }
         },
@@ -634,7 +619,19 @@ private fun ColumnScope.PromptTab(p: Persona, blur: Dp) {
         }
         SaveButton(dirty = draft != p.sys) { p.sys = draft; Memory.save(); undo.reset(draft) }
     }
-    Txt("写在这里的，就是她自己。她的名字和你的称呼会先告诉她；文中可以写 {char}、{name}、{model}、{date}。", Page.muted, 12.5.sp, Modifier.padding(start = 6.dp, top = 8.dp), lineHeight = 20.sp)
+    // 能用的变量直接摆出来，点一下插到光标处，不再写一段说明
+    Row(Modifier.fillMaxWidth().padding(start = 2.dp, top = 12.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        for (tok in listOf("{char}", "{name}", "{model}", "{date}")) {
+            Pressable({
+                val sel = field.selection
+                val a = minOf(sel.start, sel.end).coerceIn(0, field.text.length); val b = maxOf(sel.start, sel.end).coerceIn(0, field.text.length)
+                val next = field.text.replaceRange(a, b, tok)
+                undo.typed(field.text, next); put(next, a + tok.length)
+            }, label = tok) { pr ->
+                Txt(tok, Page.muted, 12.sp, Modifier.background(veil(if (pr) .12f else .06f), RoundedCornerShape(50)).padding(horizontal = 11.dp, vertical = 6.dp), maxLines = 1)
+            }
+        }
+    }
     IdentityHint(draft) { swap(it) }
     Column(Modifier.spot("entries")) { EntriesSection(p, blur) }
 }
@@ -729,17 +726,29 @@ internal fun kindZh(k: String) = MemTree.kindZh(k)
 private val menuIc = Ic("M4 7h16M4 12h16M4 17h16")
 private val modelIc = Ic("M7 5h10a3 3 0 0 1 3 3v8a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3V8a3 3 0 0 1 3-3ZM8.5 10h7M8.5 14h4.5")
 private val listIc = Ic("M5 7h14M5 12h14M5 17h8")
-private val infoIc = Ic("M12 11v5.5M12 7.6v.4", circles = listOf(floatArrayOf(12f, 12f, 9f)))
 
 @Composable
 private fun ColumnScope.MemoryTab(p: Persona, blur: Dp, onFold: () -> Unit, onBook: () -> Unit) {
     val days = if (p.firstAt <= 0) 0 else ((System.currentTimeMillis() - p.firstAt) / 86_400_000L).toInt() + 1
-    Txt(if (days == 0) "${p.name} 还在认识你" else "${p.name} 认识你 $days 天了", Page.ink, 19.sp, Modifier.padding(start = 4.dp, top = 2.dp, bottom = 16.dp), family = Serif, lineHeight = 30.sp)
+    // 三个数字代替一句话：相识几天、聊过几次、记得几件
+    Row(Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 20.dp), verticalAlignment = Alignment.CenterVertically) {
+        for ((i, s) in listOf(Triple(days, "天", "相识"), Triple(p.chats, "次", "聊过"), Triple(p.items.size, "件", "记得")).withIndex()) {
+            if (i > 0) Box(Modifier.width(1.dp).height(30.dp).background(veil(.08f)))
+            Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                Row(verticalAlignment = Alignment.Bottom) {
+                    Txt("${s.first}", Page.ink, 30.sp, family = Serif, maxLines = 1)
+                    Spacer(Modifier.width(3.dp))
+                    Txt(s.second, Page.muted, 13.sp, Modifier.padding(bottom = 5.dp), maxLines = 1)
+                }
+                Txt(s.third, Page.muted, 11.sp, spacing = ls(1f, 11f), maxLines = 1)
+            }
+        }
+    }
     // 记忆入口：折角纸图标 + 记忆 + 一行小字；右边开关停用整个记忆（第 375 版）
     SwitchCard(
         p.noteOn, "记忆", "memory", blur, onBook, { pr -> MemIcon(pr) },
-        listOfNotNull("聊过 ${p.chats} 次", "记得 ${p.items.size} 件".takeIf { p.items.isNotEmpty() }, ago(p.lastAt).takeIf { it.isNotEmpty() }?.let { "上次是$it" }).joinToString(" · "),
-        "已停用 · 她不记也不翻记忆",
+        ago(p.lastAt),
+        "",
         "已打开" to "已停用",
     ) { p.noteOn = it; Memory.save() }
     Spacer(Modifier.height(12.dp))
@@ -747,8 +756,8 @@ private fun ColumnScope.MemoryTab(p: Persona, blur: Dp, onFold: () -> Unit, onBo
     val folds = Chats.current?.history?.of(p.id).orEmpty().count { it.fold != null }
     SwitchCard(
         p.foldOn, "前情", "fold", blur, onFold, { pr -> FoldIcon(pr) },
-        if (folds > 0) "$folds 段聊天有前情" else "还没有聊长过",
-        "已停用",
+        if (folds > 0) "$folds 段" else "",
+        "",
         "已打开" to "已停用",
     ) { p.foldOn = it; Memory.save() }
     Spacer(Modifier.height(12.dp))
@@ -757,12 +766,8 @@ private fun ColumnScope.MemoryTab(p: Persona, blur: Dp, onFold: () -> Unit, onBo
         Modifier.fillMaxWidth().spot("cross").glass(RoundedCornerShape(20.dp), blur, fill = glassFill).padding(horizontal = 18.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Column(Modifier.weight(1f)) {
-            Txt("跨聊天回忆", Page.ink, 15.sp, maxLines = 1)
-            Spacer(Modifier.height(2.dp))
-            Txt("她能翻以前的聊天", Page.muted, 12.5.sp, maxLines = 1)
-        }
-        Switch(p.memOn, "跨聊天回忆", said = "已打开" to "已关") { p.memOn = it; Memory.save() }
+        Txt("跨聊天回忆", Page.ink, 15.sp, Modifier.weight(1f).graphicsLayer { alpha = if (p.memOn) 1f else .5f }, maxLines = 1)
+        Switch(p.memOn, "跨聊天回忆") { p.memOn = it; Memory.save() }
     }
 }
 
@@ -790,8 +795,8 @@ private fun SwitchCard(
                 Spacer(Modifier.width(14.dp))
                 Column(Modifier.weight(1f)) {
                     Txt(title, Page.ink, 16.sp, maxLines = 1)
-                    Spacer(Modifier.height(3.dp))
-                    Box {
+                    if (sub.isNotEmpty() || offSub.isNotEmpty()) Spacer(Modifier.height(3.dp))
+                    if (sub.isNotEmpty() || offSub.isNotEmpty()) Box {
                         val u = t.coerceIn(0f, 1f)
                         Txt(sub, Page.muted, 12.5.sp, Modifier.graphicsLayer { alpha = u; translationY = (1f - u) * 6.dp.toPx() }, maxLines = 2, lineHeight = 19.sp)
                         Txt(offSub, Page.muted, 12.5.sp, Modifier.graphicsLayer { alpha = 1f - u; translationY = u * -6.dp.toPx() }, maxLines = 2, lineHeight = 19.sp)
@@ -801,7 +806,7 @@ private fun SwitchCard(
         }
         Box(Modifier.width(1.dp).height(32.dp).background(veil(.08f)))
         // 第 379 版：切过去后轨道往左伸长写「已打开 / 已停用」，详细的那句由下面小字交叉过渡带出来
-        Switch(on, title, pad = PaddingValues(start = 14.dp, end = 16.dp, top = 20.dp, bottom = 20.dp), said = said, onChange = onChange)
+        Switch(on, title, pad = PaddingValues(start = 14.dp, end = 16.dp, top = 20.dp, bottom = 20.dp), onChange = onChange)
     }
 }
 
@@ -1001,15 +1006,11 @@ private fun ColumnScope.MemCatalogScreen(p: Persona, compact: Boolean, blur: Dp,
 /** 记忆模型：处理模型、启用思考；下面「记忆系统提示词」点进去改。 */
 @Composable
 private fun ColumnScope.MemModelScreen(store: AssistantStore, compact: Boolean, blur: Dp, nav: MineNav) {
-    var info by remember { mutableStateOf(false) }
     var pick by remember { mutableStateOf(false) }
     Title("记忆模型", compact, onBack = { nav.back() })
     Box(Modifier.weight(1f).fillMaxWidth()) {
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(bottom = 24.dp)) {
-            Row(Modifier.fillMaxWidth().padding(start = 6.dp, end = 2.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                Txt("记忆模型", Page.muted, 14.sp, Modifier.weight(1f))
-                Pressable({ info = true }, label = "说明") { pr -> SvgIcon(infoIc, if (pr) Page.ink else Page.muted, 22.dp, modifier = Modifier.padding(4.dp)) }
-            }
+            Spacer(Modifier.height(6.dp))
             Column(Modifier.fillMaxWidth().spot("memmodel").glass(RoundedCornerShape(20.dp), blur, fill = glassFill)) {
                 Pressable({ pick = true }, Modifier.fillMaxWidth(), label = "处理模型") { pr ->
                     Row(Modifier.fillMaxWidth().background(veil(if (pr) .06f else 0f)).padding(horizontal = 20.dp, vertical = 18.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -1023,12 +1024,8 @@ private fun ColumnScope.MemModelScreen(store: AssistantStore, compact: Boolean, 
                 }
                 Box(Modifier.padding(horizontal = 20.dp)) { Divider() }
                 Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 18.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f).padding(end = 12.dp)) {
-                        Txt("启用思考", Page.ink, 16.sp, maxLines = 1)
-                        Spacer(Modifier.height(4.dp))
-                        Txt("在模型支持时允许记忆模型使用推理", Page.muted, 13.sp, lineHeight = 19.sp)
-                    }
-                    Switch(MemModel.think, "启用思考") { MemModel.think = it; MemModel.save() }
+                    Txt("思考", Page.ink, 16.sp, Modifier.weight(1f), maxLines = 1)
+                    Switch(MemModel.think, "思考") { MemModel.think = it; MemModel.save() }
                 }
             }
             Txt("记忆系统提示词", Page.muted, 14.sp, Modifier.padding(start = 6.dp, top = 26.dp, bottom = 10.dp))
@@ -1063,15 +1060,6 @@ private fun ColumnScope.MemModelScreen(store: AssistantStore, compact: Boolean, 
                     }
                 }
             }
-        }
-        Sheet(info, onDismiss = { info = false }) {
-            Txt("记忆模型是做什么的", Page.ink, 16.sp)
-            Spacer(Modifier.height(8.dp))
-            Txt(
-                "你们聊完，它回头看一遍，决定记不记、写成一条（标题 + 她自己的一段话）；每天你第一次来时，它把之前没理过的理一遍，过完的周、月、年收成一份。这些都在后台做，不占聊天那一路。开思考会理得更细，也更慢、更费。",
-                Page.muted, 13.5.sp, lineHeight = 22.sp, align = androidx.compose.ui.text.style.TextAlign.Center,
-            )
-            SheetButton("知道了", false, Modifier.fillMaxWidth().padding(top = 14.dp)) { info = false }
         }
     }
 }

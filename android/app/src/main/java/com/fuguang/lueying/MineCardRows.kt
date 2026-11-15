@@ -97,8 +97,9 @@ private fun RowBody(title: String, sub: String, glyph: @Composable () -> Unit, s
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Txt(title, Page.ink, 15.sp, maxLines = 1)
-            Spacer(Modifier.height(3.dp))
-            if (subSlot != null) subSlot() else Txt(sub, Page.muted, 12.sp, maxLines = 1)
+            // 小字只放状态；没有就整行只剩标题，不占一行空白
+            if (subSlot != null) { Spacer(Modifier.height(3.dp)); subSlot() }
+            else if (sub.isNotEmpty()) { Spacer(Modifier.height(3.dp)); Txt(sub, Page.muted, 12.sp, maxLines = 1) }
         }
         Spacer(Modifier.width(10.dp))
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.End) { trailing() }
