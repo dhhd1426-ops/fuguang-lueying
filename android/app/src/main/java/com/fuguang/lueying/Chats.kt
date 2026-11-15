@@ -15,7 +15,10 @@ object Chats {
     /** 在后台回答的：对话 id → 那一段的状态。 */
     val running = mutableStateMapOf<String, ChatState>()
 
-    fun init(history: ConvStore): ChatState = current ?: ChatState(history).also { current = it }
+    fun init(history: ConvStore): ChatState = current ?: ChatState(history).also {
+        current = it
+        GoalContinuity.touch(it.convId)
+    }
 
     /** 这段对话她是不是正在回答（手上这段或后台的）。 */
     fun isRunning(id: String): Boolean = running.containsKey(id) || current?.let { it.busy && it.convId == id } == true
@@ -24,8 +27,9 @@ object Chats {
     fun open(c: Conv) {
         val cur = current ?: return
         if (cur.convId == c.id) return
-        running.remove(c.id)?.let { back -> park(cur); back.onScreen = true; current = back; return }
+        running.remove(c.id)?.let { back -> park(cur); back.onScreen = true; current = back; GoalContinuity.touch(c.id); return }
         if (cur.busy) { park(cur); current = ChatState(cur.history).also { it.open(c) } } else cur.open(c)
+        GoalContinuity.touch(c.id)
     }
 
     /** 开新对话：手上这段她还在写，就留在后台写完。 */
@@ -39,6 +43,7 @@ object Chats {
         if (!s.busy || id == null) return
         s.onScreen = false
         running[id] = s
+        GoalContinuity.touch(id)
     }
 
     /** Snapshot before the system can reclaim a hidden process. */

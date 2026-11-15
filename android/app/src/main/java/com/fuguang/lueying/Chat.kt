@@ -184,7 +184,7 @@ class ChatState(val history: ConvStore) {
         sent++
     }
 
-    private fun persist() { convId = history.save(convId, messages) }
+    private fun persist() { convId = history.save(convId, messages); GoalContinuity.touch(convId) }
 
     /** 她按约定主动来找你，正好开着这段：接在后面，存好，返回对话 id。 */
     fun arrive(m: ChatMsg): String? { messages.add(m); persist(); return convId }
@@ -226,6 +226,14 @@ class ChatState(val history: ConvStore) {
         // 每天第一次来找她：后台把之前没理过的记忆理一遍、过完的周月年收拢（MemoryLearn.kt）
         Reflect.daily(Memory.active)
         persist()
+        // Exact follow-up "continue" restores an unfinished side branch's mainline
+        // checkpoint before the next model request; unrelated messages never do so.
+        if (GoalIntentPolicy.hint(text) == GoalIntentPolicy.Hint.CONTINUE) {
+            convId?.let { id ->
+                runCatching { GoalContinuity.route(id, GoalContinuity.Intent.CONTINUE) }
+                    .onFailure { ReplyRuntime.note("goal_resume_failed " + it.javaClass.simpleName) }
+            }
+        }
         sent++
         ask(store)
         return messages.lastIndex
@@ -312,6 +320,7 @@ class ChatState(val history: ConvStore) {
                 val recall = who.memOn
                 val store0 = this@ChatState.history
                 val cur = convId
+                if (cur != null) GoalContinuity.startTurn(cur)
                 val conv0 = store0.get(cur)
                 val folded = Fold.of(conv0)
                 Fold.shown = folded
@@ -325,13 +334,14 @@ class ChatState(val history: ConvStore) {
                 val videoRefs = MotionTools.references(history)
                 val motionReviewer = AttachLook.helper(store)?.let { (id, name) -> ArtworkJob.Model(provider(id), store.config(id), name, store.effort(id, name)) }
                 val motion = MotionTools.Session(videoRefs, Attach.vision(p.id, store.activeModel), motionReviewer)
-                val specs = (if (who.noteOn) Memory.toolSpecs else emptyList()) + Works.specs.filter { it.name != Works.MAKE } + WorkJobs.spec + WorkJobs.statusSpec + SentFiles.spec + SentPics.spec + Pacts.specs + Materials.specs + VideoParse.specs + MotionTools.specs + PanTools.specs + ClockTools.specs + WebHand.specs + skills + (if (web) listOf(WebSearch.spec) else emptyList()) + (if (yu) Yu.tools else emptyList()) + (if (recall) listOf(Recall.spec, Recall.openSpec) else emptyList()) + (if (folded != null) listOf(Fold.spec) else emptyList()) + mcp
+                val specs = listOf(GoalContinuity.spec) + (if (who.noteOn) Memory.toolSpecs else emptyList()) + Works.specs.filter { it.name != Works.MAKE } + WorkJobs.spec + WorkJobs.statusSpec + SentFiles.spec + SentPics.spec + Pacts.specs + Materials.specs + VideoParse.specs + MotionTools.specs + PanTools.specs + ClockTools.specs + WebHand.specs + skills + (if (web) listOf(WebSearch.spec) else emptyList()) + (if (yu) Yu.tools else emptyList()) + (if (recall) listOf(Recall.spec, Recall.openSpec) else emptyList()) + (if (folded != null) listOf(Fold.spec) else emptyList()) + mcp
                 val convTitle0 = store0.get(cur)?.title ?: firstSentence(question, 18)
                 // 对方发来的照片，最近的在前：send_image / send_file 里 photo:1 就是最近那张
                 fun photos(): List<java.io.File> = history.filter { it.role == "user" }.flatMap { it.files }.filter { Attach.isImage(it) }.reversed().map { Attach.file(it) }
                 val extra = buildString {
                     append("\n\n你手边还有这些东西，需要时再用，不需要就不用：")
                     if (who.noteOn) append("\n").append(Memory.toolRule())
+                    append("\n").append(GoalContinuity.rule(cur, question))
                     append("\n").append(Works.system(Memory.userCall, history, who.id))
                     append(WorkJobs.brief(cur, history.flatMap { it.works }))
                     append("\n").append(SentFiles.system(Memory.userCall))
@@ -355,6 +365,7 @@ class ChatState(val history: ConvStore) {
                 // 跨聊天回忆：拿他这句话对一下以前的聊天，对上的把小结放到她眼前，时间线上记一步「想起之前聊过的」（第 363 版）
                 val hits = if (recall) runCatching { withContext(Dispatchers.Default) { Recall.match(store0, cur, question) } }.getOrDefault(emptyList()) else emptyList() // 翻所有旧聊天：放后台算
                 if (hits.isNotEmpty()) liveSteps.add(0, Recall.step(hits))
+                val goalGuard = GoalTurnGuard()
                 var searchedOnce = false
                 val sys0 = Prompt.system(who, model0)
                 sentEst = CtxWin.est(sent0) + CtxWin.est(sys0) + CtxWin.est(extra)
@@ -374,8 +385,13 @@ class ChatState(val history: ConvStore) {
                             var made = n != Works.MAKE && n != Works.EDIT
                             if (!made && workDraft == null) workDraft = WorkDraft(partial.length, n, 0, WorkDraft.title(n, a.toString()))
                             when (n) { Works.MAKE, Works.EDIT, WorkJobs.START, SentFiles.TOOL -> happened += "work"; SentPics.TOOL -> happened += "photo"; Materials.LOOK -> happened += "photo"; WebSearch.TOOL -> happened += "web" }
+                            var receiptToken: String? = null
+                            var dispatched = false
                             try {
-                            if (n == Memory.REMEMBER || n == Memory.FORGET || n == Memory.READ) Memory.runTool(who, n, a, cur.orEmpty(), convTitle0)
+                            if (n != "manage_goal" && cur != null) receiptToken = GoalContinuity.beginTool(cur, n, a, ChatApi.isReadOnly(n))
+                            dispatched = true
+                            val out = if (n == "manage_goal") GoalContinuity.runTool(cur, a, messages.lastOrNull { it.role == "user" }?.text.orEmpty())
+                            else if (n == Memory.REMEMBER || n == Memory.FORGET || n == Memory.READ) Memory.runTool(who, n, a, cur.orEmpty(), convTitle0)
                             else if (n == Fold.LOOK) Fold.look(store0, cur, a)
                             else if (n == Recall.TOOL) Recall.run(store0, cur, a.optString("query"))
                             else if (n == Recall.OPEN) Recall.open(store0, a)
@@ -406,12 +422,20 @@ class ChatState(val history: ConvStore) {
                             else if (n in WebHand.names) WebHand.run(n, a)
                             else if (Mcp.owns(n)) Mcp.run(n, a)
                             else Yu.run(n, a, Yu.vision(p.id)) { refs -> refs.forEach { r -> if (r !in pendingImgs) pendingImgs.add(r) } }
+                            made = !out.failed && made
+                            val receipt = if (cur != null && receiptToken != null) GoalContinuity.finishTool(cur, receiptToken, out) else null
+                            val reminder = goalGuard.afterTool(n == "manage_goal", !out.failed && n == "manage_goal" && a.optString("action") == "finish_branch")
+                            ToolOut(out.text + (receipt?.let { "\n[真实工具回执 ID: $it；仅确认返回，具体成败以结果为准]" } ?: "") +
+                                (reminder?.let { "\n[应用提醒] $it" } ?: ""), out.images, out.failed)
                             } catch (e: kotlinx.coroutines.CancellationException) {
+                                made = false
                                 throw e
                             } catch (e: Exception) {
+                                made = false
                                 // 工具自己出错不拖垮整轮：告诉她没成，她可以重来或如实说
                                 if (n == WebSearch.TOOL) slips += Lessons.WEB
-                                ToolOut("没成功：" + (e.message ?: e.javaClass.simpleName).take(80) + "。可以再试一次，或如实告诉对方没做成。")
+                                ToolOut("工具未能确认完成：" + (e.message ?: e.javaClass.simpleName).take(160) +
+                                    if (dispatched) "。执行结果可能未知，先查询实际状态，勿自动重复有副作用的操作。" else "。未执行，请检查任务账本。", failed = true)
                             } finally {
                                 // 没做成的作品如实标出来，不显示「做好了」
                                 val t = if (made) Trail.doneTitle(n, a) else Trail.failTitle(n, a)
@@ -423,6 +447,13 @@ class ChatState(val history: ConvStore) {
                         },
                         { },
                         inbox = { takeQueue() },
+                        beforeFinish = {
+                            cur?.let { id ->
+                                val state = GoalContinuity.snapshot(id)
+                                goalGuard.beforeFinish(state.status == GoalContinuity.Status.ACTIVE,
+                                    state.pendingBranch != null, queue.isNotEmpty())
+                            }
+                        },
                         imageHistoryBatches = if (videoRefs.isEmpty()) 0 else 3,
                         onDraft = { n, len, head -> val d = workDraft; workDraft = WorkDraft(d?.at ?: partial.length, n, len, WorkDraft.title(n, head) ?: d?.title) },
                     ) else null,

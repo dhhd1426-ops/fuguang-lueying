@@ -82,6 +82,7 @@ dependencies {
     implementation("org.libtorrent4j:libtorrent4j:2.1.0-38")
     implementation("org.libtorrent4j:libtorrent4j-android-arm64:2.1.0-38")
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20240303")
     androidTestImplementation("androidx.test:runner:1.6.2")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     // CI 上的磁力探测（TorrentProbeTest）：电脑上跑同一个 libtorrent，用 Linux 版本机库

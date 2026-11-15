@@ -332,6 +332,7 @@ class Tools(
     val finished: () -> Boolean = { false },
     val maxRounds: Int = 10,
     val imageHistoryBatches: Int = 0,
+    val beforeFinish: suspend () -> String? = { null },
 )
 
 /**
@@ -499,6 +500,18 @@ object ChatApi {
                 msgs.put(JSONObject().put("role", "user").put("content", Claims.NUDGE))
                 continue
             }
+            if (r.calls.isEmpty() && tools != null && round < maxRounds) {
+                val followup = tools.inbox()?.let { midTurn(it) } ?: tools.beforeFinish()
+                if (followup != null) {
+                    if (r.text.isNotBlank()) msgs.put(if (anthropic) JSONObject().put("role", "assistant").put("content", r.blocks)
+                        else JSONObject().put("role", "assistant").put("content", r.text).apply {
+                            if (echo || (Effort.echoes(p, model) && r.reasoning.isNotEmpty())) put("reasoning_content", r.reasoning)
+                        })
+                    msgs.put(JSONObject().put("role", "user").put("content", followup))
+                    round++
+                    continue
+                }
+            }
             if (r.calls.isEmpty() || tools == null || round >= maxRounds) return
             round++
             if (anthropic) {
@@ -601,6 +614,8 @@ object ChatApi {
     }
 
     /** 能一起并发着做的工具（只读、不问人）。 */
+    internal fun isReadOnly(name: String) = name in READ_ONLY || name == "get_work_status"
+
     private val READ_ONLY = setOf(Fold.LOOK, Memory.READ, Skills.OPEN, Skills.FIND, WebSearch.TOOL, Recall.TOOL, Works.READ, Materials.OPEN, Materials.LOOK, VideoParse.TOOL, PanTools.OPEN, ClockTools.NEXT, ClockTools.LIST)
 
     private fun args(call: Call) = runCatching { JSONObject(call.args.toString().ifBlank { "{}" }) }.getOrDefault(JSONObject())
