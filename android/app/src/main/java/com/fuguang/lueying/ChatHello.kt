@@ -15,6 +15,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameMillis
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -54,6 +56,7 @@ internal fun ChatHello(compact: Boolean, store: AssistantStore, chat: ChatState)
         val text = line ?: return@LaunchedEffect
         clock.longValue = -1L
         delay(((InkPlan.total * .82f).toLong() - (System.currentTimeMillis() - born)).coerceAtLeast(0L))
+        Whale.say(text)
         val end = text.length * CHAR + HALF * 4
         if (still) { clock.longValue = end; return@LaunchedEffect }
         val t0 = withFrameMillis { it }
@@ -61,8 +64,14 @@ internal fun ChatHello(compact: Boolean, store: AssistantStore, chat: ChatState)
         while (clock.longValue < end) withFrameMillis { clock.longValue = it - t0 }
         clock.longValue = end
     }
-    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(horizontal = 8.dp)) {
-        VignetteMark(if (compact) 116.dp else 128.dp, Skin.accent)
+    // 有鲸鱼娘站在中间时：标志留在上面，问候放到底部，把中间让给她
+    val whale = Whale.active
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = if (whale) Arrangement.SpaceBetween else Arrangement.Top,
+        modifier = Modifier.padding(horizontal = 8.dp).then(if (whale) Modifier.fillMaxHeight().padding(bottom = 8.dp) else Modifier),
+    ) {
+        VignetteMark(if (whale) (if (compact) 72.dp else 84.dp) else if (compact) 116.dp else 128.dp, Skin.accent)
         Spacer(Modifier.height(6.dp))
         val text = line.orEmpty()
         val base = if (compact) 23f else 26f

@@ -70,6 +70,7 @@ class MainActivity : ComponentActivity() {
         Td.init(this, prefs)
         PanAli.init(this)
         Pan123.init(this)
+        Whale.init(this)
         val controller = WindowCompat.getInsetsController(window, window.decorView)
         controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
 

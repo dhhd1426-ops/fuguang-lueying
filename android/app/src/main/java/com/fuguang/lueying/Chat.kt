@@ -55,6 +55,7 @@ import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.drawBehind
@@ -728,6 +729,8 @@ fun ChatPage(
     val menuPx = with(density) { menuW.toPx() }
     Box(Modifier.fillMaxSize().background(Skin.shade(.38f))) {
       Box(Modifier.fillMaxSize()) {
+        Whale.Stage(Modifier.fillMaxSize().zIndex(if (Whale.editing) 5f else 0f))
+        WhaleHooks(chat)
         Column(
             Modifier
                 .fillMaxSize()
@@ -747,8 +750,9 @@ fun ChatPage(
                     pickerOpen = picker,
                     onPick = { picker = true },
                     onSend = {
+                        val said = chat.draft
                         val n = chat.send(scope, store)
-                        if (n >= 0) scope.launch { flight.launch(n) }
+                        if (n >= 0) { Whale.sent(said); scope.launch { flight.launch(n) } }
                     },
                     onStop = { chat.stop() },
                     modifier = Modifier.widthIn(max = 720.dp).fillMaxWidth(),
@@ -756,6 +760,7 @@ fun ChatPage(
             }
         }
         SendFlightLayer(flight)
+        WhaleDressSheet()
         if (menuOn) {
             Box(
                 Modifier.fillMaxSize().graphicsLayer { alpha = menuA.value }.background(Skin.scrim(.68f))

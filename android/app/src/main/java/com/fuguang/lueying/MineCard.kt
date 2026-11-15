@@ -82,7 +82,7 @@ private val warmInk: Color get() = Skin.onAccent
 /** 页面深度：往深处走新页从右边进，往回走从左边进。 */
 private fun depth(s: String) = when {
     s == "mine" -> 0
-    s == "assistant" || s == "mcp" || s == "about" || s == "features" || s == "theme" -> 1
+    s == "assistant" || s == "mcp" || s == "about" || s == "features" || s == "theme" || s == "whale" -> 1
     s == "persona" || s.startsWith("mcp/") || s == "search" || s == "skills" || s == "gallery" -> 2
     s.startsWith("search/") || s.startsWith("skills/") || s.startsWith("gallery/") -> 3
     s == "providers" || s == "memories" || s == "fold" -> 3
@@ -95,7 +95,7 @@ private fun depth(s: String) = when {
 fun MineCardLayer(store: AssistantStore, nav: MineNav) {
     CenterCardLayer(
         MineCard, nav.screen, ::depth,
-        onBack = { if (nav.screen == "about" || nav.screen == "theme") { nav.screen = "mine"; true } else nav.screen != "mine" && nav.back() },
+        onBack = { if (nav.screen == "about" || nav.screen == "theme" || nav.screen == "whale") { nav.screen = "mine"; true } else nav.screen != "mine" && nav.back() },
         onClosed = { nav.screen = "mine"; nav.persona = "" },
         above = { MemoryCardHost(); AvatarCropHost(); IconCropHost() },
     ) { screen, rise ->
@@ -110,6 +110,7 @@ fun MineCardLayer(store: AssistantStore, nav: MineNav) {
                 }
             }
             "about" -> AboutPage { nav.screen = "mine" }
+            "whale" -> WhalePage({ nav.screen = "mine" }, { MineCard.open = false; Whale.edit(true) }, { MineCard.open = false; Whale.dress(true) })
             "theme" -> ThemePage { nav.screen = "mine" }
             "features" -> FeaturesPage({ nav.screen = "mine" }, { nav.screen = "search" }, { nav.screen = "skills" })
             "skills" -> SkillsPage({ nav.screen = "features" }) { nav.screen = "skills/$it" }
@@ -197,7 +198,13 @@ private fun MineCardList(t: Float, onGo: (String) -> Unit) {
     Spacer(Modifier.height(6.dp))
     Column(Modifier.spot("backup")) { BackupRow(6, t) }
     Spacer(Modifier.height(6.dp))
-    MineRow(7, t, "关于 Vignette", "", { onGo("about") }, glyph = { SvgIcon(Icons.spark, warm, 18.dp, stroke = 1.1f) }) {
+    MineRow(7, t, "鲸鱼娘", "", { onGo("whale") }, glyph = { SvgIcon(WhaleTail, warm, 19.dp, stroke = 1.4f) }) {
+        Txt(if (!Whale.hasModel) "未导入" else if (Whale.show) "开" else "关", Page.muted, 13.5.sp, maxLines = 1)
+        Spacer(Modifier.width(4.dp))
+        SvgIcon(chevron, Page.muted.copy(alpha = .6f), 15.dp, stroke = 1.8f)
+    }
+    Spacer(Modifier.height(6.dp))
+    MineRow(8, t, "关于 Vignette", "", { onGo("about") }, glyph = { SvgIcon(Icons.spark, warm, 18.dp, stroke = 1.1f) }) {
         SvgIcon(chevron, Page.muted.copy(alpha = .6f), 15.dp, stroke = 1.8f)
     }
     Spacer(Modifier.height(8.dp))

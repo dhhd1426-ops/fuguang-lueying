@@ -1,0 +1,7 @@
+鲸鱼娘（大肥鱼）页面用到的第三方代码
+- Live2D Cubism Core (core.js)：Live2D Inc.，按 Live2D Proprietary Software License 作为 Redistributable Code 随附。
+- pixi.js 6.5.10 (pixi.min.js)：MIT，© Goodboy Digital Ltd.
+- pixi-live2d-display 0.4.0 (cubism4.min.js)：MIT，© Guan
+- FULASKA：MIT（思路与部分参数参考）
+模型：原画及拆分 神宫凉子，Live2D 建模 霓虹猫_NeonNeko。模型文件不随应用分发，由用户自行导入。
+mo/bw_*、untracked 动作与 dance.webm：仓库作者自制。
