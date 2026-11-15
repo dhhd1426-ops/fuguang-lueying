@@ -17,7 +17,8 @@ object Chats {
 
     fun init(history: ConvStore): ChatState = current ?: ChatState(history).also {
         current = it
-        GoalContinuity.touch(it.convId)
+        // 删掉的聊天不再留「手上的事」清单
+        Steps.prune(history.all.map { c -> c.id }.toSet())
     }
 
     /** 这段对话她是不是正在回答（手上这段或后台的）。 */
@@ -27,9 +28,8 @@ object Chats {
     fun open(c: Conv) {
         val cur = current ?: return
         if (cur.convId == c.id) return
-        running.remove(c.id)?.let { back -> park(cur); back.onScreen = true; current = back; GoalContinuity.touch(c.id); return }
+        running.remove(c.id)?.let { back -> park(cur); back.onScreen = true; current = back; return }
         if (cur.busy) { park(cur); current = ChatState(cur.history).also { it.open(c) } } else cur.open(c)
-        GoalContinuity.touch(c.id)
     }
 
     /** 开新对话：手上这段她还在写，就留在后台写完。 */
@@ -43,7 +43,6 @@ object Chats {
         if (!s.busy || id == null) return
         s.onScreen = false
         running[id] = s
-        GoalContinuity.touch(id)
     }
 
     /** Snapshot before the system can reclaim a hidden process. */

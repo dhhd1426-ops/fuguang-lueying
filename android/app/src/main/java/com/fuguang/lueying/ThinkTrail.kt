@@ -5,6 +5,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.border
 import androidx.compose.runtime.produceState
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
@@ -94,7 +95,7 @@ object Trail {
         PanTools.OPEN -> "正在打开网盘分享"; PanTools.GET -> "正在下网盘里的文件"
         in ClockTools.names -> ClockTools.liveTitle(n)
         in WebHand.names -> WebHand.liveTitle(n)
-        SentFiles.TOOL -> "正在打包文件"; SentPics.TOOL -> "正在拿图"; Pacts.SET -> "正在记约定"; Pacts.DROP -> "正在取消约定"; Works.MAKE -> "正在动手做"; WorkJobs.START -> "正在交代"; WorkJobs.STOP -> "正在停下"; WorkJobs.RESUME -> "正在接着做"; "get_work_status" -> "正在查做到哪"; Works.EDIT -> "正在改作品"; Works.READ -> "正在看原稿"; "list_todos" -> "正在查看羽的待办"; "read_note" -> "正在读羽的笔记"
+        SentFiles.TOOL -> "正在打包文件"; SentPics.TOOL -> "正在拿图"; Pacts.SET -> "正在记约定"; Pacts.DROP -> "正在取消约定"; Works.MAKE -> "正在动手做"; WorkJobs.START -> "正在交代"; WorkJobs.STOP -> "正在停下"; WorkJobs.RESUME -> "正在接着做"; "get_work_status" -> "正在查做到哪"; Works.EDIT -> "正在改作品"; Works.READ -> "正在看原稿"; Steps.TOOL -> "正在理要做的事"; "list_todos" -> "正在查看羽的待办"; "read_note" -> "正在读羽的笔记"
         else -> if (Mcp.owns(n)) Mcp.note(n).trimEnd('…') else "正在查阅羽的笔记"
     }
 
@@ -121,12 +122,12 @@ object Trail {
         in ClockTools.names -> ClockTools.doneTitle(n, a)
         in WebHand.names -> WebHand.doneTitle(n, a)
         Materials.LOOK -> "看了 ${a.optJSONArray("urls")?.length() ?: 0} 件素材"
-        Works.READ -> "看了原稿"; "list_todos" -> "看了羽的待办"; "read_note" -> "读了一篇羽的笔记"
+        Works.READ -> "看了原稿"; Steps.TOOL -> Steps.doneTitle(a); "list_todos" -> "看了羽的待办"; "read_note" -> "读了一篇羽的笔记"
         else -> if (Mcp.owns(n)) Mcp.note(n).replace("正在用", "用了").trimEnd('…') else "查了羽的笔记"
     }
 
     fun failTitle(n: String, a: JSONObject): String =
-        if (n in MotionTools.names) "画面检查未完成" else if (n == Works.EDIT) "「${workTitle(a)}」没改成" else "作品「${a.optString("title").trim().ifEmpty { "未命名" }.take(20)}」没做成"
+        if (n in MotionTools.names) "画面检查未完成" else if (n == Steps.TOOL) "要做的事没记上" else if (n == Works.EDIT) "「${workTitle(a)}」没改成" else "作品「${a.optString("title").trim().ifEmpty { "未命名" }.take(20)}」没做成"
 
     private fun workTitle(a: JSONObject) = a.optString("title").trim().ifEmpty { Works.get(a.optString("id").trim())?.title ?: "作品" }.take(20)
 
@@ -155,7 +156,7 @@ object Trail {
         Lessons.STEP -> bulb
         Memory.REMEMBER, Memory.READ -> bookmark; Memory.FORGET -> eraser; Recall.TOOL, Recall.AUTO -> bubble; Recall.OPEN, Fold.LOOK -> folder; WebSearch.TOOL, Materials.OPEN, QwenSearch.STEP -> globe; Materials.LOOK, SentPics.TOOL -> picture; VideoParse.TOOL -> Icons.play; VideoParse.SAVE, PanTools.GET -> saveIcon; PanTools.OPEN -> globe
         Skills.OPEN, Skills.FIND, Skills.LEARN -> skillIcon
-        Works.MAKE, Works.EDIT -> shapes; Works.READ, SentFiles.TOOL -> page; Pacts.SET, Pacts.DROP -> alarmIcon; "list_todos" -> todo
+        Works.MAKE, Works.EDIT -> shapes; Works.READ, SentFiles.TOOL -> page; Pacts.SET, Pacts.DROP -> alarmIcon; "list_todos", Steps.TOOL -> todo
         ClockTools.ALARM, ClockTools.NEXT, ClockTools.OFF -> alarmIcon
         in ClockTools.names -> calIcon
         in WebHand.names -> globe
@@ -426,6 +427,7 @@ fun ThinkDrawer(open: Boolean, raw: String, savedSteps: List<ToolStep>, live: Bo
                 if (near) scroll.animateScrollTo(scroll.maxValue)
             }
             Column(Modifier.weight(1f).nestedScroll(nested).verticalScroll(scroll).padding(start = 24.dp, end = 24.dp, top = 4.dp, bottom = 40.dp)) {
+                val stepNodes = items.filter { s -> s.tool?.name == Steps.TOOL && s.detail.isNotEmpty() }
                 items.forEachIndexed { i, it ->
                     androidx.compose.runtime.key(it.key) {
                         val art = it.tool?.takeIf { step ->
@@ -466,7 +468,8 @@ fun ThinkDrawer(open: Boolean, raw: String, savedSteps: List<ToolStep>, live: Bo
                                     }
                                 }
                             }
-                        } else TrailNode(it, last, it.key in opened.value) {
+                        } else TrailNode(it, last, it.key in opened.value, stepsAt = stepNodes.indexOfFirst { s -> s.key == it.key },
+                            stepNodes = stepNodes, stepsLive = live) {
                             opened.value = if (it.key in opened.value) opened.value - it.key else opened.value + it.key
                         }
                     }
@@ -625,7 +628,7 @@ private fun mergeRepeats(items: List<TrailItem>): List<TrailItem> {
     for (it in items) {
         val prev = out.lastOrNull()
         val same = prev != null && n >= 1 && it.tool != null && prev.tool != null && !it.live && !prev.live &&
-            it.tool.name == prev.tool.name && it.tool.done && prev.tool.done && it.title == prev.title.substringBefore(" · ")
+            it.tool.name == prev.tool.name && it.tool.name != Steps.TOOL && it.tool.done && prev.tool.done && it.title == prev.title.substringBefore(" · ")
         if (same && prev != null) {
             n++
             if (it.detail.isNotBlank() && it.detail !in prev.detail) out[out.lastIndex] = TrailItem(prev.key, prev.tool, prev.title, (prev.detail + "\n" + it.detail).trim(), false)
@@ -640,14 +643,18 @@ private fun mergeRepeats(items: List<TrailItem>): List<TrailItem> {
  * 默认折叠，点了内容往下长出来：想的那步是灰字理由，做的那步是白底圆角卡（照 Claude App）。
  */
 @Composable
-private fun TrailNode(it: TrailItem, last: Boolean, open: Boolean, delay: Int = 0, expandable: Boolean = false, meta: String? = null, onToggle: () -> Unit) {
+private fun TrailNode(it: TrailItem, last: Boolean, open: Boolean, delay: Int = 0, expandable: Boolean = false, meta: String? = null,
+    stepsAt: Int = -1, stepNodes: List<TrailItem> = emptyList(), stepsLive: Boolean = false, onToggle: () -> Unit) {
     // Thinking… 走开得快一点（离开比进入快）
     val enter = remember { Animatable(0f) }
     LaunchedEffect(Unit) { enter.animateTo(1f, tween(360, delayMillis = delay, easing = Curves.standard)) }
     val dot by animateColorAsState(if (it.live) trailActive else trailDoneDot, tween(400), label = "dot")
     val tint by animateColorAsState(if (it.live) trailActive else trailSecondary, tween(400), label = "tint")
     val breath = rememberInfiniteTransition(label = "breath").animateFloat(.12f, .2f, infiniteRepeatable(tween(800), RepeatMode.Reverse), label = "b")
-    val has = !it.placeholder && (expandable || it.detail.isNotEmpty())
+    // 「要做的事」：最新那张一直摊开，之前的只留小点，点一下才摊开
+    val steps = if (stepsAt >= 0) remember(it.detail) { Steps.decode(it.detail) } else null
+    val newest = steps != null && stepsAt == stepNodes.lastIndex
+    val has = !it.placeholder && (expandable || it.detail.isNotEmpty()) && !newest
     Pressable({ if (has) onToggle() }, Modifier.fillMaxWidth().graphicsLayer { alpha = enter.value; translationY = (1f - enter.value) * 6.dp.toPx() }, label = it.title) { pressed ->
         Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min).background(if (pressed && has) veil(.04f) else Color.Transparent, RoundedCornerShape(12.dp))) {
             Box(Modifier.width(26.dp).fillMaxHeight()) {
@@ -667,10 +674,14 @@ private fun TrailNode(it: TrailItem, last: Boolean, open: Boolean, delay: Int = 
                         it.live -> Box(Modifier.weight(1f)) { ThinkingMotion(it.title, size = 15.sp, showDots = false, ink = Page.ink) }
                         else -> Txt(it.title, Page.ink.copy(alpha = .94f), 15.sp, Modifier.weight(1f), maxLines = 1)
                     }
+                    if (steps != null && !it.live) StepPips(steps)
                     if (!meta.isNullOrBlank()) { Spacer(Modifier.width(8.dp)); Txt(meta, if (it.live) trailActive else trailSecondary, 12.sp, maxLines = 1) }
                     if (has) { Spacer(Modifier.width(8.dp)); TrailChevron(open) }
                 }
-                AnimatedVisibility(open && it.detail.isNotEmpty(), enter = trailEnter(),
+                if (steps != null) AnimatedVisibility(newest || open, enter = trailEnter(), exit = trailExit()) {
+                    val before = remember(stepsAt, stepNodes) { stepNodes.getOrNull(stepsAt - 1)?.let { b -> Steps.decode(b.detail) } }
+                    StepsList(steps, before, move = newest && stepsLive)
+                } else AnimatedVisibility(open && it.detail.isNotEmpty(), enter = trailEnter(),
                     exit = trailExit()) {
                     Column {
                         if (it.tool == null) Txt(it.detail, trailSecondary, 14.sp, Modifier.padding(top = 4.dp), lineHeight = 24.sp)
@@ -753,5 +764,86 @@ private fun ThoughtTrailNode(text: String, live: Boolean, last: Boolean, summary
                 }
             }
         }
+    }
+}
+
+/** 「要做的事」标题右边：一项一个小点。空心没做，杏色在做，实心做完。 */
+@Composable
+private fun StepPips(items: List<Steps.Item>) {
+    Row(Modifier.padding(start = 8.dp), horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+        items.forEach { s ->
+            val c = if (s.state == Steps.DOING) trailActive else trailDoneDot
+            val k = if (s.state == Steps.DOING) 1.25f else 1f
+            androidx.compose.foundation.Canvas(Modifier.size(6.dp).graphicsLayer { scaleX = k; scaleY = k }) {
+                val sw = 1.2.dp.toPx()
+                if (s.state == Steps.PENDING) drawCircle(c, size.minDimension / 2 - sw / 2, style = androidx.compose.ui.graphics.drawscope.Stroke(sw))
+                else drawCircle(c)
+            }
+        }
+    }
+}
+
+/** 「要做的事」下面的小清单。before 是上一张：只有变了的那几项动，等节点落定（360ms）再动。 */
+@Composable
+private fun StepsList(items: List<Steps.Item>, before: List<Steps.Item>?, move: Boolean) {
+    val animate = move && before != null && !Toy.still()
+    Column(Modifier.fillMaxWidth().padding(top = 6.dp)) {
+        var fresh = 0
+        val seen = HashMap<String, Int>()
+        items.forEach { s ->
+            val nth = seen.merge(s.text, 1, Int::plus) ?: 1
+            val was = before?.firstOrNull { b -> b.text == s.text }?.state
+            val isNew = animate && was == null
+            val order = if (isNew) fresh++ else 0
+            androidx.compose.runtime.key(s.text, nth) {
+                StepRow(s, if (animate) was ?: s.state else s.state, isNew, order, breathe = move && s.state == Steps.DOING)
+            }
+        }
+    }
+}
+
+@Composable
+private fun StepRow(s: Steps.Item, from: String, isNew: Boolean, order: Int, breathe: Boolean) {
+    val enter = remember { Animatable(if (isNew) 0f else 1f) }
+    val done = remember { Animatable(if (from == Steps.DONE) 1f else 0f) }
+    val doing = remember { Animatable(if (from == Steps.DOING) 1f else 0f) }
+    LaunchedEffect(s.state) {
+        launch { enter.animateTo(1f, tween(280, delayMillis = 360 + order * 40, easing = Curves.decel)) }
+        // 先打勾，停一拍，下一项再亮
+        launch { doing.animateTo(if (s.state == Steps.DOING) 1f else 0f, tween(240, delayMillis = if (s.state == Steps.DOING && from != Steps.DOING) 620 else 360, easing = Curves.standard)) }
+        done.animateTo(if (s.state == Steps.DONE) 1f else 0f, tween(300, delayMillis = 360, easing = Curves.decel))
+    }
+    val breath = if (breathe) rememberInfiniteTransition(label = "stepBreath").animateFloat(1f, .45f, infiniteRepeatable(tween(1600), RepeatMode.Reverse), label = "sb") else null
+    val ring = trailDoneDot
+    val act = trailActive
+    val hole = Skin.sheet
+    Row(Modifier.fillMaxWidth().graphicsLayer { alpha = enter.value; translationY = (1f - enter.value) * 6.dp.toPx() }.padding(vertical = 5.dp)) {
+        androidx.compose.foundation.Canvas(Modifier.padding(top = 3.dp).size(16.dp)) {
+            val u = size.minDimension / 16f
+            val r = size.minDimension / 2
+            val sw = 1.4.dp.toPx()
+            val d = done.value
+            val g = doing.value
+            drawCircle(androidx.compose.ui.graphics.lerp(ring, act, g), r - sw / 2, style = androidx.compose.ui.graphics.drawscope.Stroke(sw))
+            if (g > 0f) drawCircle(act.copy(alpha = act.alpha * (breath?.value ?: 1f)), (r - 4f * u) * g)
+            if (d > 0f) {
+                drawCircle(ring.copy(alpha = ring.alpha * d), r)
+                // 勾：两段，按长度依次画出来
+                val a = Offset(4.6f * u, 8.2f * u); val b = Offset(6.8f * u, 10.4f * u); val c = Offset(11.4f * u, 5.6f * u)
+                val l1 = (b - a).getDistance(); val l2 = (c - b).getDistance()
+                val len = (l1 + l2) * d
+                val w = 1.8f * u
+                drawLine(hole, a, a + (b - a) * (len / l1).coerceAtMost(1f), w, androidx.compose.ui.graphics.StrokeCap.Round)
+                if (len > l1) drawLine(hole, b, b + (c - b) * ((len - l1) / l2).coerceAtMost(1f), w, androidx.compose.ui.graphics.StrokeCap.Round)
+            }
+        }
+        Spacer(Modifier.width(10.dp))
+        val base = if (s.state == Steps.PENDING && from == Steps.PENDING) Page.ink.copy(alpha = .82f) else Page.ink
+        Txt(s.text, androidx.compose.ui.graphics.lerp(base, Page.muted, done.value), 14.5.sp,
+            Modifier.weight(1f, fill = false).drawWithContent {
+                drawContent()
+                val k = ((done.value - .3f) / .7f).coerceIn(0f, 1f)
+                if (k > 0f) drawLine(ring, Offset(0f, size.height / 2), Offset(size.width * k, size.height / 2), 1.dp.toPx())
+            }, lineHeight = 22.sp)
     }
 }
