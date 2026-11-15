@@ -17,7 +17,9 @@ class MotionTimesTest {
             try { MotionTimes.plan(args[0], args[1], args[2], 8); fail("invalid range accepted") }
             catch (_: IllegalArgumentException) { }
         }
-        try { MotionTimes.plan(1000, 0, 500, 13); fail("over budget") }
+        // 拼图一次最多 36 格（单帧 12 张的上限在 MotionTools 里卡）
+        assertEquals(13, MotionTimes.plan(1000, 0, 500, 13).size)
+        try { MotionTimes.plan(1000, 0, 500, 37); fail("over budget") }
         catch (_: IllegalArgumentException) { }
     }
 
