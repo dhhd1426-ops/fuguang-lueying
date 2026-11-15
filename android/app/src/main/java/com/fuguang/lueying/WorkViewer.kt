@@ -85,24 +85,29 @@ fun WorkCards(ids: List<String>, onOpen: (String) -> Unit) {
             val w = remember(id, v) { Works.get(id) } ?: return@forEach
             val used = remember(id, v) { Works.source(id)?.let { MaterialStore.usedOf(it) }.orEmpty() }
             val faces = remember(used) { MaterialStore.faces(used) }
+            val unchecked = remember(id, v) { Works.unchecked(id) }
             Pressable({ onOpen(id) }, Modifier.widthIn(max = 440.dp).fillMaxWidth(), label = "打开作品 ${w.title}") { pressed ->
                 Row(
                     Modifier.fillMaxWidth()
-                        .background(rgba(255, 255, 255, if (pressed) .085f else .055f), RoundedCornerShape(16.dp))
+                        .workCard(pressed)
                         .padding(10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     if (faces.isNotEmpty()) MaterialStack(faces)
                     else Box(
-                        Modifier.size(56.dp).background(Apricot.copy(alpha = .13f), RoundedCornerShape(11.dp)),
+                        Modifier.size(56.dp).background(Skin.accent.copy(alpha = .14f), RoundedCornerShape(11.dp)),
                         contentAlignment = Alignment.Center,
-                    ) { SvgIcon(WorkIcons.of(w.kind), Apricot, 24.dp, stroke = 1.5f) }
+                    ) { SvgIcon(WorkIcons.of(w.kind), Skin.workIcon, 24.dp, stroke = 1.5f) }
                     Spacer(Modifier.width(14.dp))
                     Column(Modifier.weight(1f)) {
-                        Txt(w.title, Page.INK, 16.sp, family = Serif, maxLines = 1)
+                        Txt(w.title, Page.ink, 16.sp, family = Serif, maxLines = 1)
                         Spacer(Modifier.height(4.dp))
                         val kind = if (w.kind == "board") "画板" else if (used.isEmpty()) "作品 · ${w.kindName}" else w.kindName
-                        Txt(kind + (if (used.isEmpty()) "" else " · 用了 ${used.size} 件素材"), Page.MUTED, 12.5.sp, maxLines = 1)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Txt(kind + (if (used.isEmpty()) "" else " · 用了 ${used.size} 件素材"), Page.muted, 12.5.sp, maxLines = 1)
+                            // 后台连着两次没渲染出动画画面、跳过了对照就交的稿
+                            if (unchecked) Txt(" · 画面没检查", Skin.workIcon, 12.5.sp, maxLines = 1)
+                        }
                     }
                 }
             }

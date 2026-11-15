@@ -1,6 +1,10 @@
 package com.fuguang.lueying
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -8,6 +12,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -41,6 +46,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 private val Apricot: Color get() = Skin.accent
+
+/** 作品卡的底：实底 + 1dp 细线（Skin.workFill / workLine），正在写、没做成、做好了三张卡共用。 */
+internal fun Modifier.workCard(pressed: Boolean = false): Modifier {
+    val shape = RoundedCornerShape(16.dp)
+    return this.background(if (pressed) Skin.workPress else Skin.workFill, shape).border(1.dp, Skin.workLine, shape)
+}
 
 /** 正在写 / 正在改的那件作品：at = 她动手时正文写到第几个字；chars = 参数已经来了多少字；title 从参数开头抠出来（改作品就是原来的名字）。 */
 class WorkDraft(val at: Int, val name: String, val chars: Int, val title: String?) {
@@ -108,27 +119,103 @@ private fun WorkSlot(id: String?, draft: WorkDraft?, onWork: (String) -> Unit, c
         val face: String? = when {
             job == null -> id
             st?.done != null -> st.done
-            st == null || st.fail != null -> "fail"
-            else -> null
+            else -> JOB
         }
         AnimatedContent(face, transitionSpec = { fadeIn(tween(240, 40)) togetherWith fadeOut(tween(160)) }, label = "workSlot") { real ->
             when {
-                real == "fail" && job != null -> Column {
-                    val record = remember(job, st == null) { if (st == null) ArtworkJob.loadOrder(WorkJobs.keyOf(job)) else null }
-                    val reason = st?.fail ?: if (record != null) "已暂停 · 点此继续绘制" else null
-                    FailCard(WorkJobs.titleOf(job), reason, WorkJobs.canRetry(job, record)) { WorkJobs.retry(job, record, chat, store) }
-                    val file = st?.preview ?: remember(job) { ArtworkJob.latestPreview(WorkJobs.keyOf(job)) }
-                    ArtworkProgress(file)
-                }
+                real == JOB && job != null -> JobCard(job, WorkJobs.state[WorkJobs.keyOf(job)], chat, store)
                 real != null -> WorkCards(listOf(real), onWork)
-                st != null -> Column {
-                    DraftCard(WorkDraft(0, if (st.editing) Works.EDIT else Works.MAKE, st.chars, st.title), st.stage)
-                    if (job != null && st.stage != null) ArtworkProgress(st.preview)
-                }
                 draft != null -> DraftCard(draft)
             }
         }
     }
+}
+
+private const val JOB = "\u0000job"
+
+/**
+ * 后台作品的卡（第 4xx 版，原型 Sq8GxFW7NS51trawrHYLyt）：一张卡三种样子，原地变，不换卡——
+ * 在写：小方块弹跳 + 阶段字，右边「停下」；停下：小方块落成灰点，「停在第 N 稿」，右边「接着做」；
+ * 没写成：红色图标 + 原因，能接着做的右边也是「接着做」。点卡片本身也能接着做。
+ */
+@Composable
+private fun JobCard(job: String, st: WorkJobs.State?, chat: ChatState, store: AssistantStore) {
+    val key = WorkJobs.keyOf(job)
+    val record = remember(job, st == null) { if (st == null) ArtworkJob.loadOrder(key) else null }
+    val running = st != null && st.fail == null && st.done == null
+    val stopped = !running && (st?.stopped == true || (st == null && record != null))
+    val rev = st?.revision?.takeIf { it > 0 } ?: record?.optInt("revision", 0) ?: 0
+    val canRetry = !running && WorkJobs.canRetry(job, record)
+    val title = st?.title ?: WorkJobs.titleOf(job)
+    val line = when {
+        running -> st!!.stage ?: if (st.chars < 200) (if (st.editing) "正在改…" else "正在写…") else "${if (st.editing) "正在改" else "正在写"} · 已写 %.1fk 字".format(st.chars / 1000f)
+        stopped -> if (rev > 0) "停在第 $rev 稿" else if (st?.preview != null || record?.optJSONObject("args")?.optBoolean("artwork") == true) "停在这里" else "还没出稿"
+        canRetry -> "没写成" + (st?.fail?.let { "（$it）" } ?: "")
+        else -> "没写完（App 中途关掉了），让她再做一次"
+    }
+    val mode = when { running -> 0; stopped -> 1; else -> 2 }
+    Column(Modifier.padding(top = 10.dp, bottom = 12.dp)) {
+        Pressable({ if (canRetry) WorkJobs.retry(job, record, chat, store) }, Modifier.widthIn(max = 440.dp).fillMaxWidth(), label = title) { pressed ->
+            Row(
+                Modifier.fillMaxWidth().workCard(pressed && canRetry).padding(10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                AnimatedContent(mode, transitionSpec = { fadeIn(tween(260)) togetherWith fadeOut(tween(180)) }, label = "jobTile") { m ->
+                    when (m) {
+                        0 -> Box(Modifier.size(56.dp).clip(RoundedCornerShape(11.dp)).background(Skin.accent.copy(alpha = .14f))) {
+                            ToyTile(Apricot, Modifier.size(56.dp))
+                        }
+                        1 -> Box(Modifier.size(56.dp).background(veil(.06f), RoundedCornerShape(11.dp)), contentAlignment = Alignment.Center) {
+                            Box(Modifier.size(12.dp).background(Page.muted.copy(alpha = .55f), CircleShape))
+                        }
+                        else -> Box(Modifier.size(56.dp).background(Skin.danger.copy(alpha = .12f), RoundedCornerShape(11.dp)), contentAlignment = Alignment.Center) {
+                            SvgIcon(WorkIcons.page, Skin.danger, 24.dp, stroke = 1.5f)
+                        }
+                    }
+                }
+                Spacer(Modifier.width(14.dp))
+                Column(Modifier.weight(1f)) {
+                    Txt(title.ifBlank { "作品" }, Page.ink, 16.sp, family = Serif, maxLines = 1)
+                    Spacer(Modifier.height(4.dp))
+                    AnimatedContent(line, transitionSpec = {
+                        (fadeIn(tween(240)) + slideInVertically(tween(320, easing = Curves.decel)) { it / 2 }) togetherWith
+                            (fadeOut(tween(160)) + slideOutVertically(tween(240)) { -it / 2 })
+                    }, label = "jobLine") { t ->
+                        Txt(t, Page.muted, 12.5.sp, maxLines = 2)
+                    }
+                }
+                if (running || canRetry) {
+                    Spacer(Modifier.width(8.dp))
+                    JobAction(go = !running) { if (running) WorkJobs.stop(job) else WorkJobs.retry(job, record, chat, store) }
+                }
+            }
+        }
+        val file = st?.preview ?: if (running) null else remember(job) { ArtworkJob.latestPreview(key) }
+        if (st?.stage != null || !running) ArtworkProgress(file)
+    }
+}
+
+/** 卡片右边的小胶囊：「■ 停下」↔「▶ 接着做」，底色跟着变。 */
+@Composable
+private fun JobAction(go: Boolean, onClick: () -> Unit) {
+    val fill by animateColorAsState(if (go) Skin.accent.copy(alpha = .18f) else veil(.07f), tween(260), label = "jobActFill")
+    val ink by animateColorAsState(if (go) Skin.workIcon else Page.ink, tween(260), label = "jobActInk")
+    Pressable(onClick, label = if (go) "接着做" else "停下") { pressed ->
+        Row(
+            Modifier.graphicsLayer { val k = if (pressed) .97f else 1f; scaleX = k; scaleY = k }
+                .background(fill, RoundedCornerShape(50)).padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (go) SvgIcon(JobIcons.play, ink, 12.dp, stroke = 2.2f)
+            else Box(Modifier.size(9.dp).background(ink, RoundedCornerShape(2.dp)))
+            Spacer(Modifier.width(6.dp))
+            Txt(if (go) "接着做" else "停下", ink, 13.sp, maxLines = 1)
+        }
+    }
+}
+
+private object JobIcons {
+    val play = Ic("M8 5.5 18.5 12 8 18.5Z")
 }
 
 @Composable
@@ -150,15 +237,15 @@ internal fun ArtworkProgress(file: java.io.File?) {
     }
 }
 
-/** 正在写的卡：和作品卡一样的块；左边小方块里是变形弹跳（第 339 版起，ToyMotion.kt，原来是页面图标加一道扫光），名字没出来时是一根灰条，下面写着写到多少字。 */
+/** 正在写的卡（她这一轮里直接 make_work / edit_work）：和作品卡一样的块；左边小方块变形弹跳，下面写到多少字。 */
 @Composable
 private fun DraftCard(d: WorkDraft, stage: String? = null) {
     Column(Modifier.padding(top = 10.dp, bottom = 12.dp)) {
         Row(
-            Modifier.widthIn(max = 440.dp).fillMaxWidth().background(veil(.055f), RoundedCornerShape(16.dp)).padding(10.dp),
+            Modifier.widthIn(max = 440.dp).fillMaxWidth().workCard().padding(10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Box(Modifier.size(56.dp).clip(RoundedCornerShape(11.dp)).background(Apricot.copy(alpha = .13f))) {
+            Box(Modifier.size(56.dp).clip(RoundedCornerShape(11.dp)).background(Skin.accent.copy(alpha = .14f))) {
                 ToyTile(Apricot, Modifier.size(56.dp))
             }
             Spacer(Modifier.width(14.dp))
@@ -170,27 +257,6 @@ private fun DraftCard(d: WorkDraft, stage: String? = null) {
                 Spacer(Modifier.height(4.dp))
                 val verb = if (d.editing) "正在改" else "正在写"
                 Txt(stage ?: if (d.chars < 200) "$verb…" else "$verb · 已写 %.1fk 字".format(d.chars / 1000f), Page.muted, 12.5.sp, maxLines = 1)
-            }
-        }
-    }
-}
-
-/** 后台没写成：同样的块，说一句原因；这次打开 App 里交代的能点一下重来。 */
-@Composable
-private fun FailCard(title: String, why: String?, canRetry: Boolean, onRetry: () -> Unit) {
-    Pressable(onRetry, Modifier.padding(top = 10.dp, bottom = 12.dp).widthIn(max = 440.dp).fillMaxWidth(), enabled = canRetry, label = "再写一次") { pressed ->
-        Row(
-            Modifier.fillMaxWidth().background(veil(if (pressed) .085f else .055f), RoundedCornerShape(16.dp)).padding(10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Box(Modifier.size(56.dp).background(Skin.danger.copy(alpha = .12f), RoundedCornerShape(11.dp)), contentAlignment = Alignment.Center) {
-                SvgIcon(WorkIcons.page, Skin.danger, 24.dp, stroke = 1.5f)
-            }
-            Spacer(Modifier.width(14.dp))
-            Column(Modifier.weight(1f)) {
-                Txt(title.ifBlank { "作品" }, Page.ink, 16.sp, family = Serif, maxLines = 1)
-                Spacer(Modifier.height(4.dp))
-                Txt(if (canRetry) "没写成" + (why?.let { "（$it）" } ?: "") + " · 点一下再写一次" else "没写完（App 中途关掉了），让她再做一次", Page.muted, 12.5.sp, maxLines = 2)
             }
         }
     }

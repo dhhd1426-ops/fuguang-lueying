@@ -333,6 +333,8 @@ class Tools(
     val maxRounds: Int = 10,
     val imageHistoryBatches: Int = 0,
     val beforeFinish: suspend () -> String? = { null },
+    /** 这个工具的旧调用（比如后台一稿稿 make_work 的整页 HTML）只留最新一次的参数，前面的换成一句话，每轮少发几万字。 */
+    val keepLatest: String? = null,
 )
 
 /**
@@ -490,6 +492,7 @@ object ChatApi {
                 else msgs.put(JSONObject().put("role", "user").put("content", CAP_NOTE))
             }
             ToolImages.trim(msgs, tools?.imageHistoryBatches ?: 0)
+            tools?.keepLatest?.let { DraftTrim.trim(msgs, it) }
             val r = once(p, c, model, system, msgs, effort, if (round < maxRounds) tools else null, round == 0, onThink, search, onText)
             onRoundEnd()
             if (r.calls.any { it.name.toString() in setOf(Works.MAKE, Works.EDIT, WorkJobs.START) }) worked = true
@@ -872,3 +875,50 @@ object ChatApi {
 
 
 
+
+
+/**
+ * 后台改稿时，每一稿 make_work 的参数是一整页 HTML（几万字），以前全留在对话里，32 轮每轮都重发一遍。
+ * 现在只留最新一次调用的参数，前面的换成「第 N 次，已被后面那稿替换」（标题、种类留着）。两家格式都认：
+ * Anthropic 是 assistant content 里的 tool_use.input；OpenAI 兼容是 tool_calls[].function.arguments（字符串）。
+ */
+internal object DraftTrim {
+    private const val NOTE = "（这一稿的整页内容已省略：后面有更新的一稿，以最新那次为准）"
+
+    fun trim(msgs: JSONArray, name: String) {
+        // 找出这个工具的每一次调用：(消息下标, 块下标, 是不是 Anthropic)
+        val hits = mutableListOf<Triple<Int, Int, Boolean>>()
+        for (i in 0 until msgs.length()) {
+            val m = msgs.optJSONObject(i) ?: continue
+            if (m.optString("role") != "assistant") continue
+            m.optJSONArray("content")?.let { arr ->
+                for (k in 0 until arr.length()) {
+                    val b = arr.optJSONObject(k) ?: continue
+                    if (b.optString("type") == "tool_use" && b.optString("name") == name) hits += Triple(i, k, true)
+                }
+            }
+            m.optJSONArray("tool_calls")?.let { arr ->
+                for (k in 0 until arr.length()) {
+                    val f = arr.optJSONObject(k)?.optJSONObject("function") ?: continue
+                    if (f.optString("name") == name) hits += Triple(i, k, false)
+                }
+            }
+        }
+        hits.dropLast(1).forEachIndexed { n, (i, k, anthropic) ->
+            val m = msgs.getJSONObject(i)
+            if (anthropic) {
+                val b = m.getJSONArray("content").getJSONObject(k)
+                b.put("input", slim(b.optJSONObject("input") ?: JSONObject(), n + 1))
+            } else {
+                val f = m.getJSONArray("tool_calls").getJSONObject(k).getJSONObject("function")
+                val a = runCatching { JSONObject(f.optString("arguments").ifBlank { "{}" }) }.getOrDefault(JSONObject())
+                f.put("arguments", slim(a, n + 1).toString())
+            }
+        }
+    }
+
+    private fun slim(a: JSONObject, n: Int): JSONObject {
+        if (a.optString("note") == NOTE) return a
+        return JSONObject().put("title", a.optString("title")).put("kind", a.optString("kind")).put("draft", n).put("note", NOTE)
+    }
+}

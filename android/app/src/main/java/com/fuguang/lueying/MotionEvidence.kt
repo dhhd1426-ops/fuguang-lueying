@@ -51,6 +51,13 @@ internal object MotionEvidence {
         return id
     }
 
+    /** 这段文字里带的那份帧图的第一张（思考过程那一行右边的缩略图用）；没有就 null。 */
+    fun firstImage(text: String): File? {
+        val id = marker.find(text)?.groupValues?.get(1) ?: return null
+        val dir = File(VideoFrames.root, "evidence/$id")
+        return listOf("0.jpg", "0.png").map { File(dir, it) }.firstOrNull { it.isFile }
+    }
+
     @Composable
     fun Button(text: String) {
         val id = marker.find(text)?.groupValues?.get(1) ?: return

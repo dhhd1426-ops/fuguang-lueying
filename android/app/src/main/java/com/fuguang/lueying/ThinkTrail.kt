@@ -1,6 +1,11 @@
 package com.fuguang.lueying
 
 import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.border
+import androidx.compose.runtime.produceState
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
@@ -89,7 +94,7 @@ object Trail {
         PanTools.OPEN -> "正在打开网盘分享"; PanTools.GET -> "正在下网盘里的文件"
         in ClockTools.names -> ClockTools.liveTitle(n)
         in WebHand.names -> WebHand.liveTitle(n)
-        SentFiles.TOOL -> "正在打包文件"; SentPics.TOOL -> "正在拿图"; Pacts.SET -> "正在记约定"; Pacts.DROP -> "正在取消约定"; Works.MAKE -> "正在动手做"; WorkJobs.START -> "正在交代"; Works.EDIT -> "正在改作品"; Works.READ -> "正在看原稿"; "list_todos" -> "正在查看羽的待办"; "read_note" -> "正在读羽的笔记"
+        SentFiles.TOOL -> "正在打包文件"; SentPics.TOOL -> "正在拿图"; Pacts.SET -> "正在记约定"; Pacts.DROP -> "正在取消约定"; Works.MAKE -> "正在动手做"; WorkJobs.START -> "正在交代"; WorkJobs.STOP -> "正在停下"; WorkJobs.RESUME -> "正在接着做"; "get_work_status" -> "正在查做到哪"; Works.EDIT -> "正在改作品"; Works.READ -> "正在看原稿"; "list_todos" -> "正在查看羽的待办"; "read_note" -> "正在读羽的笔记"
         else -> if (Mcp.owns(n)) Mcp.note(n).trimEnd('…') else "正在查阅羽的笔记"
     }
 
@@ -107,6 +112,9 @@ object Trail {
         SentFiles.TOOL -> a.optJSONArray("files").let { arr -> val n = arr?.length() ?: 0; val first = arr?.optJSONObject(0)?.optString("name")?.trim().orEmpty().take(16); if (n > 1) "发了「$first」等 $n 份文件" else "发了文件「$first」" }
         SentPics.TOOL -> "发了 ${a.optJSONArray("images")?.length() ?: 1} 张图"
         WorkJobs.START -> (if (a.optString("id").isNotBlank()) "交代了大改" else "交代了作品") + "「${a.optString("title").trim().ifEmpty { "未命名" }.take(20)}」，后台在写"
+        WorkJobs.STOP -> "停下了后台在做的作品"
+        WorkJobs.RESUME -> "让后台从存着的稿接着做"
+        "get_work_status" -> "查了做到哪"
         Materials.OPEN -> Materials.doneTitle(a.optString("url"))
         VideoParse.TOOL, VideoParse.SAVE -> VideoParse.doneTitle(n, a)
         PanTools.OPEN, PanTools.GET -> PanTools.doneTitle(n, a)
@@ -385,7 +393,7 @@ fun ThinkDrawer(open: Boolean, raw: String, savedSteps: List<ToolStep>, live: Bo
         if (summary) LaunchedEffect(open, raw, steps.size, live) { if (open) requestTidy(raw, steps, live, AttachLook.store) }
         // 内容变了才重新切段；derivedStateOf 跟着整理结果（ThinkTidy 的 state map）自己更新
         val items by remember(raw, steps, live, summary) {
-            derivedStateOf { collapsedProseItems(raw, steps, live) }
+            derivedStateOf { mergeRepeats(collapsedProseItems(raw, steps, live)) }
         }
         Column(
             Modifier.align(Alignment.BottomCenter).widthIn(max = 640.dp).fillMaxWidth().height(maxHeight * .92f)
@@ -410,7 +418,8 @@ fun ThinkDrawer(open: Boolean, raw: String, savedSteps: List<ToolStep>, live: Bo
             }
             val scroll = rememberScrollState()
             val opened = remember { mutableStateOf(setOf<String>()) }
-            val collapsedJobs = remember { mutableStateOf(setOf<String>()) }
+            // 后台作品那一步也默认折叠（以前默认展开），点开才看里面一步步
+            val openJobs = remember { mutableStateOf(setOf<String>()) }
             LaunchedEffect(items.size, items.lastOrNull()?.title?.length) {
                 val near = scroll.maxValue - scroll.value < 160
                 withFrameNanos { }
@@ -431,19 +440,30 @@ fun ThinkDrawer(open: Boolean, raw: String, savedSteps: List<ToolStep>, live: Bo
                                 value = ArtworkRuns.load(art)
                             }
                             val runs = ArtworkRuns.live(art) ?: saved
-                            val expanded = art !in collapsedJobs.value
-                            TrailNode(TrailItem(it.key, it.tool, it.title, "", it.live), last && (!expanded || runs.isEmpty()), expanded, expandable = true) {
-                                collapsedJobs.value = if (expanded) collapsedJobs.value + art else collapsedJobs.value - art
+                            val expanded = art in openJobs.value
+                            val js = WorkJobs.state[art]
+                            val meta = when {
+                                js == null -> null
+                                js.done != null -> "做好了"
+                                js.fail != null -> if (js.stopped) (if (js.revision > 0) "停在第 ${js.revision} 稿" else "停下了") else "没做成"
+                                js.revision > 0 -> "第 ${js.revision} 稿"
+                                else -> js.stage
                             }
-                            if (expanded && runs.isEmpty()) {
-                                val state = WorkJobs.state[art]
-                                Txt(state?.fail ?: state?.stage ?: "暂无执行记录", trailSecondary, 13.sp, Modifier.padding(start = 38.dp, bottom = 14.dp))
+                            TrailNode(TrailItem(it.key, it.tool, it.title, "", it.live), last && (!expanded || runs.isEmpty()), expanded, expandable = true, meta = meta) {
+                                openJobs.value = if (expanded) openJobs.value - art else openJobs.value + art
                             }
-                            if (expanded) runs.forEachIndexed { index, run ->
-                                androidx.compose.runtime.key(run.id) {
-                                    val end = last && index == runs.lastIndex
-                                    if (run.kind == "thought") ThoughtTrailNode(run.output, run.status == "running", end)
-                                    else RenderTrailNode(art, run, end)
+                            // 展开后里面的步骤缩进一层，每一步同样默认折叠
+                            AnimatedVisibility(expanded, enter = trailEnter(),
+                                exit = trailExit()) {
+                                Column(Modifier.padding(start = 22.dp)) {
+                                    if (runs.isEmpty()) Txt(js?.fail ?: js?.stage ?: "暂无执行记录", trailSecondary, 13.sp, Modifier.padding(start = 38.dp, bottom = 14.dp))
+                                    runs.forEachIndexed { index, run ->
+                                        androidx.compose.runtime.key(run.id) {
+                                            val end = last && index == runs.lastIndex
+                                            if (run.kind == "thought") ThoughtTrailNode(run.output, run.status == "running", end, tidy = true)
+                                            else RenderTrailNode(art, run, end)
+                                        }
+                                    }
                                 }
                             }
                         } else TrailNode(it, last, it.key in opened.value) {
@@ -475,50 +495,57 @@ private fun RenderTrailNode(job: String, run: ArtworkRuns.Entry, last: Boolean) 
         "failed" -> trailError
         else -> trailSecondary
     }
+    // 右边的小缩略图：看视频 / 对照的帧图拼图，或这一稿的渲染图
+    val thumb = remember(run.id, run.status) {
+        MotionEvidence.firstImage(run.output)
+            ?: if (run.kind == "render" && run.status == "success" && run.version > 0) ArtworkJob.directory(job)?.let { java.io.File(it, "${run.version}.png") }?.takeIf { it.isFile } else null
+    }
+    val rail = if (thumb != null) 38.dp else 26.dp
     Pressable({ expanded = !expanded }, Modifier.fillMaxWidth(), label = title) { pressed ->
         Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min)
             .background(if (pressed) veil(.04f) else Color.Transparent, RoundedCornerShape(8.dp))) {
             Box(Modifier.width(26.dp).fillMaxHeight()) {
-                TrailConnector(last, 29.dp)
-                Box(Modifier.align(Alignment.TopCenter).size(26.dp).background(veil(.06f), RoundedCornerShape(8.dp)),
+                TrailConnector(last, rail / 2 + 16.dp)
+                Box(Modifier.align(Alignment.TopCenter).padding(top = (rail - 26.dp) / 2).size(26.dp).background(veil(.06f), RoundedCornerShape(8.dp)),
                     contentAlignment = Alignment.Center) {
                     SvgIcon(renderCommandIcon, tint, 15.dp, stroke = 1.5f)
                 }
             }
-            Column(Modifier.weight(1f).padding(start = 12.dp, end = 4.dp, bottom = 17.dp)) {
-                Row(Modifier.fillMaxWidth().height(26.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Txt(title, if (run.status == "failed") tint else Page.ink, 15.5.sp,
-                        Modifier.weight(1f), weight = FontWeight.Medium, maxLines = 1)
-                    if (run.ms > 0) Txt("%.1f 秒".format(run.ms / 1000.0), trailSecondary, 12.sp, maxLines = 1)
+            Column(Modifier.weight(1f).padding(start = 12.dp, end = 4.dp, bottom = 18.dp)) {
+                Row(Modifier.fillMaxWidth().height(rail), verticalAlignment = Alignment.CenterVertically) {
+                    Txt(title, if (run.status == "failed") tint else Page.ink.copy(alpha = .94f), 15.sp, Modifier.weight(1f), maxLines = 1)
+                    if (run.ms > 0) { Spacer(Modifier.width(8.dp)); Txt("%.1f 秒".format(run.ms / 1000.0), trailSecondary, 12.sp, maxLines = 1) }
+                    if (thumb != null) { Spacer(Modifier.width(8.dp)); TrailThumb(thumb) }
                     Spacer(Modifier.width(8.dp))
-                    SvgIcon(Trail.chevron, trailSecondary, 13.dp, modifier = Modifier.graphicsLayer {
-                        rotationZ = if (expanded) 90f else 0f
-                    })
+                    TrailChevron(expanded)
                 }
-                if (expanded) {
-                    Spacer(Modifier.height(5.dp))
+                AnimatedVisibility(expanded, enter = trailEnter(),
+                    exit = trailExit()) {
                     val action = when (run.kind) {
                         "draft" -> "write_draft"
                         "review" -> "make_work · WebView"
                         "present" -> if (run.version > 0) "present_artwork" else "present_work"
+                        "motion" -> "video · 帧图"
                         else -> "render_preview · WebView"
                     }
                     val detail = if (run.version > 0) "$action · 第 ${run.version} 稿" else action
-                    Row(Modifier.fillMaxWidth().background(veil(.06f), RoundedCornerShape(8.dp)).padding(8.dp),
-                        verticalAlignment = Alignment.CenterVertically) {
-                        Txt(detail, Page.ink, 12.5.sp, Modifier.weight(1f).horizontalScroll(rememberScrollState()),
-                            family = FontFamily.Monospace, maxLines = 1)
-                        Pressable({
-                            val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                            clipboard.setPrimaryClip(android.content.ClipData.newPlainText("执行步骤", detail))
-                        }, label = "复制执行步骤") {
-                            Txt("复制", trailSecondary, 12.sp, Modifier.padding(horizontal = 8.dp, vertical = 4.dp))
+                    StepBox(Modifier.padding(top = 8.dp)) {
+                        Row(Modifier.fillMaxWidth().padding(start = 12.dp, end = 4.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Txt(detail, trailSecondary, 12.sp, Modifier.weight(1f).horizontalScroll(rememberScrollState()), family = FontFamily.Monospace, maxLines = 1)
+                            Pressable({
+                                val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                                clipboard.setPrimaryClip(android.content.ClipData.newPlainText("执行步骤", detail))
+                            }, label = "复制执行步骤") {
+                                Txt("复制", trailSecondary, 12.sp, Modifier.padding(horizontal = 8.dp, vertical = 4.dp))
+                            }
                         }
-                    }
-                    if (run.output.isNotBlank()) Txt(run.output, tint, 13.sp, lineHeight = 20.sp)
-                    MotionEvidence.Button(run.output)
-                    if (run.kind == "render" && run.status == "success" && run.version > 0) {
-                        ArtworkProgress(ArtworkJob.directory(job)?.let { java.io.File(it, "${run.version}.png") })
+                        val body = run.output.lineSequence().drop(if (run.kind == "motion") 1 else 0).joinToString("\n").trim()
+                        if (body.isNotBlank()) {
+                            Box(Modifier.fillMaxWidth().height(1.dp).background(Skin.workLine))
+                            Txt(body, tint, 13.sp, Modifier.padding(12.dp), lineHeight = 20.sp)
+                        }
+                        if (thumb != null) TrailImage(thumb)
+                        Box(Modifier.padding(start = 12.dp, end = 12.dp, bottom = 10.dp)) { MotionEvidence.Button(run.output) }
                     }
                 }
             }
@@ -526,44 +553,132 @@ private fun RenderTrailNode(job: String, run: ArtworkRuns.Entry, last: Boolean) 
     }
 }
 
-/** 一个节点：思考是小圆点（正在想的是橙点），工具是方块图标（正在用时杏色呼吸）；点一下原地展开全文。 */
+/** 展开后的白底圆角卡（照 Claude App）：实底 + 1dp 细线，四种主题都看得清。 */
 @Composable
-private fun TrailNode(it: TrailItem, last: Boolean, open: Boolean, delay: Int = 0, expandable: Boolean = false, onToggle: () -> Unit) {
+private fun StepBox(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+    val shape = RoundedCornerShape(12.dp)
+    Column(modifier.fillMaxWidth().background(Skin.workFill, shape).border(1.dp, Skin.workLine, shape).clip(shape)) { content() }
+}
+
+/** 展开 / 收起的过渡：往下长出 250ms、收回 200ms（离开比进入快）；系统关了动画就直接切换（动效指南第 3 节）。 */
+@Composable
+private fun trailEnter(): androidx.compose.animation.EnterTransition =
+    if (Toy.still()) androidx.compose.animation.EnterTransition.None else expandVertically(tween(250, easing = Curves.standard)) + fadeIn(tween(150))
+
+@Composable
+private fun trailExit(): androidx.compose.animation.ExitTransition =
+    if (Toy.still()) androidx.compose.animation.ExitTransition.None else shrinkVertically(tween(200, easing = Curves.standard)) + fadeOut(tween(100))
+
+/** › 点开时转 90°。 */
+@Composable
+private fun TrailChevron(open: Boolean) {
+    val turn by animateFloatAsState(if (open) 90f else 0f, tween(if (Toy.still()) 0 else 250, easing = Curves.standard), label = "chev")
+    SvgIcon(Trail.chevron, trailSecondary, 13.dp, modifier = Modifier.graphicsLayer { rotationZ = turn })
+}
+
+/** 行右边 64×40 的小缩略图：后台解码、缩到 128 宽，免得抽屉卡。 */
+@Composable
+private fun TrailThumb(file: java.io.File) {
+    val img by produceState<androidx.compose.ui.graphics.ImageBitmap?>(null, file) { value = ThumbCache.get(file, 128) }
+    Box(Modifier.size(64.dp, 40.dp).clip(RoundedCornerShape(8.dp)).background(veil(.06f)).border(1.dp, Skin.workLine, RoundedCornerShape(8.dp))) {
+        img?.let { androidx.compose.foundation.Image(it, null, Modifier.fillMaxSize(), contentScale = androidx.compose.ui.layout.ContentScale.Crop) }
+    }
+}
+
+/** 展开后的大图（卡片全宽）。 */
+@Composable
+private fun TrailImage(file: java.io.File) {
+    val img by produceState<androidx.compose.ui.graphics.ImageBitmap?>(null, file) { value = ThumbCache.get(file, 960) }
+    img?.let { androidx.compose.foundation.Image(it, null, Modifier.fillMaxWidth().padding(12.dp).clip(RoundedCornerShape(8.dp)), contentScale = androidx.compose.ui.layout.ContentScale.FillWidth) }
+}
+
+/** 缩略图缓存：按文件 + 宽度，最多 48 张。 */
+private object ThumbCache {
+    private val cache = object : LinkedHashMap<String, androidx.compose.ui.graphics.ImageBitmap>(16, .75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, androidx.compose.ui.graphics.ImageBitmap>?) = size > 48
+    }
+    suspend fun get(file: java.io.File, width: Int): androidx.compose.ui.graphics.ImageBitmap? {
+        val k = file.path + "@" + width + "@" + file.lastModified()
+        synchronized(cache) { cache[k] }?.let { return it }
+        val got = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            runCatching {
+                val o = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                android.graphics.BitmapFactory.decodeFile(file.path, o)
+                var sample = 1
+                while (o.outWidth / (sample * 2) >= width) sample *= 2
+                android.graphics.BitmapFactory.decodeFile(file.path, android.graphics.BitmapFactory.Options().apply { inSampleSize = sample })?.asImageBitmap()
+            }.getOrNull()
+        } ?: return null
+        synchronized(cache) { cache[k] = got }
+        return got
+    }
+}
+
+/** 连着同一个工具、同一个标题、都做完了的几步合成一行「· N 次」；有失败的标题不同，不会合进来。 */
+private fun mergeRepeats(items: List<TrailItem>): List<TrailItem> {
+    val out = mutableListOf<TrailItem>()
+    var n = 1
+    fun flush() {
+        if (n > 1) { val x = out.removeAt(out.lastIndex); out += TrailItem(x.key, x.tool, "${x.title} · $n 次", x.detail, false) }
+        n = 1
+    }
+    for (it in items) {
+        val prev = out.lastOrNull()
+        val same = prev != null && n >= 1 && it.tool != null && prev.tool != null && !it.live && !prev.live &&
+            it.tool.name == prev.tool.name && it.tool.done && prev.tool.done && it.title == prev.title.substringBefore(" · ")
+        if (same && prev != null) {
+            n++
+            if (it.detail.isNotBlank() && it.detail !in prev.detail) out[out.lastIndex] = TrailItem(prev.key, prev.tool, prev.title, (prev.detail + "\n" + it.detail).trim(), false)
+        } else { flush(); out += it }
+    }
+    flush()
+    return out
+}
+
+/**
+ * 一个节点（全抽屉统一的样子）：左边小圆点（想）或方块图标（做，正在做时杏色呼吸）；一行标题 15sp，右边 meta、有内容才有 ›。
+ * 默认折叠，点了内容往下长出来：想的那步是灰字理由，做的那步是白底圆角卡（照 Claude App）。
+ */
+@Composable
+private fun TrailNode(it: TrailItem, last: Boolean, open: Boolean, delay: Int = 0, expandable: Boolean = false, meta: String? = null, onToggle: () -> Unit) {
     // Thinking… 走开得快一点（离开比进入快）
     val enter = remember { Animatable(0f) }
     LaunchedEffect(Unit) { enter.animateTo(1f, tween(360, delayMillis = delay, easing = Curves.standard)) }
     val dot by animateColorAsState(if (it.live) trailActive else trailDoneDot, tween(400), label = "dot")
     val tint by animateColorAsState(if (it.live) trailActive else trailSecondary, tween(400), label = "tint")
     val breath = rememberInfiniteTransition(label = "breath").animateFloat(.12f, .2f, infiniteRepeatable(tween(800), RepeatMode.Reverse), label = "b")
-    Pressable({ if (!it.live || expandable) onToggle() }, Modifier.fillMaxWidth().graphicsLayer { alpha = enter.value; translationY = (1f - enter.value) * 6.dp.toPx() }, label = it.title) { pressed ->
-        Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min).background(if (pressed) veil(.04f) else Color.Transparent, RoundedCornerShape(12.dp))) {
-            // 照 Claude App 图二：圆点对齐标题第一行，竖线从圆点下面连到下一步；标题是结论，下面是理由，整理好的不截断
+    val has = !it.placeholder && (expandable || it.detail.isNotEmpty())
+    Pressable({ if (has) onToggle() }, Modifier.fillMaxWidth().graphicsLayer { alpha = enter.value; translationY = (1f - enter.value) * 6.dp.toPx() }, label = it.title) { pressed ->
+        Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min).background(if (pressed && has) veil(.04f) else Color.Transparent, RoundedCornerShape(12.dp))) {
             Box(Modifier.width(26.dp).fillMaxHeight()) {
-                val top = if (it.tool != null) 32.dp else 22.dp
-                TrailConnector(last, top)
+                TrailConnector(last, if (it.tool != null) 29.dp else 21.dp)
                 if (it.tool != null) {
                     Box(
                         Modifier.align(Alignment.TopCenter).size(26.dp)
                             .background(if (it.live) trailActive.copy(alpha = breath.value) else veil(.06f), RoundedCornerShape(8.dp)),
                         contentAlignment = Alignment.Center,
                     ) { SvgIcon(Trail.icon(it.tool.name), tint, 15.dp, stroke = 1.5f) }
-                } else Box(Modifier.padding(top = 8.dp).align(Alignment.TopCenter).size(8.dp).background(dot, CircleShape))
+                } else Box(Modifier.padding(top = 9.dp).align(Alignment.TopCenter).size(8.dp).background(dot, CircleShape))
             }
-            Column(Modifier.weight(1f).padding(start = 12.dp, bottom = 26.dp, end = 4.dp, top = if (it.tool != null) 1.dp else 0.dp)) {
-                val full = open || it.tidy
-                if (it.placeholder) ThinkingDots(trailSecondary, 15.sp)
-                else if (it.live) ThinkingMotion(it.title, size = 15.5.sp, showDots = false, ink = Page.ink)
-                else Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Txt(it.title, Page.ink.copy(alpha = .94f), 15.5.sp, Modifier.weight(1f), lineHeight = 24.sp,
-                        weight = FontWeight.Medium, maxLines = if (full) Int.MAX_VALUE else 1)
-                    if (expandable) SvgIcon(Trail.chevron, trailSecondary, 13.dp, modifier = Modifier.graphicsLayer {
-                        rotationZ = if (open) 90f else 0f
-                    })
+            Column(Modifier.weight(1f).padding(start = 12.dp, bottom = 18.dp, end = 4.dp)) {
+                Row(Modifier.fillMaxWidth().height(26.dp), verticalAlignment = Alignment.CenterVertically) {
+                    when {
+                        it.placeholder -> ThinkingDots(trailSecondary, 15.sp, Modifier.weight(1f))
+                        it.live -> Box(Modifier.weight(1f)) { ThinkingMotion(it.title, size = 15.sp, showDots = false, ink = Page.ink) }
+                        else -> Txt(it.title, Page.ink.copy(alpha = .94f), 15.sp, Modifier.weight(1f), maxLines = 1)
+                    }
+                    if (!meta.isNullOrBlank()) { Spacer(Modifier.width(8.dp)); Txt(meta, if (it.live) trailActive else trailSecondary, 12.sp, maxLines = 1) }
+                    if (has) { Spacer(Modifier.width(8.dp)); TrailChevron(open) }
                 }
-                if (it.detail.isNotEmpty()) {
-                    Spacer(Modifier.height(6.dp))
-                    Txt(it.detail, trailSecondary, 14.sp, lineHeight = 25.sp, maxLines = if (full) Int.MAX_VALUE else if (it.tool != null) 1 else 2)
-                    if (full) MotionEvidence.Button(it.detail)
+                AnimatedVisibility(open && it.detail.isNotEmpty(), enter = trailEnter(),
+                    exit = trailExit()) {
+                    Column {
+                        if (it.tool == null) Txt(it.detail, trailSecondary, 14.sp, Modifier.padding(top = 4.dp), lineHeight = 24.sp)
+                        else StepBox(Modifier.padding(top = 8.dp)) {
+                            Txt(it.detail, Page.ink.copy(alpha = .86f), 13.5.sp, Modifier.padding(12.dp), lineHeight = 21.sp)
+                        }
+                        MotionEvidence.Button(it.detail)
+                    }
                 }
             }
         }
@@ -586,15 +701,21 @@ private fun androidx.compose.foundation.layout.BoxScope.TrailConnector(last: Boo
         }.background(trailLine))
 }
 
-/** The pending row settles in place into an expandable excerpt. */
+/**
+ * 一段思考（原文型，或后台那支笔的思考）：标题一行，点开看全文。
+ * tidy：后台的思考（多半是英文）交给帮手整理成中文——标题用整理好的结论，展开是整理好的理由，原话不出；
+ * 只在这一行真的画出来（作品那步展开了）时才请求，按原文缓存。
+ */
 @Composable
-private fun ThoughtTrailNode(text: String, live: Boolean, last: Boolean, summary: Boolean = false) {
+private fun ThoughtTrailNode(text: String, live: Boolean, last: Boolean, summary: Boolean = false, tidy: Boolean = false) {
     var expanded by remember { mutableStateOf(false) }
     val still = Toy.still()
     val first = remember(text) { text.trim() }
-    val label = (if (summary) ThinkTidy.get(first)?.firstOrNull()?.title else null)
-        ?: firstSentence(first, 46).ifBlank { "思考摘要" }
-    val expandable = first.trimEnd('。', '.', '！', '!') != label.trimEnd('。', '.', '！', '!')
+    if (tidy && !live) LaunchedEffect(first) { ThinkTidy.request(first, emptyList(), AttachLook.store) }
+    val tidied = if (summary || tidy) ThinkTidy.get(first)?.takeIf { it.isNotEmpty() } else null
+    val label = tidied?.firstOrNull()?.title ?: firstSentence(first, 46).ifBlank { "思考摘要" }
+    val body = tidied?.joinToString("\n") { it.detail.ifBlank { it.title } } ?: text
+    val expandable = body.trim().trimEnd('。', '.', '！', '!') != label.trimEnd('。', '.', '！', '!')
     val dot by animateColorAsState(if (live) trailActive else trailDoneDot,
         tween(if (still) 0 else 185, easing = Curves.standard), label = "thoughtDot")
     val arrival = remember { Animatable(if (live && !still) 0f else 1f) }
@@ -605,9 +726,9 @@ private fun ThoughtTrailNode(text: String, live: Boolean, last: Boolean, summary
     Pressable({ if (!live && expandable) expanded = !expanded }, Modifier.fillMaxWidth(),
         label = if (expanded) "收起思考" else "展开思考") { pressed ->
         Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min)
-            .background(if (pressed) veil(.04f) else Color.Transparent, RoundedCornerShape(8.dp))) {
+            .background(if (pressed && expandable) veil(.04f) else Color.Transparent, RoundedCornerShape(8.dp))) {
             Box(Modifier.width(26.dp).fillMaxHeight()) {
-                TrailConnector(last, 22.dp)
+                TrailConnector(last, 21.dp)
                 Box(Modifier.align(Alignment.TopCenter).padding(top = 9.dp).size(8.dp)
                     .graphicsLayer {
                         alpha = arrival.value
@@ -615,26 +736,22 @@ private fun ThoughtTrailNode(text: String, live: Boolean, last: Boolean, summary
                         scaleY = scaleX
                     }.background(dot, CircleShape))
             }
-            Column(Modifier.weight(1f).padding(start = 12.dp, end = 4.dp, bottom = 17.dp)) {
+            Column(Modifier.weight(1f).padding(start = 12.dp, end = 4.dp, bottom = 18.dp)) {
                 Crossfade(live, animationSpec = tween(if (still) 0 else 180), label = "thoughtSummary") { pending ->
                     Row(Modifier.fillMaxWidth().height(26.dp), verticalAlignment = Alignment.CenterVertically) {
-                        if (pending) ThinkingDots(trailSecondary, 14.5.sp)
+                        if (pending) ThinkingDots(trailSecondary, 15.sp)
                         else {
-                            Txt(label, Page.ink, 14.5.sp, Modifier.weight(1f), maxLines = 1)
-                            Spacer(Modifier.width(8.dp))
-                            if (expandable) SvgIcon(Trail.chevron, trailSecondary, 13.dp, modifier = Modifier.graphicsLayer {
-                                rotationZ = if (expanded) 90f else 0f
-                            })
+                            Txt(label, Page.ink.copy(alpha = .94f), 15.sp, Modifier.weight(1f), maxLines = 1)
+                            if (expandable) { Spacer(Modifier.width(8.dp)); TrailChevron(expanded) }
                         }
                     }
                 }
                 AnimatedVisibility(expanded && !live,
                     enter = if (still) androidx.compose.animation.EnterTransition.None else expandVertically(tween(250, easing = Curves.standard)) + fadeIn(tween(150)),
                     exit = if (still) androidx.compose.animation.ExitTransition.None else shrinkVertically(tween(200, easing = Curves.standard)) + fadeOut(tween(100))) {
-                    Txt(text, trailSecondary, 14.sp, lineHeight = 24.sp)
+                    Txt(body, trailSecondary, 14.sp, Modifier.padding(top = 4.dp), lineHeight = 24.sp)
                 }
             }
         }
     }
 }
-

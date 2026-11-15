@@ -24,7 +24,9 @@ object WorkJobs {
 
     /** 一件在后台写的作品：done = 写好的作品 id；fail = 没写成的原因。 */
     data class State(val title: String, val editing: Boolean, val chars: Int = 0, val done: String? = null, val fail: String? = null,
-                     val stage: String? = null, val effort: String? = null, val preview: java.io.File? = null)
+                     val stage: String? = null, val effort: String? = null, val preview: java.io.File? = null,
+                     /** 是他（或她用 stop_work）按停的，不是出错；revision = 写到第几稿（动效稿，0 = 还没出稿）。 */
+                     val stopped: Boolean = false, val revision: Int = 0)
     val state = mutableStateMapOf<String, State>()
 
     /** A read-only view of actual background jobs. Never infer progress from elapsed time. */
@@ -65,9 +67,9 @@ object WorkJobs {
             val active = running[id]?.isActive == true
             val status = when {
                 s?.done != null -> "已交付，作品 id=${s.done}"
-                s?.fail != null -> "失败或停止：${s.fail}"
+                s?.fail != null -> (if (s.stopped) "停下了" else "失败：${s.fail}") + saved(id, s.revision)
                 active -> "正在执行：${s?.stage ?: "等待最新步骤"}"
-                else -> "未在运行；可能已中断，可从作品卡片尝试继续"
+                else -> "未在运行（App 中途被关或停下了）" + saved(id, persisted?.optInt("revision", 0) ?: 0)
             }
             buildString {
                 append("任务 $id《${s?.title ?: persisted?.optJSONObject("args")?.optString("title") ?: "作品"}》：").append(status)
@@ -83,6 +85,10 @@ object WorkJobs {
         return ToolOut(rows.joinToString("\n\n"))
     }
 
+    /** 停下 / 没写成时还留着的稿：告诉她能接着做，不用另起一份。 */
+    private fun saved(id: String, rev: Int): String =
+        if (rev > 0) "；第 $rev 稿存着，用 $RESUME 接着做（同一张卡），不要另起 $START，也不要用 edit_work 找它" else "；还没出稿，可以 $RESUME 重新开始（同一张卡）"
+
     private class Order(val a: JSONObject, val chat: ChatState, val pid: String, val talk: String, val conv: String?,
                         val author: ArtworkJob.Model, val reviewer: ArtworkJob.Model?, val request: ChatMsg?, val references: List<String>)
     private val orders = mutableMapOf<String, Order>()
@@ -91,6 +97,11 @@ object WorkJobs {
 
     private fun restoreModel(data: JSONObject, store: AssistantStore): ArtworkJob.Model {
         val id = data.getString("provider")
+        // 原来那家的 Key 删了 / 停用了：换成现在的聊天模型接着做，不让「接着做」一直 401
+        if (store.config(id).key.isBlank()) {
+            val now = store.activeProvider
+            return ArtworkJob.Model(provider(now), store.config(now), store.activeModel, store.effort(now, store.activeModel))
+        }
         return ArtworkJob.Model(provider(id), store.config(id), data.getString("name"),
             if (data.isNull("effort")) null else data.getString("effort"))
     }
@@ -125,7 +136,9 @@ object WorkJobs {
     )
 
     /** 主对话里的说法：用 start_work 交代，交代完接着说，别说「做好了」。 */
-    fun rule(who: String) = "做新作品、大改旧作品用 $START 交代给后台。单幅静态绘画填 artwork=true 和 kind=page：卡片马上出现，写好了自己亮起来。交代完就接着跟 $who 说话，可以说正在做、想怎么做，别说「做好了，点开看」——那时还没写完。"
+    fun rule(who: String) = "做新作品、大改旧作品用 $START 交代给后台。单幅静态绘画填 artwork=true 和 kind=page：卡片马上出现，写好了自己亮起来。交代完就接着跟 $who 说话，可以说正在做、想怎么做，别说「做好了，点开看」——那时还没写完。" +
+        "$who 说停下、别做了：调用 $STOP，工具回了才算停；没在做的照实说没有。要接着做以前停下或没做成的那件：先 get_work_status 看 id，再 $RESUME，卡片还是原来那张，不要另起一份。" +
+        "停下、记住、做好这类事，没有调用对应的工具就不能说已经做了。"
 
     /** 主对话里调用 start_work：记下这一单，马上在后台开写，返回给她的话。onCard 拿到消息里要记的引用。 */
     fun start(a: JSONObject, chat: ChatState, store: AssistantStore, pid: String, history: List<ChatMsg>, onCard: (String) -> Unit): ToolOut {
@@ -173,7 +186,51 @@ object WorkJobs {
         }
         run(key)
     }
-    fun stop(ref: String) { running[keyOf(ref)]?.cancel() }
+    fun stop(ref: String) { val k = keyOf(ref); stopping += k; running[k]?.cancel() }
+    /** 按停的 key：协程收尾时看这里分辨「停下」和「出错 / 超时」。 */
+    private val stopping = mutableSetOf<String>()
+
+    const val STOP = "stop_work"
+    const val RESUME = "resume_work"
+    val stopSpec get() = ToolSpec(
+        STOP,
+        "停下后台正在做的作品（对方说停下、别做了时用）。写好的稿留着，之后能 $RESUME 接着做。task_id 不填就停这段对话里所有在做的。没调用这个工具，不能说已经停了。",
+        JSONObject().put("type", "object").put("properties",
+            JSONObject().put("task_id", JSONObject().put("type", "string").put("description", "要停的那件的 job id；不填停本对话全部"))))
+    val resumeSpec get() = ToolSpec(
+        RESUME,
+        "让停下或没做成的后台作品从存着的那一稿接着做，卡片还是原来那张。note 写这次要补充或改的要求（可不填）。别为同一件作品另起 $START。",
+        JSONObject().put("type", "object").put("properties", JSONObject()
+            .put("task_id", JSONObject().put("type", "string").put("description", "get_work_status 里的 job id"))
+            .put("note", JSONObject().put("type", "string").put("description", "这次补充的要求")))
+            .put("required", JSONArray(listOf("task_id"))))
+
+    /** 她调用 stop_work：照实回停了哪几件；一件都没在做就说没有。 */
+    fun stopTool(args: JSONObject, conv: String?): ToolOut {
+        val want = args.optString("task_id").trim().removePrefix(PREFIX).substringBefore('|')
+        val keys = running.filter { (k, j) -> j.isActive && (if (want.isNotEmpty()) k == want else orders[k]?.conv == conv) }.keys.toList()
+        if (keys.isEmpty()) return ToolOut(if (want.isNotEmpty()) "这件没有在后台做（已经停了、做完了或没写成），不用停。" else "这段对话里没有正在后台做的作品。照实说没有在做的，不要说「停了」。")
+        keys.forEach { k -> stopping += k; running[k]?.cancel() }
+        return ToolOut("停下了：" + keys.joinToString("、") { "《${state[it]?.title ?: "作品"}》" } + "。写好的稿留着，卡片上会显示停在第几稿，点「接着做」或用 $RESUME 能接着来。")
+    }
+
+    /** 她调用 resume_work：同一个 key 接着做；note 接在原来的要求后面。 */
+    fun resumeTool(args: JSONObject, chat: ChatState, store: AssistantStore): ToolOut {
+        val key = args.optString("task_id").trim().removePrefix(PREFIX).substringBefore('|')
+        if (key.isEmpty()) return ToolOut("task_id 是空的：先用 get_work_status 查到 job id。", failed = true)
+        if (state[key]?.done != null) return ToolOut("这件已经交付了（作品 id=${state[key]?.done}），要改就用 edit_work 或带 id 的 $START。")
+        if (running[key]?.isActive == true) return ToolOut("这件正在后台做着，不用接着做。")
+        val record = ArtworkJob.loadOrder(key)
+        if (key !in orders && record == null) return ToolOut("找不到这件的记录，只能另起 $START 重新做。", failed = true)
+        val note = args.optString("note").trim()
+        if (note.isNotEmpty()) {
+            orders[key]?.a?.let { it.put("brief", it.optString("brief") + "\n\n接着做时补充的要求：" + note) }
+            record?.optJSONObject("args")?.let { it.put("brief", it.optString("brief") + "\n\n接着做时补充的要求：" + note) }
+        }
+        retry("$PREFIX$key", record, chat, store)
+        val title = state[key]?.title ?: record?.optJSONObject("args")?.optString("title") ?: "作品"
+        return ToolOut("《$title》从存着的稿接着做了，卡片还是原来那张，写好会自己亮起来。别说已经做好。")
+    }
 
     private fun run(key: String) {
         val o = orders[key] ?: return
@@ -182,7 +239,10 @@ object WorkJobs {
         val title = a.optString("title").trim().ifEmpty { "未命名" }.take(40)
         val editId = a.optString("id").trim().takeIf { it.isNotEmpty() && Works.get(it) != null }
         val artwork = a.optBoolean("artwork") && a.optString("kind") == "page"
-        state[key] = State(title, editId != null, stage = if (artwork) "正在起稿" else null, preview = state[key]?.preview)
+        val lastRev = state[key]?.revision?.takeIf { it > 0 } ?: ArtworkJob.loadOrder(key)?.optInt("revision", 0) ?: 0
+        stopping -= key
+        state[key] = State(title, editId != null, stage = if (artwork) "正在起稿" else if (lastRev > 0) "接着第 $lastRev 稿" else null,
+            preview = state[key]?.preview, revision = lastRev)
         val live = Notify.startLive(o.conv, o.chat.history, title)
         running[key] = scope.launch {
             try {
@@ -227,6 +287,7 @@ object WorkJobs {
                                     state[key]?.let { state[key] = it.copy(stage = "正在检查预览") }
                                     Works.run(Works.MAKE, args, o.pid, preview = { page, missing, publish ->
                                         motion.draft(page)
+                                        withContext(Dispatchers.Main) { state[key]?.let { state[key] = it.copy(revision = motion.revision) } }
                                         val review = WorkReview.inspect(page, missing, sees || o.reviewer != null)
                                         val image = review.image
                                         val reviewer = o.reviewer
@@ -272,6 +333,7 @@ object WorkJobs {
                                     reviewedRound == round -> ToolOut("先阅读预览检查结果，再决定是否交付。")
                                     else -> checkNotNull(candidate).invoke().also {
                                         if (made != null) ArtworkRuns.note(key, "present", "已交付作品")
+                                        made?.let { if (motion.skipped) Works.markUnchecked(it) }
                                     }
                                 }
                                 else -> ToolOut("这里只能制作预览和交付。")
@@ -282,8 +344,19 @@ object WorkJobs {
                         finished = { made != null },
                         maxRounds = if (o.references.isEmpty()) 10 else 32,
                         imageHistoryBatches = if (o.references.isEmpty()) 0 else 3,
+                        keepLatest = Works.MAKE,
                     )
+                    // 交一份检查过的稿：她忘了 present_work、或 15 分钟到点时用。没对照过动画画面的标「画面没检查」
+                    suspend fun deliverChecked(): Boolean {
+                        val c = candidate ?: return false
+                        c.invoke()
+                        val id = made ?: return false
+                        ArtworkRuns.note(key, "present", "已交付检查过的那一稿")
+                        if (o.references.isNotEmpty() && (!motion.canPresent || motion.skipped)) Works.markUnchecked(id)
+                        return true
+                    }
                     try {
+                      try {
                         kotlinx.coroutines.withTimeout(15 * 60_000L) {
                             ChatApi.stream(p, c, model, system(editId) + (if (o.references.isEmpty()) "" else "\n" + MotionTools.authorRule), listOf(ChatMsg("user", order(o, title, editId) + resumed)), effort,
                                 onThink = { chunk ->
@@ -291,10 +364,14 @@ object WorkJobs {
                                     if (thoughtEntry != null) thought.append(chunk)
                                 }, tools = tools, onRoundEnd = { round++; finishThought() }, onText = {})
                         }
+                      } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
+                        // 总时限到了：有检查过的稿就交那份，不空手
+                        if (!deliverChecked()) throw e
+                      }
                     } finally {
                         kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) { finishThought() }
                     }
-                    if (made == null && candidate != null) err = "预览已检查，模型未确认交付"
+                    if (made == null && candidate != null && !deliverChecked()) err = "预览已检查，没交出去"
                 }
             } catch (e: CancellationException) {
                 if (made == null) err = if (e is kotlinx.coroutines.TimeoutCancellationException) if (artwork) "绘制超时，已保留可用稿件" else "制作超时，未交付" else "停下了"
@@ -303,11 +380,19 @@ object WorkJobs {
             }
             val s = state[key] ?: State(title, editId != null)
             val id = made
+            val byHand = key in stopping
             if (id != null) { state[key] = s.copy(done = id); o.chat.swapWork(o.conv, "$PREFIX$key|$title", id); Notify.work(o.conv, o.chat.history, title) }
-            else state[key] = s.copy(fail = err ?: "后台没把作品写出来")
+            else state[key] = s.copy(fail = err ?: "后台没把作品写出来", stopped = byHand, stage = null)
             } finally {
                 running.remove(key)
+                stopping -= key
                 Notify.stopLive(live)
+                // 停下 / 写到第几稿记进任务记录：App 被杀再打开，卡片还是「停在第 N 稿」
+                state[key]?.let { st ->
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                        runCatching { ArtworkJob.saveOrder(key, o.metadata().put("stopped", st.stopped).put("revision", st.revision)) }
+                    }
+                }
             }
         }
     }

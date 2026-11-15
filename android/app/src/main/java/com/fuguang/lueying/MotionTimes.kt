@@ -7,13 +7,13 @@ internal object MotionTimes {
     fun plan(duration: Long, start: Long, end: Long, count: Int): List<Long> {
         require(duration > 0) { "视频时长不可用" }
         require(start >= 0 && end >= start && end < duration) { "区间必须在视频时长内，结束时间小于 duration_ms" }
-        require(count in 1..12) { "每次取 1–12 帧；需要更密时缩小区间后继续查看" }
+        require(count in 1..36) { "每次取 1–36 帧（拼图时）；单帧最多 12 张，需要更密时缩小区间后继续查看" }
         if (start == end || count == 1) return listOf(start)
         return List(count) { start + ((end - start).toDouble() * it / (count - 1)).toLong() }.distinct()
     }
 
     fun points(duration: Long, times: List<Long>): List<Long> {
-        require(times.size in 1..12) { "每次指定 1–12 个时刻" }
+        require(times.size in 1..36) { "每次指定 1–36 个时刻（单帧最多 12 个）" }
         require(times.all { it >= 0 && it < duration }) { "时间必须在视频范围内" }
         return times.distinct().sorted()
     }

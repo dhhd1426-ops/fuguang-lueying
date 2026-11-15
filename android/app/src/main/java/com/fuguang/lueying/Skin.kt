@@ -112,6 +112,16 @@ object Skin {
     /** 聊天里卡片（抖音、网盘、Telegram 长条）的底：深色主题深色玻璃，浅色主题白色玻璃。 */
     fun cardFill(a: Float): Color = if (light) Color.White.copy(alpha = (a * .7f).coerceAtMost(.9f)) else rgba(30, 33, 42, a)
 
+    /**
+     * 聊天里的作品卡（照 Claude App 的作品卡）：实底 + 一圈 1dp 细线，字跟着主题走。
+     * 以前写死白色 5.5% 底 + 固定米白字，白色、渐变主题下白字压白底看不见。
+     */
+    val workFill: Color get() = when (id) { DARK -> Color(0xFF1E1E1E); LIGHT -> Color.White; GRAD -> Color.White.copy(alpha = .62f); else -> rgba(26, 29, 37, .5f) }
+    val workPress: Color get() = when (id) { DARK -> Color(0xFF262626); LIGHT -> Color(0xFFF7F6F2); GRAD -> Color.White.copy(alpha = .75f); else -> rgba(26, 29, 37, .62f) }
+    val workLine: Color get() = when (id) { DARK -> Color.White.copy(alpha = .09f); LIGHT -> Color.Black.copy(alpha = .08f); GRAD -> g.ink.copy(alpha = .1f); else -> Color.White.copy(alpha = .12f) }
+    /** 作品卡上的图标：白色主题杏色压深一档，别的跟点缀色。 */
+    val workIcon: Color get() = if (id == LIGHT) Color(0xFFC4875C) else accent
+
     /** 记忆本的折角卡片（第 345 版）：暗黑是实底深灰，白色是白纸，渐变是白色磨砂，磨砂是深色玻璃。 */
     val note: Color get() = when (id) { DARK -> Color(0xFF1E1E1E); LIGHT -> Color.White; GRAD -> Color.White.copy(alpha = .55f); else -> rgba(30, 33, 42, .62f) }
     /** 卡片右上折过来的那一角：比纸深一层。 */

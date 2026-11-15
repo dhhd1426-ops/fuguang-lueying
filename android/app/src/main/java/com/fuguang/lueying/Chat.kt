@@ -68,6 +68,10 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.foundation.layout.offset
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.foundation.layout.imeAnimationTarget
+import androidx.compose.runtime.Stable
 import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.AnnotatedString
@@ -334,7 +338,7 @@ class ChatState(val history: ConvStore) {
                 val videoRefs = MotionTools.references(history)
                 val motionReviewer = AttachLook.helper(store)?.let { (id, name) -> ArtworkJob.Model(provider(id), store.config(id), name, store.effort(id, name)) }
                 val motion = MotionTools.Session(videoRefs, Attach.vision(p.id, store.activeModel), motionReviewer)
-                val specs = listOf(GoalContinuity.spec) + (if (who.noteOn) Memory.toolSpecs else emptyList()) + Works.specs.filter { it.name != Works.MAKE } + WorkJobs.spec + WorkJobs.statusSpec + SentFiles.spec + SentPics.spec + Pacts.specs + Materials.specs + VideoParse.specs + MotionTools.specs + PanTools.specs + ClockTools.specs + WebHand.specs + skills + (if (web) listOf(WebSearch.spec) else emptyList()) + (if (yu) Yu.tools else emptyList()) + (if (recall) listOf(Recall.spec, Recall.openSpec) else emptyList()) + (if (folded != null) listOf(Fold.spec) else emptyList()) + mcp
+                val specs = listOf(GoalContinuity.spec) + (if (who.noteOn) Memory.toolSpecs else emptyList()) + Works.specs.filter { it.name != Works.MAKE } + WorkJobs.spec + WorkJobs.statusSpec + WorkJobs.stopSpec + WorkJobs.resumeSpec + SentFiles.spec + SentPics.spec + Pacts.specs + Materials.specs + VideoParse.specs + (if (videoRefs.isEmpty()) MotionTools.specs.filter { it.name == MotionTools.RENDER } else MotionTools.specs) + PanTools.specs + ClockTools.specs + WebHand.specs + skills + (if (web) listOf(WebSearch.spec) else emptyList()) + (if (yu) Yu.tools else emptyList()) + (if (recall) listOf(Recall.spec, Recall.openSpec) else emptyList()) + (if (folded != null) listOf(Fold.spec) else emptyList()) + mcp
                 val convTitle0 = store0.get(cur)?.title ?: firstSentence(question, 18)
                 // 对方发来的照片，最近的在前：send_image / send_file 里 photo:1 就是最近那张
                 fun photos(): List<java.io.File> = history.filter { it.role == "user" }.flatMap { it.files }.filter { Attach.isImage(it) }.reversed().map { Attach.file(it) }
@@ -349,7 +353,7 @@ class ChatState(val history: ConvStore) {
                     append("\n").append(Pacts.system(who, Memory.userCall))
                     append("\n").append(Materials.system())
                     append("\n").append(VideoParse.system(Memory.userCall))
-                    append("\n").append(MotionTools.rule).append(MotionTools.context(videoRefs))
+                    if (videoRefs.isNotEmpty()) append("\n").append(MotionTools.rule).append(MotionTools.context(videoRefs))
                     append("\n").append(PanTools.system(Memory.userCall))
                     append("\n").append(ClockTools.system(Memory.userCall))
                     append("\n").append(WebHand.system(Memory.userCall))
@@ -411,6 +415,8 @@ class ChatState(val history: ConvStore) {
                             else if (n == SentFiles.TOOL) SentFiles.run(a, photos()) { ref -> pendingWorks.add(ref); pendingWorkAt.add(partial.length) }
                             else if (n == SentPics.TOOL) SentPics.run(a, photos()) { r -> if (r !in pendingImgs) pendingImgs.add(r) }
                             else if (n == "get_work_status") WorkJobs.status(a, cur, history.flatMap { it.works })
+                            else if (n == WorkJobs.STOP) WorkJobs.stopTool(a, cur)
+                            else if (n == WorkJobs.RESUME) WorkJobs.resumeTool(a, this@ChatState, store)
                             else if (n == WorkJobs.START) WorkJobs.start(a, this@ChatState, store, who.id, history) { ref ->
                                 pendingWorks.add(ref)
                                 pendingWorkAt.add(partial.length)
@@ -740,6 +746,7 @@ fun ChatPage(
             Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                 ChatInput(
                     compact, blur, title, store.activeModel, store.activeProvider, store.effort(), chat, plus, flight,
+                    pickerOpen = picker,
                     onPick = { picker = true },
                     onSend = {
                         val n = chat.send(scope, store)
@@ -1183,12 +1190,12 @@ private fun ChatInput(
     chat: ChatState,
     plus: LiquidPlusState,
     flight: SendFlight,
+    pickerOpen: Boolean,
     onPick: () -> Unit,
     onSend: () -> Unit,
     onStop: () -> Unit,
     modifier: Modifier,
 ) {
-    val shape = RoundedCornerShape(22.dp)
     val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
     val focus = androidx.compose.ui.platform.LocalFocusManager.current
     // 她在做时也能发：有字就是 ↑（排在末尾），没字才是 ■
@@ -1210,12 +1217,39 @@ private fun ChatInput(
     val ball = 36.dp
     val inset = 9.dp
     val sep = 46.dp
-    Box(modifier.padding(top = 10.dp)) {
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val inputFocus = remember { androidx.compose.ui.focus.FocusRequester() }
+    LaunchedEffect(chat.focusTick) { if (chat.focusTick > 0) runCatching { inputFocus.requestFocus() } }
+    val fold = rememberInputFold(chat, plus, pickerOpen, density)
+    val shapeNow = fold.shape()
+    // 两行时的整块高度（量出来的）：一行时字从上面那行挪到 ＋ 右边
+    val fullH = remember { androidx.compose.runtime.mutableIntStateOf(0) }
+    val pillH = 54.dp
+    val pillPx = with(density) { pillH.roundToPx() }
+    val bottomGap = if (compact) 22.dp else 30.dp
+    Box(modifier.padding(top = 10.dp).graphicsLayer {
+        // 贴着键盘：往下挪进页面底边留白；收回一行弹过头时往下沉一下，展开弹过头时往上撑一点
+        transformOrigin = androidx.compose.ui.graphics.TransformOrigin(.5f, 1f)
+        translationY = bottomGap.toPx() * fold.dock.coerceIn(0f, 1f) + 22.dp.toPx() * (-fold.over).coerceAtLeast(0f)
+        scaleY = 1f + .22f * fold.over.coerceAtLeast(0f)
+    }) {
+      Box(
+        Modifier
+            .fillMaxWidth()
+            .padding(end = sep * t.coerceAtLeast(0f))
+            .glass(shapeNow, blur, fill = Skin.tint(.42f), border = Color.Transparent)
+            .pointerInput(Unit) { detectTapGestures { runCatching { inputFocus.requestFocus() } } }
+            .layout { m, c ->
+                val pl = m.measure(c)
+                fullH.intValue = pl.height
+                val o = fold.open.coerceIn(0f, 1f)
+                val h = (pillPx + (pl.height - pillPx) * o).toInt().coerceAtLeast(minOf(pillPx, pl.height))
+                layout(pl.width, h) { pl.place(0, h - pl.height) }
+            },
+      ) {
         Column(
             Modifier
                 .fillMaxWidth()
-                .padding(end = sep * t.coerceAtLeast(0f))
-                .glass(shape, blur, fill = Skin.tint(.42f), border = Color.Transparent)
                 .padding(start = 16.dp, end = inset, top = 12.dp, bottom = inset),
         ) {
             // 上下文消息限制到顶：输入框上方展开一行杏色提示，发送键变灰，提示里直接开新对话
@@ -1254,8 +1288,6 @@ private fun ChatInput(
                 }
             }
             AttachTray(chat, AttachLook.sees(provider, AttachLook.store, model), model)
-            val inputFocus = remember { androidx.compose.ui.focus.FocusRequester() }
-            LaunchedEffect(chat.focusTick) { if (chat.focusTick > 0) runCatching { inputFocus.requestFocus() } }
             BasicTextField(
                 value = chat.draft,
                 onValueChange = { chat.draft = it },
@@ -1263,6 +1295,13 @@ private fun ChatInput(
                 cursorBrush = SolidColor(Page.accent),
                 maxLines = 6,
                 modifier = Modifier.fillMaxWidth().heightIn(min = 24.dp).padding(start = 4.dp)
+                    // 一行时：字挪到 ＋ 右边、在胶囊里竖着居中；两行时回到上面那行
+                    .graphicsLayer {
+                        val k = 1f - fold.open.coerceIn(0f, 1f)
+                        translationX = 44.dp.toPx() * k
+                        translationY = (fullH.intValue - 51.dp.toPx()) * k
+                    }
+                    .onFocusChanged { fold.focused = it.isFocused }
                     .focusRequester(inputFocus)
                     .onGloballyPositioned { chat.inputAt = it.boundsInRoot() },
                 decorationBox = { inner ->
@@ -1275,7 +1314,12 @@ private fun ChatInput(
             Spacer(Modifier.height(8.dp))
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 LiquidPlusButton(plus) { plus.pick(it) }
-                Pressable(onPick, enabled = !chat.busy, label = "选择模型") { p ->
+                // 模型胶囊：一行时藏起来（不占点按），展开时从 ＋ 旁边长出来
+                if (fold.open > .05f) Pressable(onPick, Modifier.graphicsLayer {
+                    val o = fold.open.coerceIn(0f, 1f)
+                    alpha = o; scaleX = .92f + .08f * o; scaleY = scaleX; translationY = 8.dp.toPx() * (1f - o)
+                    transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, .5f)
+                }, enabled = !chat.busy, label = "选择模型") { p ->
                     Row(
                         Modifier.widthIn(max = 240.dp)
                             .background(veil(if (p) .13f else .07f), RoundedCornerShape(50))
@@ -1292,6 +1336,7 @@ private fun ChatInput(
                 Spacer(Modifier.width((ball - 10.dp) * (1f - t).coerceIn(0f, 1f)))
             }
         }
+      }
         // 杏色的液体球（带黏连），画在输入框外层
         Box(Modifier.matchParentSize()) { SendGoo(t, pulse.value, pressed, inset, sep, ball) }
         val icon = when { canSend -> ChatIcons.up; chat.busy -> ChatIcons.stop; else -> ChatIcons.wave }
@@ -1309,6 +1354,71 @@ private fun ChatInput(
     }
 }
 
+
+/**
+ * 输入框平时一行、跟着键盘自己展开成两行（第 4xx 版，原型 QbLXGUhShvQa6z6s86QyUp 第 4 版，照 Claude App 录屏）：
+ * 只看键盘升到哪了（ime 当前高度 / 要去的高度）——升过六成开始变，到位时正好变完；收的时候一动就先缩回一行。
+ * 有字、有附件、编辑重发、到上限提示、模型抽屉或 ＋ 菜单开着时一直展开；外接键盘（有焦点却没有软键盘）也展开。
+ * open / dock 用弹簧追（阻尼 .6 / .62，过冲约 9% / 8%，守住动效指南「非庆祝场景过冲 ≤ 10%」）：弹一下不晃。open 可以略超出 0..1，over 就是弹过头的那点。
+ */
+@Stable
+private class InputFold {
+    var open by mutableFloatStateOf(0f)
+    var dock by mutableFloatStateOf(0f)
+    var focused by mutableStateOf(false)
+    val over: Float get() = open - open.coerceIn(0f, 1f)
+    fun shape(): RoundedCornerShape {
+        val o = open.coerceIn(0f, 1f)
+        val top = (27f - 5f * o).dp
+        val bottom = ((27f - 5f * o) * (1f - dock.coerceIn(0f, 1f))).dp
+        return RoundedCornerShape(top, top, bottom, bottom)
+    }
+}
+
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+private fun rememberInputFold(chat: ChatState, plus: LiquidPlusState, pickerOpen: Boolean, density: androidx.compose.ui.unit.Density): InputFold {
+    val fold = remember { InputFold() }
+    val ime = WindowInsets.ime
+    val goal = WindowInsets.imeAnimationTarget
+    val latch = remember { booleanArrayOf(false) }
+    val tall = remember { intArrayOf(0) }
+    // 键盘进度 0..1：升起时看「要去的高度」；到位后锁住（切表情 / 语音面板高度变也不闪）；收起时按刚才最高的那次算
+    val kb by remember(density) {
+        derivedStateOf {
+            val now = ime.getBottom(density); val to = goal.getBottom(density)
+            if (to > 0) {
+                tall[0] = maxOf(tall[0], to)
+                if (now >= to) latch[0] = true
+                if (latch[0]) 1f else (now.toFloat() / to).coerceIn(0f, 1f)
+            } else {
+                latch[0] = false
+                if (tall[0] == 0) 0f else (now.toFloat() / tall[0]).coerceIn(0f, 1f)
+            }
+        }
+    }
+    // 有焦点 0.4 秒了还没有软键盘：外接键盘 / 悬浮窗，按展开处理
+    var noSoft by remember { mutableStateOf(false) }
+    LaunchedEffect(fold.focused) {
+        noSoft = false
+        if (fold.focused) { kotlinx.coroutines.delay(400); noSoft = goal.getBottom(density) == 0 && ime.getBottom(density) == 0 }
+    }
+    fun smooth(x: Float): Float { val k = ((x - .62f) / .38f).coerceIn(0f, 1f); return k * k * (3f - 2f * k) }
+    val kbOpen = smooth(kb)
+    val force = chat.draft.isNotEmpty() || chat.atts.isNotEmpty() || chat.editing >= 0 || chat.full || pickerOpen || plus.open || (noSoft && fold.focused)
+    val still = Toy.still()
+    val open by androidx.compose.animation.core.animateFloatAsState(
+        maxOf(kbOpen, if (force) 1f else 0f),
+        if (still) androidx.compose.animation.core.snap() else androidx.compose.animation.core.spring(dampingRatio = .6f, stiffness = 300f), label = "inputOpen",
+    )
+    val dock by androidx.compose.animation.core.animateFloatAsState(
+        kbOpen,
+        if (still) androidx.compose.animation.core.snap() else androidx.compose.animation.core.spring(dampingRatio = .62f, stiffness = 380f), label = "inputDock",
+    )
+    fold.open = open
+    fold.dock = dock
+    return fold
+}
 
 /* ---------------- 选择模型抽屉（方案 1：无边框，选中项淡暖色块） ---------------- */
 

@@ -56,6 +56,14 @@ object Works {
 
     fun source(id: String): JSONObject? = runCatching { JSONObject(src(id)!!.readText()) }.getOrNull()
 
+    /** 后台交的这一稿没对照过实际动画画面（连着两次没渲染出来，跳过了）：作品卡小字「画面没检查」。 */
+    fun unchecked(id: String): Boolean = source(id)?.optBoolean("unchecked") == true
+    suspend fun markUnchecked(id: String): Unit = withContext(Dispatchers.IO) {
+        val f = src(id) ?: return@withContext
+        runCatching { f.writeText(JSONObject(f.readText()).put("unchecked", true).toString()) }
+        withContext(Dispatchers.Main) { version++ }
+    }
+
     fun html(id: String): String? = runCatching {
         val data = source(id)
         if (data?.has("artworkPng") == true) data.getString("html") else htmlFile(id)!!.readText()

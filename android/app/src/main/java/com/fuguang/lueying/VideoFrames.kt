@@ -45,6 +45,7 @@ internal object VideoFrames {
         val file = Attach.file(ref)
         require(file.isFile && file.length() > 0) { "视频附件不存在或为空" }
         val key = "${file.canonicalPath}:${file.length()}:${file.lastModified()}"
+        loadHashes()
         val id = hashes[key] ?: file.inputStream().use { input ->
             val digest = MessageDigest.getInstance("SHA-256")
             val buf = ByteArray(64 * 1024)
@@ -53,7 +54,7 @@ internal object VideoFrames {
                 val n = input.read(buf); if (n < 0) break
                 digest.update(buf, 0, n)
             }
-            digest.digest().joinToString("") { "%02x".format(it) }.also { hashes[key] = it }
+            digest.digest().joinToString("") { "%02x".format(it) }.also { hashes[key] = it; saveHashes() }
         }
         val r = MediaMetadataRetriever()
         try {
@@ -130,13 +131,64 @@ internal object VideoFrames {
         }
     }
 
-    private suspend fun execute(args: List<String>, log: File) {
+    /** 视频的哈希存盘（路径 + 大小 + 修改时间 → 哈希）：重启后不再把整段视频读一遍。最多记 200 条。 */
+    @Volatile private var hashesLoaded = false
+    private fun loadHashes() {
+        if (hashesLoaded) return
+        hashesLoaded = true
+        runCatching {
+            val o = JSONObject(File(root, "hashes.json").readText())
+            o.keys().forEach { k -> hashes[k] = o.getString(k) }
+        }
+    }
+    private fun saveHashes() = runCatching {
+        val o = JSONObject()
+        hashes.entries.toList().takeLast(200).forEach { (k, v) -> o.put(k, v) }
+        atomic(File(root, "hashes.json"), o.toString())
+    }
+
+    /**
+     * 画面变化集中在哪几段（毫秒区间，最多 6 段）：低分辨率、每秒 5 帧跑一遍场景检测，相邻 0.4 秒内的变化并成一段，前后各放 0.1 秒。
+     * 按视频哈希缓存。跑不出来就空着，不影响看视频。
+     */
+    suspend fun scenes(info: Info): List<Pair<Long, Long>> = decoder.withLock {
+        withContext(Dispatchers.IO) {
+            val cache = File(root, "frames/${info.id}/scenes-v1.json")
+            runCatching {
+                val a = JSONArray(cache.readText())
+                return@withContext List(a.length()) { a.getJSONArray(it).let { r -> r.getLong(0) to r.getLong(1) } }
+            }
+            val got = runCatching {
+                check(YtDlp.boot())
+                val bin = File(context.applicationInfo.nativeLibraryDir, "libffmpeg.so")
+                check(bin.isFile)
+                cache.parentFile?.mkdirs()
+                val log = File(cache.parentFile, "scenes.log")
+                try {
+                    execute(listOf(bin.path, "-hide_banner", "-nostdin", "-loglevel", "info", "-i", Attach.file(info.ref).path,
+                        "-map", "0:v:0", "-an", "-sn", "-dn", "-vf", "scale=160:-2,fps=5,select='gt(scene,0.08)',showinfo", "-f", "null", "-"), log, 30_000)
+                    val hits = MotionTimes.pts(log.readText()).map { it / 1000 }.sorted()
+                    val ranges = mutableListOf<LongArray>()
+                    hits.forEach { t ->
+                        val last = ranges.lastOrNull()
+                        if (last != null && t - last[1] <= 400) last[1] = t else ranges += longArrayOf(t, t)
+                    }
+                    ranges.map { (it[0] - 100).coerceAtLeast(0) to (it[1] + 100).coerceAtMost(info.duration - 1) }
+                        .sortedByDescending { it.second - it.first }.take(6).sortedBy { it.first }
+                } finally { log.delete() }
+            }.getOrDefault(emptyList())
+            runCatching { atomic(cache, JSONArray(got.map { JSONArray(listOf(it.first, it.second)) }).toString()) }
+            got
+        }
+    }
+
+    private suspend fun execute(args: List<String>, log: File, limit: Long = 90_000) {
         val pb = ProcessBuilder(args).redirectErrorStream(true).redirectOutput(log)
         val pk = File(context.noBackupFilesDir, "youtubedl-android/packages")
         pb.environment()["LD_LIBRARY_PATH"] = "${pk.path}/python/usr/lib:${pk.path}/ffmpeg/usr/lib"
         val process = pb.start()
         try {
-            check(withTimeout(90_000) { runInterruptible { process.waitFor() } } == 0) {
+            check(withTimeout(limit) { runInterruptible { process.waitFor() } } == 0) {
                 "视频解码失败，可能是本机不支持的编码或损坏的文件"
             }
         } finally { if (process.isAlive) process.destroyForcibly() }
