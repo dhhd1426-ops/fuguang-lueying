@@ -251,12 +251,18 @@ function hookXHR(map){const open=XMLHttpRequest.prototype.open,send=XMLHttpReque
       x.dispatchEvent(new Event('readystatechange'));x.dispatchEvent(new ProgressEvent('load'));x.dispatchEvent(new ProgressEvent('loadend'));},0);};}
 $('ldt')&&($('ldt').textContent='正在摆好大肥鱼…');
 /* 贴图：自己读成画布纹理交给 PIXI（托管页里 <img> 加载贴图会被拦） */
-async function textures(){const mj=await (await fetch(MODEL+'model.model3.json')).json();
-  const blobs=await Promise.all(mj.FileReferences.Textures.map(u=>fetch(MODEL+u).then(r=>{if(!r.ok)throw new Error('贴图读取失败 '+r.status);return r.blob();})));
-  const out=[];
-  for(const b of blobs){/* 一张一张解，峰值内存小 */
-    const bm=await createImageBitmap(b,texHD?{}:{resizeWidth:2048,resizeHeight:2048,resizeQuality:'high'});
-    const c=document.createElement('canvas');c.width=bm.width;c.height=bm.height;c.getContext('2d').drawImage(bm,0,0);bm.close&&bm.close();
+async function textures(){bridge('phase',{s:'读模型信息'});
+  const r0=await fetch(MODEL+'model.model3.json');if(!r0.ok)throw new Error('模型信息读取失败 '+r0.status);
+  const list=(await r0.json()).FileReferences.Textures,out=[],lim=texHD?4096:2048;
+  for(let i=0;i<list.length;i++){/* 一张一张读、一张一张解，峰值内存小 */
+    bridge('phase',{s:'贴图 '+(i+1)+'/'+list.length});
+    const r=await fetch(MODEL+list[i]);if(!r.ok)throw new Error('贴图读取失败 '+r.status);
+    const bm=await createImageBitmap(await r.blob());
+    /* App 导入时已经把贴图缩到 4096 以内（原图 8192 五张，手机解不动）；这里只在标准画质、或漏网的大图上按比例再收一次 */
+    const k=Math.min(1,lim/Math.max(bm.width,bm.height));
+    const c=document.createElement('canvas');c.width=Math.max(1,Math.round(bm.width*k));c.height=Math.max(1,Math.round(bm.height*k));
+    const g2=c.getContext('2d');if(!g2)throw new Error('贴图画布建不出来 '+c.width+'×'+c.height);
+    g2.imageSmoothingQuality='high';g2.drawImage(bm,0,0,c.width,c.height);bm.close&&bm.close();
     const t=PIXI.Texture.from(c),bt=t.baseTexture;bt.mipmap=PIXI.MIPMAP_MODES.ON;bt.scaleMode=PIXI.SCALE_MODES.LINEAR;bt.anisotropicLevel=8;texSize=c.width;out.push(t);}
   return out;}
 function hookTex(list){const pick=u=>{const m=typeof u==='string'&&/texture_0*(\d+)\.(png|webp)/.exec(u);return m?list[+m[1]]:null;};
@@ -285,7 +291,7 @@ function hookTex(list){const pick=u=>{const m=typeof u==='string'&&/texture_0*(\
     const dr=r.getModel().getModel().drawables,i=(r._colorIndex|0)*4;
     if(prog.__mc&&dr.multiplyColors)gl.uniform4fv(prog.__mc,dr.multiplyColors.subarray(i,i+4));
     if(prog.__sc&&dr.screenColors)gl.uniform4fv(prog.__sc,dr.screenColors.subarray(i,i+4));};})();
-textures().then(tx=>{hookTex(tx);return PIXI.live2d.Live2DModel.from(MODEL+'model.model3.json',{autoInteract:false,motionPreload:'ALL'}).then(m=>{
+textures().then(tx=>{hookTex(tx);bridge('phase',{s:'搭模型'});return PIXI.live2d.Live2DModel.from(MODEL+'model.model3.json',{autoInteract:false,motionPreload:'ALL'}).then(m=>{
   model=m;m.anchor.set(.5,.5);app.stage.addChild(m);layout();
   /* 这个模型按 VTube Studio 绑定：头是 AngleX/Y/Z，身体跟随是 PositionX/Y/Z，物理以它们为输入。
      在动作更新后、物理计算前写入（afterMotionUpdate），头发耳朵尾巴才会跟着甩。眨眼自己做。 */

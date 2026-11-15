@@ -1,5 +1,9 @@
 package com.fuguang.lueying
 
+import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
@@ -16,7 +20,6 @@ import androidx.compose.runtime.withFrameMillis
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -64,15 +67,23 @@ internal fun ChatHello(compact: Boolean, store: AssistantStore, chat: ChatState)
         while (clock.longValue < end) withFrameMillis { clock.longValue = it - t0 }
         clock.longValue = end
     }
-    // 有鲸鱼娘站在中间时：标志留在上面，问候放到底部，把中间让给她
-    val whale = Whale.active
+    // 鲸鱼娘真的站出来了（不是「开着」而已）才让位：标志缩小上移、问候落到底部，中间留给她。
+    // 她没加载好、出错、没导入时，主页和没有她时一模一样（标志和问候挨着居中）。0→1 用 420ms 滑过去。
+    val stage by animateFloatAsState(
+        if (Whale.onStage) 1f else 0f,
+        if (still) snap() else tween(420, easing = CubicBezierEasing(.2f, 0f, 0f, 1f)), label = "whaleStage",
+    )
+    val big = if (compact) 116f else 128f
+    val small = if (compact) 72f else 84f
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = if (whale) Arrangement.SpaceBetween else Arrangement.Top,
-        modifier = Modifier.padding(horizontal = 8.dp).then(if (whale) Modifier.fillMaxHeight().padding(bottom = 8.dp) else Modifier),
+        modifier = Modifier.padding(horizontal = 8.dp).fillMaxHeight().padding(bottom = (8f * stage).dp),
     ) {
-        VignetteMark(if (whale) (if (compact) 72.dp else 84.dp) else if (compact) 116.dp else 128.dp, Skin.accent)
+        // 三段空白按比例分：stage=0 时上下各半、中间没有（居中）；stage=1 时全给中间（一上一下）
+        Spacer(Modifier.weight(1.001f - stage))
+        VignetteMark((big + (small - big) * stage).dp, Skin.accent)
         Spacer(Modifier.height(6.dp))
+        Spacer(Modifier.weight(.001f + 2f * stage))
         val text = line.orEmpty()
         val base = if (compact) 23f else 26f
         // 长一点的句子字号往下收，始终一行
@@ -111,5 +122,6 @@ internal fun ChatHello(compact: Boolean, store: AssistantStore, chat: ChatState)
             onTextLayout = { layout = it },
             maxLines = 1,
         )
+        Spacer(Modifier.weight(1.001f - stage))
     }
 }

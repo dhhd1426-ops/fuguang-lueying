@@ -199,7 +199,7 @@ private fun MineCardList(t: Float, onGo: (String) -> Unit) {
     Column(Modifier.spot("backup")) { BackupRow(6, t) }
     Spacer(Modifier.height(6.dp))
     MineRow(7, t, "鲸鱼娘", "", { onGo("whale") }, glyph = { SvgIcon(WhaleTail, warm, 19.dp, stroke = 1.4f) }) {
-        Txt(if (!Whale.hasModel) "未导入" else if (Whale.show) "开" else "关", Page.muted, 13.5.sp, maxLines = 1)
+        Txt(if (!Whale.hasModel) "未导入" else if (Whale.error.isNotEmpty()) "出错" else if (Whale.prepping) "整理中" else if (Whale.show) "开" else "关", Page.muted, 13.5.sp, maxLines = 1)
         Spacer(Modifier.width(4.dp))
         SvgIcon(chevron, Page.muted.copy(alpha = .6f), 15.dp, stroke = 1.8f)
     }

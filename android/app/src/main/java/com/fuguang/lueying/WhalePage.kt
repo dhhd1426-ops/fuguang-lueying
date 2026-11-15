@@ -114,7 +114,14 @@ internal fun WhalePage(onBack: () -> Unit, onPlace: () -> Unit, onDress: () -> U
             Go("换装间", "装扮、体型，试动作和表情", Whale.show, onDress)
             Block {
                 Txt("模型文件", Page.ink, 15.sp)
-                Txt(if (Whale.error.isNotEmpty()) Whale.error else "已导入，存在应用私有目录", if (Whale.error.isNotEmpty()) Page.accent else Page.muted, 12.sp, Modifier.padding(top = 3.dp))
+                val state = when {
+                    Whale.error.isNotEmpty() -> Whale.error
+                    Whale.prepping -> Whale.phase.ifEmpty { "正在整理贴图…" }
+                    !Whale.show -> "已导入，存在应用私有目录"
+                    Whale.ready -> Whale.phase.ifEmpty { "已就绪" }
+                    else -> "加载中" + if (Whale.phase.isNotEmpty()) "：${Whale.phase}" else "…"
+                }
+                Txt(state, if (Whale.error.isNotEmpty()) Page.accent else Page.muted, 12.sp, Modifier.padding(top = 3.dp), lineHeight = 19.sp)
                 Spacer(Modifier.height(10.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Btn(if (Whale.importing) "导入中…" else "重新导入", !Whale.importing) { pick.launch(arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream")) }
