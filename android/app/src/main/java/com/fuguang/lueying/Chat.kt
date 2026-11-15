@@ -1227,12 +1227,20 @@ private fun ChatInput(
     val pillH = 54.dp
     val pillPx = with(density) { pillH.roundToPx() }
     val bottomGap = if (compact) 22.dp else 30.dp
-    Box(modifier.padding(top = 10.dp).graphicsLayer {
-        // 贴着键盘：往下挪进页面底边留白；收回一行弹过头时往下沉一下，展开弹过头时往上撑一点
-        transformOrigin = androidx.compose.ui.graphics.TransformOrigin(.5f, 1f)
-        translationY = bottomGap.toPx() * fold.dock.coerceIn(0f, 1f) + 22.dp.toPx() * (-fold.over).coerceAtLeast(0f)
-        scaleY = 1f + .22f * fold.over.coerceAtLeast(0f)
-    }) {
+    Box(modifier.padding(top = 10.dp)
+        // 贴着键盘：真的往下伸进页面底边留白（报给上面的高度少掉这一截），上面的对话跟着往下多露出来。
+        // 以前用 translationY 只是画下去，位置还占着，对话底下空出一条底色，像一层遮罩把卡片切掉（真机 461 版）
+        .layout { m, c ->
+            val pl = m.measure(c)
+            val sink = (bottomGap.toPx() * fold.dock.coerceIn(0f, 1f)).toInt().coerceIn(0, pl.height)
+            layout(pl.width, pl.height - sink) { pl.place(0, 0) }
+        }
+        .graphicsLayer {
+            // 收回一行弹过头时往下沉一下，展开弹过头时往上撑一点（只是一瞬间的弹性，不占位置）
+            transformOrigin = androidx.compose.ui.graphics.TransformOrigin(.5f, 1f)
+            translationY = 22.dp.toPx() * (-fold.over).coerceAtLeast(0f)
+            scaleY = 1f + .22f * fold.over.coerceAtLeast(0f)
+        }) {
       Box(
         Modifier
             .fillMaxWidth()
