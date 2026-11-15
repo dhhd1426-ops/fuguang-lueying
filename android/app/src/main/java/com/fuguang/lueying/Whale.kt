@@ -14,6 +14,7 @@ import android.os.Handler
 import android.os.Looper
 import android.view.MotionEvent
 import android.view.View
+import android.view.ViewGroup
 import android.webkit.JavascriptInterface
 import android.webkit.RenderProcessGoneDetail
 import android.webkit.WebResourceRequest
@@ -242,6 +243,8 @@ object Whale {
             return super.dispatchTouchEvent(e)
         }
     }.apply {
+        // 不设的话 WebView 按「包住内容」量自己：页面里 height:100% 算出来是 0，舞台高 0，她被缩成 0（真机上就是看不见）
+        layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
         setBackgroundColor(Color.TRANSPARENT)
         isVerticalScrollBarEnabled = false; isHorizontalScrollBarEnabled = false
         overScrollMode = View.OVER_SCROLL_NEVER
