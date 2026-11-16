@@ -54,6 +54,8 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.boundsInWindow
@@ -87,6 +89,9 @@ private const val MUTED = 3
 
 private class Rib(c: LongArray, val k: Float, val s: Float, val l: FloatArray, val bias: Float, val tw: Float, val a: Float) {
     val c = c.map { Color(it) }
+    /** 声波横向渐变（按屏宽）、光环斜向渐变（按环外接方框），停点和原来的 Brush 一样 */
+    val wave = Grad(floatArrayOf(0f, .3f, .5f, .7f, 1f), arrayOf(this.c[0], this.c[0].copy(alpha = .9f), this.c[1].copy(alpha = .45f), this.c[2].copy(alpha = .9f), this.c[2]))
+    val ring = Grad(floatArrayOf(0f, .5f, 1f), arrayOf(this.c[0], this.c[1], this.c[2]))
 }
 
 private val RIBS = listOf(
@@ -111,7 +116,15 @@ private object Fx {
     var level = 0f; var rot = 0f; var spark = 0f; var glow = .5f
     val ripples = ArrayList<Float>()
     val dA = FloatArray(60); val dD = FloatArray(60); val dZ = FloatArray(60); val dP = FloatArray(60)
-    val path = Path(); val path2 = Path()
+    val path = Path()
+    // 网格：声波 14 根 × 97 点、倒影 4 根、光环 7 根 × 121 点、中间球小环 4 根 × 73 点
+    val mWave = GlowMesh(14, 97, 8); val mRefl = GlowMesh(4, 97, 4)
+    val mRing = GlowMesh(7, 121, 8); val mMini = GlowMesh(4, 73, 4)
+    // 每帧复用的点数组（按最多 121 点开）
+    val xs = FloatArray(121); val ys = FloatArray(121); val ys2 = FloatArray(121)
+    val rgb = IntArray(121); val ga = FloatArray(121); val al = FloatArray(121); val al2 = FloatArray(121)
+    // 声波每个采样点上、同一条丝带各根线共用的量
+    val env = FloatArray(97); val ph = FloatArray(97); val twS = FloatArray(97); val y0 = FloatArray(97); val yd = FloatArray(97)
     init { for (i in 0 until 60) { dA[i] = (Math.random() * 6.283).toFloat(); dD[i] = Math.random().toFloat(); dZ[i] = Math.random().toFloat(); dP[i] = (Math.random() * 6.283).toFloat() } }
 
     fun ripple() { ripples += t }
@@ -167,27 +180,31 @@ private fun hueAt(p0: Float): Color {
 
 /** 一圈丝带：几根细线绕成环，半径随频谱往外鼓，线与线相位错开扭成网纱（跟横向声波同一个公式） */
 private fun DrawScope.strandRing(cx: Float, cy: Float, r0: Float, a: Float, n: Int, m: Int, lw: Float, sweep: Float, t: Float, mini: Boolean) {
-    val p = Fx.path
+    // 每根线：细线 lw + （大环）4dp 宽、16% 亮的光晕，一条网格带画完；一条丝带一次 drawVertices
+    val mesh = if (mini) Fx.mMini else Fx.mRing
+    if (mini) mesh.line(lw / 2) else mesh.glow(lw / 2, 2.dp.toPx(), .16f)
+    val xs = Fx.xs; val ys = Fx.ys; val rgb = Fx.rgb; val ga = Fx.ga; val alA = Fx.al
+    val gx = cx - r0; val gy = cy - r0; val gl = 4 * r0
     RIBS.forEachIndexed { ri, r ->
         val w = Fx.wg[ri]; if (w < .05f) return@forEachIndexed
-        val brush = Brush.linearGradient(r.c, Offset(cx - r0, cy - r0), Offset(cx + r0, cy + r0))
         val dir = if (ri % 2 == 1) 1f else -1f
         val rr = Fx.rot * dir * (1 + ri * .12f) + ri * 1.26f
+        mesh.reset()
         for (j in 0 until n) {
             val q = j / (n - 1f) - .5f
             val al = (if (mini) .3f else .1f + .17f * (1 - abs(q) * 1.6f)) * w * (if (Fx.st == MUTED) .45f else 1f)
-            p.reset()
             for (k in 0..m) {
                 val ang = (-Math.PI / 2).toFloat() + k / m.toFloat() * sweep * 6.2832f
                 val b = Fx.bandAt(ang + (Math.PI / 2).toFloat() + rr)
                 val s = .55f + .45f * sin(ang * (3 + ri) + t * r.s * 1.6f + ri + q * r.tw * 1.4f)
                 val rad = r0 + (ri - 2) * 1.6f * density + a * (.06f + b * 1.15f) * s * (.6f + .4f * w)
                 val x = cx + cos(ang) * rad; val y = cy + sin(ang) * rad
-                if (k == 0) p.moveTo(x, y) else p.lineTo(x, y)
+                xs[k] = x; ys[k] = y
+                rgb[k] = r.ring.at(((x - gx) + (y - gy)) / gl, ga, k); alA[k] = ga[k] * al
             }
-            if (!mini) drawPath(p, brush, alpha = al * .16f, style = Stroke(4.dp.toPx()), blendMode = BlendMode.Plus)
-            drawPath(p, brush, alpha = al, style = Stroke(lw), blendMode = BlendMode.Plus)
+            mesh.add(xs, ys, rgb, alA)
         }
+        drawIntoCanvas { mesh.draw(it.nativeCanvas) }
     }
 }
 
@@ -221,38 +238,46 @@ private fun DrawScope.voiceScene(cx: Float, cy: Float) {
     fun py(a0: Float, rr: Float, disp: Float): Float { val a = a0 + sway; val z = zb - rr * (1 - cos(a)); return hy + f * (camH - disp) / z }
     val thm = th * line; val N = 14; val M = 96
     val thin = .7f * density; val wide = 5f * density
+    // 每根线：细线 thin + 宽 wide、16% 亮的光晕，一条网格带；每 4 根带一条 3dp、22% 亮的倒影。一条丝带两次 drawVertices
+    Fx.mWave.glow(thin / 2, wide / 2, .16f); Fx.mRefl.line(1.5f * density)
     if (rib > .002f) RIBS.forEachIndexed { ri, r ->
         val rr = R + (ri - 2) * .16f
-        val brush = Brush.horizontalGradient(
-            0f to r.c[0], .3f to r.c[0].copy(alpha = .9f), .5f to r.c[1].copy(alpha = .45f), .7f to r.c[2].copy(alpha = .9f), 1f to r.c[2],
-            startX = 0f, endX = w,
-        )
         val amp = aw * max(0f, Fx.ampR[ri]) * rib * r.a * (.55f + .45f * Fx.wg[ri])
         val c1 = r.l[0] + .16f * sin(t * .21f * (if (Fx.st == THINK) 1.8f else 1f) + ri * 2.1f)
         val c2 = r.l[2] + .16f * sin(t * .34f * (if (Fx.st == THINK) 1.8f else 1f) + ri * 2.1f + 1)
+        // 同一采样点上各根线共用：横坐标、透视（py = y0 - yd·d）、包络、相位、扭转系数、渐变色
+        val xs = Fx.xs; val ys = Fx.ys; val ys2 = Fx.ys2; val rgb = Fx.rgb; val ga = Fx.ga; val alA = Fx.al; val alB = Fx.al2
+        val env = Fx.env; val ph = Fx.ph; val twS = Fx.twS; val y0 = Fx.y0; val yd = Fx.yd
+        for (k in 0..M) {
+            val u = k / M.toFloat() * 2 - 1; val a = u * thm
+            val e = (1 - exp(-(u - c1).pow(2) / (r.l[1] * r.l[1]))) * (1 - exp(-(u - c2).pow(2) / (r.l[3] * r.l[3])))
+            env[k] = (1 - e) * exp(-(u / .97f).pow(10))
+            ph[k] = u * r.k * Math.PI.toFloat() + t * r.s * 2 + ri * 1.3f
+            twS[k] = 1 + .4f * sin(u * 2.4f + t * .6f)
+            val x = px(a, rr); xs[k] = x
+            val aa = a + sway; val z = zb - rr * (1 - cos(aa))
+            y0[k] = hy + f * camH / z; yd[k] = f / z
+            rgb[k] = r.wave.at(x / w, ga, k)
+        }
+        val ts = t * r.s * 1.3f
+        Fx.mWave.reset(); Fx.mRefl.reset()
         for (j in 0 until N) {
             val q = j / (N - 1f) - .5f
             val al = ((.07f + .18f * (1 - abs(q) * 1.6f)) * (.5f + .5f * min(1f, amp / (aw * .22f))) * (.35f + .65f * Fx.wg[ri])).coerceIn(0f, 1f)
             val refl = j % 4 == 0
-            val p = Fx.path; val p2 = Fx.path2
-            p.reset(); if (refl) p2.reset()
+            val cq = cos(q * 1.1f); val tq = q * r.tw
             for (k in 0..M) {
-                val u = k / M.toFloat() * 2 - 1; val a = u * thm
-                var env = (1 - exp(-(u - c1).pow(2) / (r.l[1] * r.l[1]))) * (1 - exp(-(u - c2).pow(2) / (r.l[3] * r.l[3])))
-                env = (1 - env) * exp(-(u / .97f).pow(10))
-                val ph = u * r.k * Math.PI.toFloat() + t * r.s * 2 + ri * 1.3f
-                val tw = q * r.tw * (1 + .4f * sin(u * 2.4f + t * .6f))
-                var s = sin(ph + tw) * cos(q * 1.1f) + .35f * sin(ph * 2.1f - t * r.s * 1.3f + tw * .6f)
+                val tw = tq * twS[k]
+                var s = sin(ph[k] + tw) * cq + .35f * sin(ph[k] * 2.1f - ts + tw * .6f)
                 s *= if (s > 0) 1 + r.bias else 1 - r.bias
-                val d = amp * env * s
-                val x = px(a, rr)
-                if (k == 0) p.moveTo(x, py(a, rr, d)) else p.lineTo(x, py(a, rr, d))
-                if (refl) { if (k == 0) p2.moveTo(x, py(a, rr, -d * .85f)) else p2.lineTo(x, py(a, rr, -d * .85f)) }
+                val d = amp * env[k] * s
+                ys[k] = y0[k] - yd[k] * d; alA[k] = ga[k] * al
+                if (refl) { ys2[k] = y0[k] + yd[k] * d * .85f; alB[k] = ga[k] * al * .22f }
             }
-            if (refl) drawPath(p2, brush, alpha = al * .22f, style = Stroke(3f * density), blendMode = BlendMode.Plus)
-            drawPath(p, brush, alpha = al * .16f, style = Stroke(wide), blendMode = BlendMode.Plus)
-            drawPath(p, brush, alpha = al, style = Stroke(thin), blendMode = BlendMode.Plus)
+            Fx.mWave.add(xs, ys, rgb, alA)
+            if (refl) Fx.mRefl.add(xs, ys2, rgb, alB)
         }
+        drawIntoCanvas { Fx.mRefl.draw(it.nativeCanvas); Fx.mWave.draw(it.nativeCanvas) }
     }
     // 光线：顺着弧走的一根白亮细线
     if (sp > .01f) {
@@ -357,7 +382,7 @@ internal fun VoiceBackdrop(chat: ChatState) {
                 val c = from - origin
                 val far = maxOf(hypot(c.x, c.y), hypot(size.width - c.x, c.y), hypot(c.x, size.height - c.y), hypot(size.width - c.x, size.height - c.y))
                 val r = 19.dp.toPx() + (far - 19.dp.toPx()) * reveal.value
-                clip = true
+                clip = reveal.value < 1f   // 铺满以后不再按圆裁（全屏非矩形裁剪每帧都要算）
                 shape = GenericShape { _, _ -> addOval(Rect(c, r)) }
             }
             .pointerInput(Unit) { detectTapGestures { } },
@@ -397,6 +422,12 @@ internal fun VoiceControls(chat: ChatState, title: String) {
     val st = stateOf(chat)
     val tint by androidx.compose.animation.animateColorAsState(TINT[st], tween(400), label = "voiceTint")
     val rise by animateFloatAsState(if (Talk.open) 1f else 0f, tween(if (Talk.open) 360 else 200, delayMillis = if (Talk.open) 180 else 0, easing = CubicBezierEasing(.05f, .7f, .1f, 1f)), label = "voiceRise")
+    val act = LocalContext.current as? android.app.Activity
+    val stat = FrameStat.on && Talk.open
+    DisposableEffect(stat, act) {
+        if (stat && act != null) FrameStat.start(act)
+        onDispose { FrameStat.stop() }
+    }
     Box(Modifier.fillMaxSize().graphicsLayer { alpha = (a * 1.4f - .4f).coerceIn(0f, 1f) }) {
         Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
             // 顶栏：收起 · 名字 + 状态点 · 识别来源
@@ -406,13 +437,16 @@ internal fun VoiceControls(chat: ChatState, title: String) {
                         SvgIcon(icDown, Color(0xFFC9CFDC), 20.dp, stroke = 1.6f)
                     }
                 }
-                Column(Modifier.align(Alignment.Center), horizontalAlignment = Alignment.CenterHorizontally) {
+                // 长按名字：开关帧耗时小浮窗（真机查卡顿用）
+                Column(Modifier.align(Alignment.Center).pointerInput(Unit) { detectTapGestures(onLongPress = { FrameStat.on = !FrameStat.on }) }, horizontalAlignment = Alignment.CenterHorizontally) {
                     Txt(title, Color(0xFFF3F5FA), 17.sp, spacing = 1.sp, maxLines = 1)
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Box(Modifier.size(5.dp).drawBehind { drawCircle(tint.copy(alpha = .5f), size.minDimension * 1.4f); drawCircle(tint) })
                         Spacer(Modifier.width(6.dp))
                         Txt(arrayOf("在听", "在想", "在说", "已静音")[st], Color(0xFF7F879B), 11.5.sp, spacing = .9.sp)
                     }
+                    if (FrameStat.on) Txt(FrameStat.text, Color(0xFFFFD25A), 10.5.sp, Modifier.padding(top = 4.dp)
+                        .background(Color.Black.copy(alpha = .55f), RoundedCornerShape(6.dp)).padding(horizontal = 6.dp, vertical = 2.dp), maxLines = 1)
                 }
                 Pressable({ Talk.cycleSrc() }, Modifier.align(Alignment.CenterEnd), label = "换识别") { p ->
                     Txt(Talk.label(), Color(0xFFC9CFDC), 11.5.sp, Modifier
