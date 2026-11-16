@@ -6,6 +6,8 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.ui.layout.boundsInWindow
+import kotlinx.coroutines.flow.collectLatest
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -725,6 +727,11 @@ fun ChatPage(
         snapshotFlow { menu || shelf || workOpen != null || thinkOpen || picker || press != null || viewing != null || selectText != null || chat.draft.isNotBlank() || imeOpen || plus.open || chat.atts.isNotEmpty() }
             .collect { Zen.held = it }
     }
+    // 鲸鱼娘让路：助理在回复、键盘开着、输入框里有字时不说自己的话；侧栏完全拉开、整页卡片打开时停帧
+    LaunchedEffect(chat) { snapshotFlow { chat.busy || imeOpen || chat.draft.isNotBlank() }.collect { Whale.hold("chat", it) } }
+    LaunchedEffect(Unit) { snapshotFlow { menuA.value > .98f || MineCard.open }.collect { Whale.cover(it) } }
+    // 换装时输入框和对话退下去，主页标志收起
+    val dressA by animateFloatAsState(if (Whale.dressing && Whale.active) 1f else 0f, tween(if (Whale.dressing) 320 else 200, easing = androidx.compose.animation.core.CubicBezierEasing(.2f, 0f, 0f, 1f)), label = "dress")
     val menuW = min(width.value * .86f, 340f).dp
     val menuPx = with(density) { menuW.toPx() }
     Box(Modifier.fillMaxSize().background(Skin.shade(.38f))) {
@@ -739,12 +746,19 @@ fun ChatPage(
                 .padding(start = side, end = side, top = if (compact) 26.dp else 38.dp, bottom = if (compact) 22.dp else 30.dp),
         ) {
             ChatHeader(compact, chat.messages.isEmpty() && !chat.busy, false, chat.convId?.let { chat.history.get(it) }, chat.project, onMenu = { menu = true }) { Chats.fresh() }
-            Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                if (chat.messages.isEmpty() && !chat.busy) ChatHello(compact, store, chat)
+            val hello = chat.messages.isEmpty() && !chat.busy
+            Box(
+                Modifier.weight(1f).fillMaxWidth()
+                    .onGloballyPositioned { val r = it.boundsInWindow(); Whale.room(r.top, r.bottom) }
+                    .graphicsLayer { alpha = 1f - dressA * (if (hello) 1f else .75f) },
+                contentAlignment = Alignment.Center,
+            ) {
+                if (hello) ChatHello(compact, store, chat)
                 else Conversation(chat, store, compact, flight, onSetup = onSetup, onRetry = { chat.retry(scope, store) }, onThink = { thinkOf = it; thinkOpen = true }, onImage = { viewing = it }, onWork = { workOpen = it },
                     pressed = press?.index ?: -1, onLong = { if (!chat.busy || it.index < chat.messages.size) press = it })
+                WhaleTouch()
             }
-            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+            Box(Modifier.fillMaxWidth().graphicsLayer { alpha = 1f - dressA; translationY = dressA * 24.dp.toPx() }, contentAlignment = Alignment.Center) {
                 ChatInput(
                     compact, blur, title, store.activeModel, store.activeProvider, store.effort(), chat, plus, flight,
                     pickerOpen = picker,
@@ -942,6 +956,11 @@ private fun Conversation(
     val scroll = rememberScrollState()
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
+    // 翻对话时鲸鱼娘别插话；停手 0.9 秒后才放开
+    LaunchedEffect(scroll) {
+        snapshotFlow { scroll.isScrollInProgress }.collectLatest { if (it) Whale.hold("scroll", true) else { delay(900); Whale.hold("scroll", false) } }
+    }
+    androidx.compose.runtime.DisposableEffect(Unit) { onDispose { Whale.hold("scroll", false) } }
     var viewport by remember { mutableIntStateOf(0) }
     var lastUserTop by remember { mutableFloatStateOf(0f) }
     var endY by remember { mutableFloatStateOf(0f) }

@@ -4,7 +4,8 @@ const SRC={kind:'app'},Q=new URLSearchParams(location.search),MODEL='/model/',AP
 /* 往 App 报事：ready / editDone / error / glLost */
 const bridge=(n,d)=>{try{if(window.Vg)Vg.event(n,typeof d==='string'?d:JSON.stringify(d||{}));}catch(_){}};
 const $=id=>document.getElementById(id);
-const reduced=matchMedia('(prefers-reduced-motion:reduce)').matches;
+/* App 里她是用户自己请来的动态角色，动得多少由「待机动作」管；系统的减弱动效（省电模式也会打开）不再把她定成一张图 */
+const reduced=false;
 const load=$('load');
 function fail(msg){bridge('error',String(msg));load.classList.add('err');load.classList.remove('done');load.textContent='载入失败：\n'+msg+'\n\n把这段截图发给我。';}
 window.addEventListener('error',e=>fail((e.message||'')+(e.filename?'\n'+e.filename.split('/').slice(-3).join('/')+':'+e.lineno+':'+e.colno:'')+(e.error&&e.error.stack?'\n'+String(e.error.stack).split('\n').slice(0,5).join('\n'):'')));
@@ -219,22 +220,51 @@ async function dance(){if(!model||danceOn||reduced)return;
   if(!danceURL){speak('等我换个衣服……',false);try{await danceSrc();}catch(e){speak('衣服没找到……',false);return;}}stopRoutine();stopMotion();const v=$('dance'),H=model.height;
   v.style.height=(H*.9)+'px';v.style.left=model.x+'px';v.style.top=(model.y-H*.5+H*.055)+'px';
   danceOn=true;busy=Infinity;v.currentTime=0;v.muted=false;const pl=v.play();if(pl&&pl.catch)pl.catch(()=>{v.muted=true;v.play().catch(()=>{});});
-  v.classList.add('on');stage.style.opacity=0;v.onended=endDance;}
+  v.classList.add('on');stage.style.opacity=0;v.onended=endDance;v.onerror=endDance;
+  after(2500,()=>{if(danceOn&&v.currentTime<.05){endDance();}});}
 function endDance(){if(!danceOn)return;const v=$('dance');danceOn=false;v.classList.remove('on');setTimeout(()=>v.pause(),200);
   stage.style.opacity=SET.show?1:0;busy=clock+1500;setMood('开心',2600);if(clock>sayBusy)after(300,()=>speak(pick(['跳完啦～','嘿嘿，好看吗？','累死鱼了……']),false));}
 function whipTail(){whip=1;whipDir=Math.random()<.5?-1:1;}
 /* 用户自己做的动作（blue-whale 仓库）+ 模型作者的「脱捕」：播放时把它们管的参数让出去，首尾 0.6 秒交叉淡化 */
 function playMotion(g,ms,ids){if(!model||reduced)return false;if(rt)stopRoutine();if(heldPose){setPose(null);heldPose=null;}
-  AUTHOR_IDS=ids;authorT=ms;busy=Math.max(busy,clock+ms+300);model.motion(g,0,3);return true;}
-function playBW(g,ms){const b=BW[g];return b?playMotion(g,Math.min(ms||b.ms,b.ms),b.ids):false;}
+  /* 说话手势只借手和身体，嘴归对口型管（不然字停了嘴还跟着动作曲线在动） */
+  AUTHOR_IDS=/^bw_talk/.test(g)?ids.filter(k=>!MOUTH_KEEP.has(k)):ids;authorT=ms;busy=Math.max(busy,clock+ms+300);model.motion(g,0,3);return true;}
+let idleMo=false;
+function playBW(g,ms){const b=BW[g];idleMo=g==='bw_idle60';return b?playMotion(g,Math.min(ms||b.ms,b.ms),b.ids):false;}
 function stopMotion(f=600){if(authorT>f)authorT=f;}
 function playAuthor(){playMotion('untracked',13150,UNTRACKED_IDS);}
 let blink=1,blinkT=0,nextBlink=2500,sacX=0,sacY=0,nextSac=1200,talk=0;
+let quiet=false,covered=false,roomT=0,roomB=1,avS=1,avY=0,hideV=0,hideWas=false,dK=0,sayKind='';
+let grab=false,grabK=0,grabTimer=0,gx=0,gy=0,ptrOn=false,talkLeft=0,talkOn=false,nextGesture=0;
 let hop=0,hopV=0,busy=0,holdLook=0,pointerDown=false,model=null,expTimer=0,sayTok=0;
 
+/* 她能站的范围（App 报：标题栏下面到输入框上面；换装时到面板上面），视口比例 */
+let avWant={s:1,y:0,hide:0};
+function avoidStep(dt){if(!model)return;const h=app.renderer.screen.height,w=app.renderer.screen.width,im=model.internalModel;
+  const s0=Math.min(w/im.width,h/im.height)*S.zoom,H0=im.height*s0,py=h/2+h*S.dy,bot=py+H0/2,fT=roomT*h,fB=roomB*h-6;
+  let ws=1,wy=0,wh=0;
+  /* 被输入框或键盘盖住：放得下 55% 就缩小站上去（A），放不下就沉下去躲开（B）。拖着、编辑位置、换装时不管 */
+  if(!editing&&!grab&&!dressing&&bot>fB+4){const fit=Math.min(1,(fB-fT)/H0);if(fit>=.55){ws=fit;wy=fB-H0*fit/2-py;}else wh=1;}
+  avWant={s:ws,y:wy,hide:wh};
+  const k=1-Math.exp(-dt*22);avS+=(ws-avS)*k;avY+=(wy-avY)*k;
+  hideV+=(wh-hideV)*(1-Math.exp(-dt*(wh?20:10)));
+  if(wh&&hideV>.9)hideWas=true;if(!wh&&hideWas&&hideV<.5){hideWas=false;hopV=-170;}
+  model.alpha=1-Math.min(1,hideV*1.25);}
 function layout(){if(!model)return;const w=app.renderer.screen.width,h=app.renderer.screen.height,im=model.internalModel;
-  model.scale.set(Math.min(w/im.width,h/im.height)*S.zoom);
-  const px=w/2+w*S.dx,py=h/2+h*S.dy+hop;model.position.set(Math.round(px*RES)/RES,Math.round(py*RES)/RES);}
+  const s0=Math.min(w/im.width,h/im.height)*S.zoom;
+  let sc=s0*avS*(1+.05*grabK),px=w/2+w*S.dx,py=h/2+h*S.dy+avY+hideV*46+hop;
+  /* 换装：站到面板上方正中、整个露出来，头顶留 52px 给气泡 */
+  if(dK>0){const fT=roomT*h+52,fB=roomB*h-14,ds=Math.min(w*.9/im.width,(fB-fT)/im.height),dx=w/2,dy=(fT+fB)/2+hop;
+    sc+=(ds-sc)*dK;px+=(dx-px)*dK;py+=(dy-py)*dK;}
+  model.scale.set(sc);model.position.set(Math.round(px*RES)/RES,Math.round(py*RES)/RES);placeSay(w,h);}
+/* 气泡跟着头走：头顶约在模型高度 4% 处 */
+function placeSay(w,h){const say=$('say');if(!say.classList.contains('on')&&!sayKind)return;
+  const mh=model.height,top=model.y-mh*.5+mh*.04,side=top<64,flip=model.x>w/2;
+  const x=side?model.x+(flip?-1:1)*mh*.09:model.x,y=side?top+mh*.07:top;
+  const k=side?(flip?'side flip':'side'):'';if(k!==sayKind){sayKind=k||'up';say.classList.toggle('side',side);say.classList.toggle('flip',side&&flip);}
+  if(!side){const bw=say.offsetWidth;let sh=0;if(x-bw/2<8)sh=8-(x-bw/2);else if(x+bw/2>w-8)sh=w-8-(x+bw/2);say.style.setProperty('--sh',sh+'px');}
+  $('sayw').style.transform='translate('+Math.round(x)+'px,'+Math.round(y)+'px)';}
+function hush(){sayTok++;$('say').classList.remove('on');T.mouth=0;}
 new ResizeObserver(layout).observe(stage);
 
 /* 模型主体文件以 gzip+base64 随页面带来（托管不认 .moc3 后缀），解压后拦下对 model.moc3 的请求直接交给它 */
@@ -335,7 +365,7 @@ textures().then(tx=>{hookTex(tx);bridge('phase',{s:'搭模型'});return PIXI.liv
 
 /* 省电：切到后台、或设置页整页盖住她时停帧 */
 let paused=false;
-function syncRun(){const hidden=document.hidden||paused;if(hidden&&app.ticker.started)app.ticker.stop();else if(!hidden&&!app.ticker.started)app.ticker.start();}
+function syncRun(){const hidden=document.hidden||paused||covered;if(hidden&&app.ticker.started)app.ticker.stop();else if(!hidden&&!app.ticker.started)app.ticker.start();}
 document.addEventListener('visibilitychange',syncRun);
 /* 每帧 */
 app.ticker.add(()=>{
@@ -362,6 +392,9 @@ app.ticker.add(()=>{
   hopV+=(-260*hop-16*hopV)*dt;hop+=hopV*dt;if(Math.abs(hop)<.05&&Math.abs(hopV)<.5){hop=0;hopV=0;}
   compose(dt);
   if(!dragging){const ks=1-Math.exp(-dt*6);for(const k in S){const d=St[k]-S[k];S[k]=Math.abs(d)<1e-4?St[k]:S[k]+d*ks;}}
+  grabK+=((grab?1:0)-grabK)*(1-Math.exp(-dt*14));
+  dK+=((dressing?1:0)-dK)*(1-Math.exp(-dt*(dressing?7:11)));if(Math.abs(dK-(dressing?1:0))<1e-3)dK=dressing?1:0;
+  avoidStep(dt);
   if(model)layout();
 });
 function compose(dt){ADD={};HOLD={};const ms=dt*1000;
@@ -496,24 +529,24 @@ function tap(rg){taps=taps.filter(t=>clock-t<1600);taps.push(clock);if(taps.leng
   if(rg==='head')pat();else if(rg==='face')faceTap();else if(rg==='armL'||rg==='armR'){if(!rt)playRoutine('挥挥手');}else poke();}
 
 /* 说话：每字 90ms，嘴按“音量”开合，标点合上 */
-function speak(text,withMood=true){const mk=withMood&&SET.mood?moodOf(text):null;text=text.replace(/^[【\[][^】\]]{1,4}[】\]]/,'');
+function speak(text,withMood=true,show=true){if(show&&quiet)return;const mk=withMood&&SET.mood?moodOf(text):null;text=text.replace(/^[【\[][^】\]]{1,4}[】\]]/,'');
   if(mk)setMood(mk,text.length*90+2500);
   if(!authorT&&!heldPose&&!(rt&&rt.r.pose)&&!reduced&&text.length>=8&&Math.random()<.6)playBW(pick(['bw_talk_chest','bw_talk_grass','bw_talk_finger']),text.length*90+900);
   const tok=++sayTok,el=$('say');busy=Math.max(busy,clock+text.length*90+600);sayBusy=clock+text.length*90+2500;
-  if(reduced){el.textContent=text;return;}
-  el.innerHTML='<span></span><i class="caret"></i>';const sp=el.firstChild;
+  let sp={};if(show){el.innerHTML='<span></span><i class="caret"></i>';sp=el.firstChild;sayKind='';requestAnimationFrame(()=>{if(tok===sayTok)el.classList.add('on');});}
   [...text].forEach((ch,i)=>after(i*90,()=>{if(tok!==sayTok)return;sp.textContent=text.slice(0,i+1);
     const quiet=/[，。、？！…,.!? ]/.test(ch);T.mouth=quiet?0:rnd(.45,1);
     if(!quiet){for(const k in VT)VT[k]=0;VT['aiueo'[Math.floor(Math.random()*5)]]=rnd(.6,1);}}));
   after(text.length*90+60,()=>{if(tok===sayTok)T.mouth=0;});
-  after(text.length*90+1700,()=>{if(tok===sayTok&&el.lastChild&&el.lastChild.className==='caret')el.lastChild.remove();});}
-function think(reply){const tok=++sayTok;T.mouth=0;$('say').innerHTML='<span class="dots"><span></span><span></span><span></span></span>';
+  if(show){after(text.length*90+60,()=>{if(tok===sayTok&&el.lastChild&&el.lastChild.className==='caret')el.lastChild.remove();});
+    after(text.length*90+1660,()=>{if(tok===sayTok)el.classList.remove('on');});}}
+function think(reply){const tok=++sayTok;T.mouth=0;
   T.lookX=-.5;T.lookY=.7;T.brow=.6;holdLook=clock+1600;busy=clock+2400;after(1600,()=>T.brow=0);
   after(1600,()=>{if(tok!==sayTok)return;hopV=-120;speak(reply);});}
 
 
 /* ===== App 版：取代原型的测试面板。App 通过 window.whale 调这些，页面通过 Vg.event 回报 ===== */
-const SET={show:true,mood:true,touch:true,idle:2};
+const SET={show:true,mood:true,touch:true,drag:true,idle:2};
 let dressing=false;
 const LAYOUT_DEF={idle:{zoom:.8,dx:0,dy:-.06},chat:{zoom:.42,dx:.31,dy:.17}};
 function applyLayout(){if(!dressing)Object.assign(St,cur());}
@@ -526,8 +559,35 @@ const OUTFIT=['pan','glasses','monocle','skirt','shoes','tail'];
 function applySet(o){o=o||{};Object.assign(SET,o);autoIdle=SET.idle>0;if(!autoIdle)stopRoutine();
   stage.style.transition='opacity .32s cubic-bezier(.2,0,0,1)';stage.style.opacity=SET.show?1:0;
   if(o.outfit)for(const k of OUTFIT){const on=o.outfit.indexOf(k)>=0;fxT[k]=on?1:0;fxUntil[k]=on?Infinity:0;}
-  if('body' in o)bodyT=+o.body||0;}
+  if('body' in o)bodyT=+o.body||0;
+  if(o.theme)for(const k in o.theme)document.documentElement.style.setProperty('--'+k,o.theme[k]);}
 let replyGesture=false;
+/* 回复对口型：App 按「屏幕上打出来的字」报数，这里攒着一个字一个字念（每字 85ms，偶尔合一下嘴）；
+   说话时配手势，一段手势做完、还在说就再来一段。攒的字最多 14 个，字停了嘴很快跟着停 */
+function talkStep(){if(talkLeft<=0||editing||danceOn){talkOn=false;talkLeft=0;T.mouth=0;return;}
+  talkLeft--;const rest=Math.random()<.14;T.mouth=rest?.05:rnd(.45,1);
+  if(!rest){for(const k in VT)VT[k]=0;VT['aiueo'[Math.floor(Math.random()*5)]]=rnd(.6,1);}
+  if(!authorT&&!heldPose&&!rt&&!grab&&clock>nextGesture){playBW(pick(['bw_talk_chest','bw_talk_grass','bw_talk_finger']),9000);nextGesture=clock+rnd(9000,14000);}
+  busy=Math.max(busy,clock+700);after(85,talkStep);}
+/* 手指：App 在她身上盖了一层接触摸再转过来（她在对话列表后面，WebView 自己收不到）。点、摸头照旧；
+   开了「长按拖动」时按住 420ms 把她拎起来（放大 5%），跟着手指走，松手落下并记住位置 */
+function startGrab(){if(!downAt)return;grab=true;dragging=true;downAt.used=1;if(petting){petting=0;petX=0;fxUntil.xx=clock;}
+  stopRoutine();stopMotion();busy=Infinity;T.wide=1;T.brow=.5;flash('sweat',900);after(600,()=>{T.wide=0;T.brow=0;});bridge('grab',{});}
+function pDown(x,y){if(editing||!model)return;if(danceOn){endDance();return;}const e={clientX:x,clientY:y};
+  pointerDown=true;ptrOn=true;lookAt(e);const rg=region(e);downAt={rg,x,y,t:clock};lastX=x;petMoved=0;gx=x;gy=y;
+  if(rg&&SET.touch){if(rt&&rt.name!=='挥挥手')stopRoutine();stopMotion();busy=Math.max(busy,clock+2500);}
+  clearTimeout(pressTimer);clearTimeout(grabTimer);
+  if(SET.drag)grabTimer=setTimeout(()=>{if(pointerDown&&downAt&&petMoved<18&&Math.hypot(gx-downAt.x,gy-downAt.y)<14)startGrab();},420);
+  else if(rg==='body'&&SET.touch)pressTimer=setTimeout(()=>{if(downAt&&petMoved<12){downAt.used=1;playRoutine('凑近摇摆');}},650);}
+function pMove(x,y){if(editing||!pointerDown)return;
+  if(grab){const r=stage.getBoundingClientRect();St.dx=clamp(St.dx+(x-gx)/r.width,-.46,.46);St.dy=clamp(St.dy+(y-gy)/r.height,-.46,.46);S.dx=St.dx;S.dy=St.dy;gx=x;gy=y;return;}
+  gx=x;gy=y;lookAt({clientX:x,clientY:y});
+  if(SET.touch&&downAt&&downAt.rg==='head'){const dx=x-lastX;lastX=x;petMoved+=Math.abs(dx);
+    if(petMoved>18){if(!petting){fxT.xx=1;fxUntil.xx=Infinity;fxT.blush=1;fxUntil.blush=Infinity;T.smile=.9;}
+      petting=1;petX=clamp(petX+dx*.012,-1,1);busy=clock+2500;}}}
+function pUp(){clearTimeout(grabTimer);ptrOn=false;lastBox='';
+  if(grab){grab=false;dragging=false;pointerDown=false;downAt=null;busy=clock+1000;holdLook=clock+800;hopV=-150;saveLayout();return;}
+  release();}
 window.whale={
   set:applySet,
   /* 有没有在聊天：没聊天站中间，聊天时缩到右下角 */
@@ -539,23 +599,24 @@ window.whale={
   /* 等回复：抬眼想 */
   think(){if(editing||danceOn)return;T.lookX=-.5;T.lookY=.7;T.brow=.6;holdLook=clock+2600;busy=Math.max(busy,clock+2600);after(1800,()=>T.brow=0);},
   /* 回复流进来 n 个字：嘴跟着动；第一次配个说话手势 */
-  talk(n){if(editing||danceOn||n<=0)return;n=Math.min(n,40);
-    if(!replyGesture&&!authorT&&!heldPose&&!rt&&!reduced&&Math.random()<.6){replyGesture=true;playBW(pick(['bw_talk_chest','bw_talk_grass','bw_talk_finger']),9000);}
-    const tok=++sayTok;
-    for(let i=0;i<n;i++)after(i*65,()=>{if(tok!==sayTok)return;T.mouth=rnd(.45,1);for(const k in VT)VT[k]=0;VT['aiueo'[Math.floor(Math.random()*5)]]=rnd(.6,1);});
-    after(n*65+80,()=>{if(tok===sayTok)T.mouth=0;});busy=Math.max(busy,clock+n*65+600);},
+  talk(n){if(editing||danceOn||n<=0)return;if(authorT&&(AUTHOR_IDS===UNTRACKED_IDS||idleMo))stopMotion(400);if(rt&&rt.name[0]!=='@')stopRoutine();talkLeft=Math.min(talkLeft+n,14);if(!talkOn){talkOn=true;talkStep();}},
   /* 回复完了：按整句定情绪 */
-  replied(text){replyGesture=false;if(editing||danceOn)return;stopMotion(500);T.mouth=0;
+  replied(text){replyGesture=false;talkLeft=0;nextGesture=0;if(editing||danceOn)return;stopMotion(500);T.mouth=0;
     const mk=SET.mood?moodOf(String(text||'')):null;if(mk)setMood(mk,3600);else if(Math.random()<.4)playFace('笑');},
   /* 问候：嘴跟着字动、按句子配情绪 */
-  say(text){if(!editing&&!danceOn)speak(String(text||''));},
+  say(text){if(!editing&&!danceOn)speak(String(text||''),true,false);},
+  /* 助理在回复、在打字、在翻对话：她不说自己的话，正在说的立刻收掉 */
+  quiet(on){quiet=!!on;if(quiet)hush();},
+  room(t,b){roomT=clamp(+t||0,0,1);roomB=clamp(+b||1,roomT+.05,1);},
+  cover(on){covered=!!on;syncRun();},
   mood(k,ms){k=MOOD_ALIAS[k]||k;if(MOODS[k])setMood(k,ms||3000);},
   routine(n){if(editing)return;if(danceOn)endDance();
-    if(n==='@dance')dance();else if(n==='@author')playAuthor();else if(n==='@idle60')playBW('bw_idle60');else{stopRoutine();playRoutine(n);}},
+    if(n==='@dance')dance();else if(n==='@author')playAuthor();else if(n==='@idle60')playBW('bw_idle60');else if(ROUTINES[n]){stopRoutine();playRoutine(n);}},
   face(k){if(editing)return;busy=clock+2200;if(FACES[k])playFace(k);else if(FX[k])flash(k,2000);},
+  ptr(kind,fx,fy){const x=fx*innerWidth,y=fy*innerHeight;if(kind==='down')pDown(x,y);else if(kind==='move')pMove(x,y);else pUp();},
   edit(on){setEdit(!!on);},
   /* 换装间：她站到上半屏 */
-  dress(on){dressing=!!on;if(dressing)Object.assign(St,{zoom:.5,dx:0,dy:-.22});else applyLayout();},
+  dress(on){dressing=!!on;if(dressing){stopRoutine();after(500,()=>speak('换哪件呢～',false));}},
   pause(on){paused=!!on;syncRun();},
   dance(){dance();},
   routines(){return JSON.stringify(Object.keys(ROUTINES).filter(k=>k[0]!=='@'));},
@@ -563,7 +624,7 @@ window.whale={
 };
 /* 把她占的范围（视口比例）报给 App：范围外的触摸交还给主页，范围内才归她 */
 let lastBox='';
-setInterval(()=>{if(!model||document.hidden)return;try{const b=model.getBounds(),W=app.screen.width,H=app.screen.height;
+setInterval(()=>{if(!model||document.hidden||ptrOn)return;if(model.alpha<.3){if(lastBox!=='0'){lastBox='0';bridge('box',{l:0,t:0,r:0,b:0});}return;}try{const b=model.getBounds(),W=app.screen.width,H=app.screen.height;
   const r=[b.x/W,b.y/H,(b.x+b.width)/W,(b.y+b.height)/H].map(v=>Math.round(clamp(v,0,1)*200)/200),k=r.join(',');
   if(k!==lastBox){lastBox=k;bridge('box',{l:r[0],t:r[1],r:r[2],b:r[3]});}}catch(_){}},400);
 applySet({});

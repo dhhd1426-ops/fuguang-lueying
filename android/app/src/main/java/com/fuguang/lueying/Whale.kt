@@ -12,6 +12,7 @@ import android.graphics.Rect
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
+import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
@@ -45,6 +46,7 @@ import java.io.BufferedInputStream
 import java.io.ByteArrayInputStream
 import java.io.File
 import java.nio.charset.Charset
+import java.util.Locale
 import java.util.zip.ZipInputStream
 
 /**
@@ -63,6 +65,8 @@ object Whale {
     var show by mutableStateOf(true)
     var mood by mutableStateOf(true)
     var touch by mutableStateOf(true)
+    /** 长按把她拎起来拖到别处 */
+    var drag by mutableStateOf(true)
     /** 待机动作：0 关 / 1 少 / 2 适中 / 3 多 */
     var idle by mutableIntStateOf(2)
     var outfit by mutableStateOf(setOf<String>())
@@ -89,8 +93,8 @@ object Whale {
 
     private var web: WebView? = null
     private val queue = ArrayList<String>()
-    /** 她占的范围（视口比例 l,t,r,b）；范围外的按下交还给主页 */
-    @Volatile private var box = floatArrayOf(0f, 0f, 0f, 0f)
+    /** 她占的范围（视口比例 l,t,r,b）；主页在这块上盖一层接触摸（WhaleTouch） */
+    var box by mutableStateOf(floatArrayOf(0f, 0f, 0f, 0f)); private set
 
     /** 该不该搭台（WebView） */
     val active get() = show && hasModel && !prepping && !broken
@@ -101,7 +105,7 @@ object Whale {
         app = ctx.applicationContext
         runCatching {
             val o = JSONObject(sp().getString("set", null) ?: "{}")
-            show = o.optBoolean("show", true); mood = o.optBoolean("mood", true); touch = o.optBoolean("touch", true)
+            show = o.optBoolean("show", true); mood = o.optBoolean("mood", true); touch = o.optBoolean("touch", true); drag = o.optBoolean("drag", true)
             idle = o.optInt("idle", 2); body = o.optDouble("body", 0.0).toFloat()
             outfit = o.optJSONArray("outfit")?.let { a -> (0 until a.length()).map { a.getString(it) }.toSet() } ?: emptySet()
         }
@@ -130,9 +134,14 @@ object Whale {
     private fun dir() = File(app.filesDir, "whale/model")
     private fun sp() = app.getSharedPreferences("whale", Context.MODE_PRIVATE)
 
+    private fun css(c: androidx.compose.ui.graphics.Color) =
+        "rgba(${(c.red * 255).toInt()},${(c.green * 255).toInt()},${(c.blue * 255).toInt()},${"%.3f".format(Locale.US, c.alpha)})"
+    /** 气泡跟 App 的主题走 */
+    private fun theme() = JSONObject().put("card", css(Skin.sheet)).put("ink", css(Skin.ink)).put("accent", css(Skin.accent))
+
     private fun setJson() = JSONObject()
-        .put("show", show).put("mood", mood).put("touch", touch).put("idle", idle)
-        .put("outfit", JSONArray(outfit.toList())).put("body", body.toDouble())
+        .put("show", show).put("mood", mood).put("touch", touch).put("drag", drag).put("idle", idle)
+        .put("outfit", JSONArray(outfit.toList())).put("body", body.toDouble()).put("theme", theme())
 
     /** 改了设置：存起来并推给页面 */
     fun save() {
@@ -149,7 +158,8 @@ object Whale {
 
     fun chat(on: Boolean) = js("whale.chat($on)")
     fun typing() = js("whale.typing()")
-    fun sent(text: String) = js(if ("跳舞" in text) "whale.dance()" else "whale.sent()")
+    private val DANCE = Regex("跳.{0,3}舞")
+    fun sent(text: String) = js(if (DANCE.containsMatchIn(text)) "whale.dance()" else "whale.sent()")
     fun think() = js("whale.think()")
     fun talk(n: Int) = js("whale.talk($n)")
     fun replied(text: String) = js("whale.replied(${q(text.take(600))})")
@@ -158,8 +168,53 @@ object Whale {
     fun face(k: String) = js("whale.face(${q(k)})")
     fun routine(n: String) = js("whale.routine(${q(n)})")
 
+    /** 她在窗口里占的矩形（像素 l,t,r,b）；没站出来时为 null */
+    fun rect(): FloatArray? {
+        val w = web ?: return null
+        val b = box
+        if (!ready || w.width == 0 || w.height == 0 || b[2] <= b[0] || b[3] <= b[1]) return null
+        val at = IntArray(2); w.getLocationInWindow(at)
+        return floatArrayOf(at[0] + b[0] * w.width, at[1] + b[1] * w.height, at[0] + b[2] * w.width, at[1] + b[3] * w.height)
+    }
+
+    /** 手指（窗口坐标）转给页面：kind = down / move / up */
+    fun ptr(kind: String, wx: Float, wy: Float) {
+        val w = web ?: return
+        if (!ready || w.width == 0 || w.height == 0) return
+        val at = IntArray(2); w.getLocationInWindow(at)
+        w.evaluateJavascript("whale.ptr('$kind',${(wx - at[0]) / w.width},${(wy - at[1]) / w.height})", null)
+    }
+
     fun edit(on: Boolean) { editing = on; js("whale.edit($on)") }
-    fun dress(on: Boolean) { dressing = on; js("whale.dress($on)") }
+    fun dress(on: Boolean) { dressing = on; if (!on) sheetTop = 0f; js("whale.dress($on)"); pushRoom() }
+
+    // —— 让路：助理在回复、在打字、在翻对话时她不说自己的话 ——
+    private val holds = HashSet<String>()
+    fun hold(why: String, on: Boolean) {
+        val was = holds.isNotEmpty()
+        if (on) holds += why else holds -= why
+        if (holds.isNotEmpty() != was) js("whale.quiet(${holds.isNotEmpty()})")
+    }
+
+    /** 侧栏、整页卡片盖住她时停帧 */
+    private var covered = false
+    fun cover(on: Boolean) { if (on != covered) { covered = on; js("whale.cover($on)") } }
+
+    // —— 她能站的范围（窗口坐标）：标题栏下面到输入框上面；换装时到面板上面。键盘推起输入框时每帧跟着报 ——
+    private var roomTop = 0f
+    private var roomBot = 0f
+    private var sheetTop = 0f
+    private var lastRoom = ""
+    fun room(top: Float, bottom: Float) { roomTop = top; roomBot = bottom; pushRoom() }
+    fun sheet(top: Float) { if (dressing) { sheetTop = top; pushRoom() } }
+    private fun pushRoom() {
+        val w = web ?: return
+        if (!ready || w.height == 0 || roomBot <= roomTop) return
+        val at = IntArray(2); w.getLocationInWindow(at)
+        val b = if (dressing && sheetTop > roomTop) minOf(roomBot, sheetTop) else roomBot
+        val s = "whale.room(%.4f,%.4f)".format(Locale.US, (roomTop - at[1]) / w.height, (b - at[1]) / w.height)
+        if (s != lastRoom) { lastRoom = s; w.evaluateJavascript(s, null) }
+    }
 
     /** 页面里的动作名（试动作用）；没就绪时给空 */
     fun routines(done: (List<String>) -> Unit) {
@@ -191,9 +246,13 @@ object Whale {
                 pending.lastOrNull { it.startsWith("whale.chat(") }?.let { w.evaluateJavascript(it, null) }
                 pending.lastOrNull { it.startsWith("whale.say(") }?.let { w.evaluateJavascript(it, null) }
                 if (dressing) w.evaluateJavascript("whale.dress(true)", null)
+                if (holds.isNotEmpty()) w.evaluateJavascript("whale.quiet(true)", null)
+                if (covered) w.evaluateJavascript("whale.cover(true)", null)
+                lastRoom = ""; pushRoom()
                 if (editing) w.evaluateJavascript("whale.edit(true)", null)
             }
             "editDone" -> editing = false
+            "grab" -> web?.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
             "error" -> error = o.optString("msg", "鲸鱼娘没能加载")
             "phase" -> if (!ready) phase = o.optString("s")
             "glLost" -> if (!lowQ) { low(); reload() } else { ready = false; error = "显存不够，她没能留在屏幕上" }
@@ -234,14 +293,8 @@ object Whale {
 
     @SuppressLint("SetJavaScriptEnabled", "ClickableViewAccessibility")
     private fun make(ctx: Context): WebView = object : WebView(ctx) {
-        override fun dispatchTouchEvent(e: MotionEvent): Boolean {
-            if (e.actionMasked == MotionEvent.ACTION_DOWN && !editing) {
-                if (!touch || !ready || width == 0 || height == 0) return false
-                val x = e.x / width; val y = e.y / height; val b = box
-                if (x < b[0] || x > b[2] || y < b[1] || y > b[3]) return false
-            }
-            return super.dispatchTouchEvent(e)
-        }
+        // 平时不收触摸：她在对话列表后面，收不到；点和拖由 WhaleTouch 转给页面。只有「位置与大小」时（抬到最上层）自己收
+        override fun dispatchTouchEvent(e: MotionEvent): Boolean = if (editing) super.dispatchTouchEvent(e) else false
     }.apply {
         // 不设的话 WebView 按「包住内容」量自己：页面里 height:100% 算出来是 0，舞台高 0，她被缩成 0（真机上就是看不见）
         layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
@@ -284,6 +337,9 @@ object Whale {
             owner.lifecycle.addObserver(obs)
             onDispose { owner.lifecycle.removeObserver(obs) }
         }
+        // 换主题时气泡跟着换色
+        val th = theme().toString()
+        LaunchedEffect(th, ready) { if (ready) web?.evaluateJavascript("whale.set({theme:$th})", null) }
         // 半分钟还没站出来又没报错：别让主页一直空等，记成超时（之后真好了会自己清掉）
         LaunchedEffect(gen) {
             delay(30_000)

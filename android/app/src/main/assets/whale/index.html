@@ -6,7 +6,23 @@
 html,body{margin:0;height:100%;background:transparent;overflow:hidden;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none;touch-action:none}
 .screen{position:absolute;inset:0;touch-action:none}
 #stage{position:absolute;inset:0}#stage canvas{width:100%;height:100%;display:block}
-.say{display:none}
+:root{--card:#faf9f5;--ink:#1b1b19;--accent:#e0b594}
+/* 她自己说的短句：纸片气泡，挂在头顶跟着她走（外层 .sayw 每帧挪位置，里层 .say 只管出现和消失）。
+   进 320ms 减速，从头顶冒出；出 180ms 加速。头顶放不下就挪到脸旁边（.side / .flip） */
+.sayw{position:absolute;left:0;top:0;z-index:3;pointer-events:none;will-change:transform}
+.say{position:absolute;left:0;bottom:8px;width:max-content;max-width:min(240px,70vw);padding:8px 13px;border-radius:15px;
+  background:var(--card);color:var(--ink);font:14px/1.5 sans-serif;text-align:center;box-shadow:0 3px 14px rgba(0,0,0,.12);
+  opacity:0;transform:translate(calc(-50% + var(--sh,0px)),6px) scale(.92);transform-origin:50% 100%;
+  transition:opacity 180ms cubic-bezier(.3,0,.8,.15),transform 180ms cubic-bezier(.3,0,.8,.15)}
+.say.on{opacity:1;transform:translate(calc(-50% + var(--sh,0px)),0) scale(1);transition:opacity 320ms cubic-bezier(.05,.7,.1,1),transform 320ms cubic-bezier(.05,.7,.1,1)}
+.say::after{content:"";position:absolute;left:calc(50% - var(--sh,0px));bottom:-5px;width:11px;height:11px;margin-left:-5.5px;background:var(--card);border-radius:2px;transform:rotate(45deg)}
+.say.side{bottom:auto;top:0;left:14px;transform:translate(-6px,-50%) scale(.92);transform-origin:0 50%}
+.say.side.on{transform:translate(0,-50%) scale(1)}
+.say.side::after{left:-5px;bottom:auto;top:50%;margin:-5.5px 0 0}
+.say.side.flip{left:auto;right:14px;transform:translate(6px,-50%) scale(.92);transform-origin:100% 50%}
+.say.side.flip.on{transform:translate(0,-50%) scale(1)}
+.say.side.flip::after{left:auto;right:-5px}
+.say .caret{display:inline-block;width:1.5px;height:.95em;margin-left:2px;vertical-align:-.12em;background:var(--accent);border-radius:1px}
 .load{position:absolute;left:0;right:0;top:13%;text-align:center;font:12.5px/1.6 sans-serif;color:#b4503c;white-space:pre-wrap;padding:0 24px;display:none}
 .load.err{display:block}
 .dance{position:absolute;z-index:1;opacity:0;pointer-events:none;transform:translateX(-50%) scale(.97);transition:opacity .18s cubic-bezier(.3,0,.8,.15),transform .18s cubic-bezier(.3,0,.8,.15)}
@@ -25,7 +41,7 @@ html,body{margin:0;height:100%;background:transparent;overflow:hidden;-webkit-ta
 <div class="screen" id="screen">
   <div id="stage"></div>
   <video class="dance" id="dance" playsinline preload="none"></video>
-  <div class="say" id="say"></div>
+  <div class="sayw" id="sayw"><div class="say" id="say" aria-live="polite"></div></div>
   <div class="load" id="load"><span id="ldt"></span></div>
   <div class="edit" id="edit"><span class="tip">拖动移动 · 双指缩放 · 双击复位</span>
     <div class="tools"><button id="eReset">复位</button><button class="pri" id="eDone">完成</button></div></div>

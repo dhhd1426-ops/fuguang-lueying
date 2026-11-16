@@ -10,6 +10,8 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -42,9 +44,20 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInWindow
+import androidx.compose.ui.draw.shadow
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.layout.size
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlin.math.ceil
+import kotlin.math.roundToInt
 
 internal val WhaleTail = Ic("M12 20.5c0-4.6.6-7.9 2.2-10.3M12 20.5c0-4.6-.6-7.9-2.2-10.3M14.2 10.2c1.6-2.4 4.2-3.4 6.8-2.9-1 2.7-3.5 3.9-6.8 2.9zM9.8 10.2C8.2 7.8 5.6 6.8 3 7.3c1 2.7 3.5 3.9 6.8 2.9z")
 
@@ -59,6 +72,7 @@ private val IDLE = listOf("关", "少", "适中", "多")
 @Composable
 internal fun WhaleHooks(chat: ChatState) {
     if (!Whale.active) return
+    androidx.activity.compose.BackHandler(enabled = Whale.editing) { Whale.edit(false) }
     val empty = chat.messages.isEmpty() && !chat.busy
     LaunchedEffect(empty, Whale.ready) { Whale.chat(!empty) }
     LaunchedEffect(Unit) {
@@ -71,7 +85,8 @@ internal fun WhaleHooks(chat: ChatState) {
     LaunchedEffect(Unit) {
         var seen = 0
         var was = false
-        snapshotFlow { Triple(chat.busy, chat.partial.length, chat.messages.size) }.collect { (busy, len, _) ->
+        // 口型跟着屏幕上打出来的字（shown），不跟网络到货（partial）：回复一口气到货时，字还在打她也还在说
+        snapshotFlow { Triple(chat.busy, ceil(chat.shown).toInt(), chat.messages.size) }.collect { (busy, len, _) ->
             if (busy && !was) { seen = 0; Whale.think() }
             if (busy && len > seen) { Whale.talk(len - seen); seen = len }
             if (!busy && was) {
@@ -80,6 +95,50 @@ internal fun WhaleHooks(chat: ChatState) {
             }
             was = busy
         }
+    }
+}
+
+/**
+ * 盖在她身上的一层：只有她占的那块接触摸（点、摸头、长按拖动），原样转给页面；别处照常归对话列表。
+ * 放在标题栏和输入框之间那一块里，所以不会挡输入框。
+ */
+@Composable
+internal fun WhaleTouch() {
+    if (!Whale.onStage || Whale.editing || (!Whale.touch && !Whale.drag)) return
+    var origin by remember { mutableStateOf(Offset.Zero) }
+    val at = remember { IntArray(2) }
+    Box(Modifier.fillMaxSize().onGloballyPositioned { origin = it.positionInWindow() }) {
+        Box(
+            Modifier
+                .layout { m, c ->
+                    val r = Whale.rect()
+                    val l = ((r?.get(0) ?: 0f) - origin.x).roundToInt().coerceIn(0, c.maxWidth)
+                    val t = ((r?.get(1) ?: 0f) - origin.y).roundToInt().coerceIn(0, c.maxHeight)
+                    val e = ((r?.get(2) ?: 0f) - origin.x).roundToInt().coerceIn(l, c.maxWidth)
+                    val b = ((r?.get(3) ?: 0f) - origin.y).roundToInt().coerceIn(t, c.maxHeight)
+                    at[0] = l; at[1] = t
+                    val p = m.measure(Constraints.fixed(e - l, b - t))
+                    layout(c.maxWidth, c.maxHeight) { p.place(l, t) }
+                }
+                .pointerInput(Unit) {
+                    awaitEachGesture {
+                        val d = awaitFirstDown(requireUnconsumed = false)
+                        d.consume()
+                        val ox = origin.x + at[0]; val oy = origin.y + at[1]
+                        Whale.ptr("down", ox + d.position.x, oy + d.position.y)
+                        try {
+                            while (true) {
+                                val ch = awaitPointerEvent().changes.firstOrNull { it.id == d.id } ?: break
+                                ch.consume()
+                                if (!ch.pressed) break
+                                Whale.ptr("move", ox + ch.position.x, oy + ch.position.y)
+                            }
+                        } finally {
+                            Whale.ptr("up", 0f, 0f)
+                        }
+                    }
+                },
+        )
     }
 }
 
@@ -102,6 +161,7 @@ internal fun WhalePage(onBack: () -> Unit, onPlace: () -> Unit, onDress: () -> U
             Toggle("显示鲸鱼娘", "在主页陪你聊天", Whale.show) { Whale.show = it; Whale.save() }
             Toggle("情绪表情", "按她回复的内容换表情和动作", Whale.mood) { Whale.mood = it; Whale.save() }
             Toggle("点击互动", "点头、点身体、点尾巴都有反应", Whale.touch) { Whale.touch = it; Whale.save() }
+            Toggle("长按拖动", "按住她不放，拖到想放的地方，松手就留在那儿", Whale.drag) { Whale.drag = it; Whale.save() }
             Block {
                 Txt("待机动作", Page.ink, 15.sp)
                 Txt("没聊天时她自己做的小动作", Page.muted, 12.sp, Modifier.padding(top = 3.dp))
@@ -199,12 +259,21 @@ internal fun BoxScope.WhaleDressSheet() {
         var tab by remember { mutableIntStateOf(0) }
         var moves by remember { mutableStateOf(listOf<String>()) }
         LaunchedEffect(Whale.ready) { Whale.routines { moves = it } }
-        Column(
-            Modifier.widthIn(max = 560.dp).fillMaxWidth()
-                .background(Skin.page.copy(alpha = .96f), RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp))
-                .windowInsetsPadding(WindowInsets.navigationBars)
-                .padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 12.dp),
+        androidx.activity.compose.BackHandler(enabled = Whale.dressing) { Whale.dress(false) }
+        val shape = RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp)
+        // 面板铺满整个宽度、贴到屏幕底边、不透明（不再让下面的输入框从两头露出来、字透上来）；内容仍限宽居中
+        Box(
+            Modifier.fillMaxWidth()
+                .onGloballyPositioned { Whale.sheet(it.positionInWindow().y) }
+                .shadow(18.dp, shape, clip = false, ambientColor = Color.Black.copy(alpha = .10f), spotColor = Color.Black.copy(alpha = .14f))
+                .background(Skin.sheet.copy(alpha = 1f), shape)
+                .pointerInput(Unit) { detectTapGestures { } }
+                .windowInsetsPadding(WindowInsets.navigationBars),
+            contentAlignment = Alignment.TopCenter,
         ) {
+        Column(Modifier.widthIn(max = 560.dp).fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 12.dp)) {
+            Box(Modifier.align(Alignment.CenterHorizontally).size(36.dp, 4.dp).background(Skin.line, RoundedCornerShape(2.dp)))
+            Spacer(Modifier.height(10.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Txt("换装间", Page.ink, 17.sp, family = Serif, modifier = Modifier.weight(1f))
                 Btn("完成") { Whale.dress(false) }
@@ -236,6 +305,7 @@ internal fun BoxScope.WhaleDressSheet() {
                     }
                 }
             }
+        }
         }
     }
 }
