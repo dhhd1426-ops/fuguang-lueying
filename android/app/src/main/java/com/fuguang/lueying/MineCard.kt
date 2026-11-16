@@ -82,8 +82,8 @@ private val warmInk: Color get() = Skin.onAccent
 /** 页面深度：往深处走新页从右边进，往回走从左边进。 */
 private fun depth(s: String) = when {
     s == "mine" -> 0
-    s == "assistant" || s == "mcp" || s == "about" || s == "features" || s == "theme" || s == "whale" -> 1
-    s == "persona" || s.startsWith("mcp/") || s == "search" || s == "skills" || s == "gallery" -> 2
+    s == "assistant" || s == "mcp" || s == "about" || s == "features" || s == "theme" || s == "whale" || s == "voice" -> 1
+    s == "persona" || s == "voice/api" || s.startsWith("mcp/") || s == "search" || s == "skills" || s == "gallery" -> 2
     s.startsWith("search/") || s.startsWith("skills/") || s.startsWith("gallery/") -> 3
     s == "providers" || s == "memories" || s == "fold" -> 3
     s == "memprompt" -> 5
@@ -95,7 +95,13 @@ private fun depth(s: String) = when {
 fun MineCardLayer(store: AssistantStore, nav: MineNav) {
     CenterCardLayer(
         MineCard, nav.screen, ::depth,
-        onBack = { if (nav.screen == "about" || nav.screen == "theme" || nav.screen == "whale") { nav.screen = "mine"; true } else nav.screen != "mine" && nav.back() },
+        onBack = {
+            when (nav.screen) {
+                "about", "theme", "whale", "voice" -> { nav.screen = "mine"; true }
+                "voice/api" -> { nav.screen = "voice"; true }
+                else -> nav.screen != "mine" && nav.back()
+            }
+        },
         onClosed = { nav.screen = "mine"; nav.persona = "" },
         above = { MemoryCardHost(); AvatarCropHost(); IconCropHost() },
     ) { screen, rise ->
@@ -112,6 +118,8 @@ fun MineCardLayer(store: AssistantStore, nav: MineNav) {
             "about" -> AboutPage { nav.screen = "mine" }
             "whale" -> WhalePage({ nav.screen = "mine" }, { MineCard.open = false; Whale.edit(true) }, { MineCard.open = false; Whale.dress(true) })
             "theme" -> ThemePage { nav.screen = "mine" }
+            "voice" -> SpeechPage({ nav.screen = "mine" }) { nav.screen = "voice/api" }
+            "voice/api" -> SpeechApiPage { nav.screen = "voice" }
             "features" -> FeaturesPage({ nav.screen = "mine" }, { nav.screen = "search" }, { nav.screen = "skills" })
             "skills" -> SkillsPage({ nav.screen = "features" }) { nav.screen = "skills/$it" }
             "search" -> SearchPage({ nav.screen = "features" }) { nav.screen = "search/$it" }
@@ -187,6 +195,24 @@ private fun MineCardList(t: Float, onGo: (String) -> Unit) {
             Spacer(Modifier.width(4.dp))
         }
         SvgIcon(chevron, Page.muted.copy(alpha = .6f), 15.dp, stroke = 1.8f)
+    }
+    Spacer(Modifier.height(6.dp))
+    // 语音（Speech.kt）：朗读她的回答
+    Column(Modifier.spot("voice")) {
+        MineRow(
+            4, t, "语音",
+            if (Speech.ready) "${Speech.prov.name} · ${Speech.voiceName()}" else "让她把回答读给你听",
+            { onGo("voice") },
+            glyph = { SvgIcon(Speech.wave, warm, 19.dp, stroke = 1.6f) },
+        ) {
+            if (Speech.ready && Speech.auto) {
+                Box(Modifier.size(6.dp).background(warm, CircleShape))
+                Spacer(Modifier.width(7.dp))
+                Txt("自动朗读", Page.muted, 13.sp, maxLines = 1)
+                Spacer(Modifier.width(4.dp))
+            }
+            SvgIcon(chevron, Page.muted.copy(alpha = .6f), 15.dp, stroke = 1.8f)
+        }
     }
     // 分组靠间距，不再给只有一两行的组写标题
     Spacer(Modifier.height(18.dp))

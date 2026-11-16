@@ -46,6 +46,7 @@ class MainActivity : ComponentActivity() {
         FoldModel.init(prefs); CtxWin.init(prefs)
         ArchivedTeamWorks.load(prefs)
         Mcp.init(prefs)
+        Speech.init(this, prefs)
         Backup.init(prefs)
         // 约定（Pacts.kt）：读进来，闹钟重新定一遍，刚过点的补上
         Pacts.init(this, prefs)

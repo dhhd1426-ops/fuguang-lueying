@@ -738,6 +738,7 @@ fun ChatPage(
       Box(Modifier.fillMaxSize()) {
         Whale.Stage(Modifier.fillMaxSize().zIndex(if (Whale.editing) 5f else 0f))
         WhaleHooks(chat)
+        SpeechHooks(chat)
         Column(
             Modifier
                 .fillMaxSize()
@@ -1053,6 +1054,7 @@ private fun Conversation(
                         LessonRow(m.lesson)
                         NoteImageRow(m.imgs, onImage)
                         ClipCards(m.clips)
+                        if (Speech.btn && Speech.ready && m.text.isNotBlank()) SpeakPill("msg:${m.at}", m.text)
                     }
                     }
                 }

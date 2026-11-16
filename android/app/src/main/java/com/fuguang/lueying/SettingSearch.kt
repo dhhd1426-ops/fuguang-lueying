@@ -78,6 +78,7 @@ internal object SettingIndex {
         SettingSpot("yu", "羽", "我的 › 连接器", "羽 笔记 读取 连接器", "mine"),
         SettingSpot("tg", "Telegram", "我的 › 连接器", "telegram 电报 频道 下载 登录", "mine"),
         SettingSpot("mcp", "MCP 服务", "我的 › 连接器", "mcp 服务 高德 地图 车票 连接", "mcp"),
+        SettingSpot("voice", "语音", "我的 › 连接器", "语音 朗读 读出来 声音 音色 tts 配音 volink minimax 语速", "voice"),
         SettingSpot("skin", "主题", "我的 › 主题", "主题 颜色 皮肤 深色 暗色 夜间 暗黑 渐变 白色 配色", "theme"),
         SettingSpot("rail", "换助理的方式", "我的 › 主题", "换助理 侧栏 切换 连体卡片 竖排头像", "theme"),
         SettingSpot("card", "卡片样式", "我的 › 主题", "卡片样式 整页 悬浮 卡片", "theme"),
