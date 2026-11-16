@@ -1,0 +1,27 @@
+# 把 sherpa-onnx 的 SenseVoice（int8，2025-09-09）搬到本仓库 Releases「asr-model-sensevoice」：App 从这里下（大陆也可退到 hf-mirror）
+name: ASR model mirror
+on:
+  push:
+    branches: [asr-mirror]
+permissions:
+  contents: write
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download and extract
+        run: |
+          set -e
+          N=sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2025-09-09
+          curl -fsSL -o m.tar.bz2 "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/$N.tar.bz2"
+          tar xjf m.tar.bz2
+          mkdir out && cp "$N/model.int8.onnx" "$N/tokens.txt" out/
+          ls -l out; sha256sum out/*
+          curl -fsSL -o hf.onnx "https://huggingface.co/csukuangfj/$N/resolve/main/model.int8.onnx" && sha256sum hf.onnx || echo "hf 下载失败"
+      - name: Upload
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view asr-model-sensevoice -R "${{ github.repository }}" >/dev/null 2>&1 || \
+            gh release create asr-model-sensevoice -R "${{ github.repository }}" --title "本地识别模型 SenseVoice（sherpa-onnx int8 2025-09-09）" --notes "sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2025-09-09 原样：model.int8.onnx + tokens.txt" --prerelease
+          gh release upload asr-model-sensevoice out/model.int8.onnx out/tokens.txt -R "${{ github.repository }}" --clobber
