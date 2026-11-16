@@ -85,11 +85,11 @@ object Talk {
 
     fun cycleSrc() {
         val i = SRCS.indexOfFirst { it.first == src }
-        setSrc(SRCS[(i + 1) % SRCS.size].first)
+        useSrc(SRCS[(i + 1) % SRCS.size].first)
         say("识别改用 ${label()}")
     }
 
-    private fun setSrc(s: String) {
+    private fun useSrc(s: String) {
         src = s
         app.getSharedPreferences("voice", Context.MODE_PRIVATE).edit().putString("src2", src).apply()
         if (open) { stopMic(); startMic() }
@@ -207,7 +207,7 @@ object Talk {
         if (++sysFails < 2) return
         stopRecognizer()
         say("$why，已改用本地识别")
-        main.launch { setSrc("local") }
+        main.launch { useSrc("local") }
     }
 
     /* ---------------- 自己录音：Silero VAD + 本地流式识别（+ 可选云端识别） ---------------- */
