@@ -81,6 +81,11 @@ object WhaleTools {
         val mood = a.optString("mood").takeIf { it in MOODS }
         val face = a.optString("face").takeIf { it in FACES }
         if (move == null && mood == null && face == null) return ToolOut("没写要做什么：move、mood、face 至少写一项，只能从给的里面选。", failed = true)
+        if (dancing && move != null) {
+            // 跳舞时别的动作不打断它（whale.js 里也挡着）；情绪、表情等跳完再说
+            add(if (move == "跳舞") "你接着跳" else "你在跳舞，没顾上$move")
+            return ToolOut(if (move == "跳舞") "你已经在跳了，接着跳。" else "你正在跳舞，$move 等跳完再说。")
+        }
         // 马上做，边说边做：whale.js 里 App 让做的动作（rt.keep）说话时不会被嘴打断
         selfUntil = System.currentTimeMillis() + 2500
         if (mood != null) { Whale.moodOn(mood); keepMood = mood }

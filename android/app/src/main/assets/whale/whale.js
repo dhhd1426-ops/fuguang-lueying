@@ -223,7 +223,7 @@ async function dance(){if(!model||danceOn||reduced)return;
   danceOn=true;bridge('act',{k:'dance'});busy=Infinity;v.currentTime=0;v.muted=false;const pl=v.play();if(pl&&pl.catch)pl.catch(()=>{v.muted=true;v.play().catch(()=>{});});
   v.classList.add('on');stage.style.opacity=0;v.onended=endDance;v.onerror=endDance;
   after(2500,()=>{if(danceOn&&v.currentTime<.05){endDance();}});}
-function endDance(){if(!danceOn)return;const v=$('dance');danceOn=false;bridge('act',{k:'danceEnd'});v.classList.remove('on');setTimeout(()=>v.pause(),200);
+function endDance(){if(!danceOn)return;const v=$('dance');danceOn=false;bridge('act',{k:'danceEnd'});v.classList.remove('on');setTimeout(()=>{if(!danceOn)v.pause();},200);
   stage.style.opacity=SET.show?1:0;busy=clock+1500;setMood('开心',2600);if(clock>sayBusy)after(300,()=>speak(pick(['跳完啦～','嘿嘿，好看吗？','累死鱼了……']),false));}
 function whipTail(){whip=1;whipDir=Math.random()<.5?-1:1;}
 /* 用户自己做的动作（blue-whale 仓库）+ 模型作者的「脱捕」：播放时把它们管的参数让出去，首尾 0.6 秒交叉淡化 */
@@ -612,7 +612,7 @@ window.whale={
   room(t,b){roomT=clamp(+t||0,0,1);roomB=clamp(+b||1,roomT+.05,1);},
   cover(on){covered=!!on;syncRun();},
   mood(k,ms){k=MOOD_ALIAS[k]||k;if(MOODS[k])setMood(k,ms||3000);},
-  routine(n){if(editing)return;if(danceOn)endDance();
+  routine(n){if(editing||danceOn)return;
     if(n==='@dance')dance();else if(n==='@author')playAuthor();else if(n==='@idle60')playBW('bw_idle60');else if(ROUTINES[n]){stopRoutine();playRoutine(n);if(rt)rt.keep=true;}},
   face(k){if(editing)return;busy=clock+2200;if(FACES[k])playFace(k);else if(FX[k])flash(k,2000);},
   ptr(kind,fx,fy){const x=fx*innerWidth,y=fy*innerHeight;if(kind==='down')pDown(x,y);else if(kind==='move')pMove(x,y);else pUp();},

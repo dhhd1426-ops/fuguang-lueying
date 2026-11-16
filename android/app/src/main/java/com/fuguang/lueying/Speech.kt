@@ -469,7 +469,6 @@ object Speech {
     }
 
     fun stop() {
-        stopWhale()
         job?.cancel(); job = null; run = null
         player?.let { runCatching { it.stop() } }
         playing = ""; loading = ""
@@ -490,12 +489,11 @@ object Speech {
 
     /**
      * 她冒泡说一句：存过就立刻放；没存过就现合成、存下来，合成得快（1.5 秒内）才放，慢了这次不放、下次就有了。
-     * 正在读回答、试听时不插嘴。
+     * 和助理朗读是两路：各用各的播放器，谁也不停谁。
      */
     fun whaleSay(text: String) {
         if (text.isBlank() || !whaleVoice || !ready || !::app.isInitialized) return
         scope.launch {
-            if (playing.isNotEmpty() || loading.isNotEmpty()) return@launch
             val f = voiceFile(text)
             if (!f.exists()) {
                 val t0 = System.currentTimeMillis()
@@ -503,8 +501,7 @@ object Speech {
                 withContext(Dispatchers.IO) { f.writeBytes(b) }
                 if (System.currentTimeMillis() - t0 > 1500) return@launch
             }
-            if (playing.isNotEmpty() || loading.isNotEmpty()) return@launch
-            stopWhale()
+            stopWhale()   // 她自己上一句没说完就换下一句；助理在读的那一路不管
             val mp = MediaPlayer()
             whalePlayer = mp
             runCatching {
