@@ -7,7 +7,8 @@ const $=id=>document.getElementById(id);
 /* App 里她是用户自己请来的动态角色，动得多少由「待机动作」管；系统的减弱动效（省电模式也会打开）不再把她定成一张图 */
 const reduced=false;
 const load=$('load');
-function fail(msg){bridge('error',String(msg));load.classList.add('err');load.classList.remove('done');load.textContent='载入失败：\n'+msg+'\n\n把这段截图发给我。';}
+let alive=false;
+function fail(msg){if(alive){bridge('warn',{msg:String(msg).slice(0,600)});return;}bridge('error',{msg:String(msg)});load.classList.add('err');load.classList.remove('done');load.textContent='载入失败：\n'+msg+'\n\n把这段截图发给我。';}
 window.addEventListener('error',e=>fail((e.message||'')+(e.filename?'\n'+e.filename.split('/').slice(-3).join('/')+':'+e.lineno+':'+e.colno:'')+(e.error&&e.error.stack?'\n'+String(e.error.stack).split('\n').slice(0,5).join('\n'):'')));
 window.addEventListener('unhandledrejection',e=>fail(String(e.reason&&e.reason.stack||e.reason)));
 if(!window.Live2DCubismCore)return fail('Cubism Core 没加载');
@@ -360,7 +361,7 @@ textures().then(tx=>{hookTex(tx);bridge('phase',{s:'搭模型'});return PIXI.liv
     for(const k in OUT){const r=range(k);if(!r)continue;cm.setParameterValueById(k,clamp(OUT[k],r[0],r[1]));touched.add(k);}
     const ph=m.internalModel.physics;if(ph&&ph._options){const t=clock/1000;ph._options.wind.x=(Math.sin(t*.9)*.08+Math.sin(t*2.3)*.04)*(1+gust*2);ph._options.wind.y=0;}
   });
-  load.classList.add('done');applyLayout();Object.assign(S,St);bridge('ready',{mask:maskSize,tex:texSize});after(300,()=>{hopV=-200;});
+  load.classList.add('done');applyLayout();Object.assign(S,St);alive=true;bridge('ready',{mask:maskSize,tex:texSize});after(300,()=>{hopV=-200;});
 });}).catch(e=>fail(e&&e.stack?String(e.stack).split('\n').slice(0,5).join('\n'):String(e)));
 
 /* 省电：切到后台、或设置页整页盖住她时停帧 */
@@ -474,7 +475,7 @@ function saveLayout(){Object.assign(cur(),{zoom:St.zoom,dx:St.dx,dy:St.dy});try{
 function setEdit(on){editing=on;$('edit').classList.toggle('on',on);scr.classList.toggle('editing',on);$('bEdit').classList.toggle('on',on);
   if(on){stopRoutine();busy=Infinity;}else{busy=clock+1000;saveLayout();}}
 function editDown(e){ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY});scr.setPointerCapture&&scr.setPointerCapture(e.pointerId);
-  if(ptrs.size===1){dragging=true;if(clock-lastTap<300){Object.assign(St,LAYOUT_DEF[lay][chatOn?'chat':'idle']);Object.assign(S,St);readout();}lastTap=clock;}
+  if(ptrs.size===1){dragging=true;if(clock-lastTap<300){Object.assign(St,LAYOUT_DEF[chatOn?'chat':'idle']);Object.assign(S,St);readout();}lastTap=clock;}
   if(ptrs.size===2){const[a,b]=[...ptrs.values()];pinch0=Math.hypot(a.x-b.x,a.y-b.y);zoom0=St.zoom;}}
 function editMove(e){if(!ptrs.has(e.pointerId))return;const p=ptrs.get(e.pointerId),r=stage.getBoundingClientRect();
   if(ptrs.size===1){St.dx+=(e.clientX-p.x)/r.width;St.dy+=(e.clientY-p.y)/r.height;}

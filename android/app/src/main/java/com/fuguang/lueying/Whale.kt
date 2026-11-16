@@ -267,7 +267,9 @@ object Whale {
             "act" -> WhaleTools.note(o)
             "speak" -> Speech.whaleSay(o.optString("text"))
             "grab" -> web?.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
-            "error" -> error = o.optString("msg", "鲸鱼娘没能加载")
+            "error" -> error = o.optString("msg").ifBlank { json.takeIf { it.isNotBlank() && !it.startsWith("{") } ?: "鲸鱼娘没能加载" }
+            // 站出来以后的小错：她照常动，只记进日志（不再盖成「载入失败」）
+            "warn" -> android.util.Log.w("Whale", o.optString("msg"))
             "phase" -> if (!ready) phase = o.optString("s")
             "glLost" -> if (!lowQ) { low(); reload() } else { ready = false; error = "显存不够，她没能留在屏幕上" }
             "box" -> box = floatArrayOf(o.optDouble("l").toFloat(), o.optDouble("t").toFloat(), o.optDouble("r").toFloat(), o.optDouble("b").toFloat())
