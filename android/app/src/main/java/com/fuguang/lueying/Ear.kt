@@ -4,13 +4,11 @@ import android.content.Context
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.setValue
-import com.k2fsa.sherpa.onnx.EndpointConfig
-import com.k2fsa.sherpa.onnx.EndpointRule
 import com.k2fsa.sherpa.onnx.FeatureConfig
-import com.k2fsa.sherpa.onnx.OnlineModelConfig
-import com.k2fsa.sherpa.onnx.OnlineRecognizer
-import com.k2fsa.sherpa.onnx.OnlineRecognizerConfig
-import com.k2fsa.sherpa.onnx.OnlineTransducerModelConfig
+import com.k2fsa.sherpa.onnx.OfflineModelConfig
+import com.k2fsa.sherpa.onnx.OfflineRecognizer
+import com.k2fsa.sherpa.onnx.OfflineRecognizerConfig
+import com.k2fsa.sherpa.onnx.OfflineSenseVoiceModelConfig
 import com.k2fsa.sherpa.onnx.SileroVadModelConfig
 import com.k2fsa.sherpa.onnx.Vad
 import com.k2fsa.sherpa.onnx.VadModelConfig
@@ -25,17 +23,20 @@ import java.net.URL
 
 /**
  * 本地听写（sherpa-onnx，k2-fsa，Apache-2.0）：
- * - 流式识别：中英双语 streaming zipformer（int8，约 47MB），第一次用从本仓库 Releases「asr-model-zh-en」下载，断点续传；
+ * - 识别：SenseVoice Small（阿里 FunAudioLLM，int8 2025-09-09，约 237MB；中英日韩粤，带标点、数字转阿拉伯）。
+ *   不是流式模型：照 sherpa 官方 SimulateStreamingAsr，说话时每隔一会儿把这句从头认一遍出字幕，说完再认一遍定稿。
+ *   第一次用下载：本仓库 Releases「asr-model-sensevoice」，连不上退到 hf-mirror（同一份，sha256 一致），断点续传。
  * - 说没说话：Silero VAD（随 App 带在 assets/sherpa/silero_vad.onnx，640KB）。
  * 全在手机上算，不要 Key、不联网也能听。
  */
 object Ear {
-    private const val BASE = "https://github.com/dhhd1426-ops/fuguang-lueying/releases/download/asr-model-zh-en/"
+    private val BASES = listOf(
+        "https://github.com/dhhd1426-ops/fuguang-lueying/releases/download/asr-model-sensevoice/",
+        "https://hf-mirror.com/csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2025-09-09/resolve/main/",
+    )
     private val FILES = listOf(
-        "encoder-epoch-99-avg-1.int8.onnx" to 42980793L,
-        "decoder-epoch-99-avg-1.int8.onnx" to 3486740L,
-        "joiner-epoch-99-avg-1.int8.onnx" to 3228485L,
-        "tokens.txt" to 56317L,
+        "model.int8.onnx" to 237115547L,
+        "tokens.txt" to 315894L,
     )
     val TOTAL = FILES.sumOf { it.second }
 
@@ -45,8 +46,11 @@ object Ear {
 
     private val lock = Mutex()
 
-    private fun dir(ctx: Context) = File(ctx.filesDir, "asr/zh-en")
+    private fun dir(ctx: Context) = File(ctx.filesDir, "asr/sensevoice")
     fun ready(ctx: Context) = FILES.all { (n, size) -> File(dir(ctx), n).length() == size }
+
+    /** 以前的流式小模型（zipformer，50MB）不用了：新模型装好后删掉 */
+    fun dropOld(ctx: Context) { runCatching { File(ctx.filesDir, "asr/zh-en").deleteRecursively() } }
 
     /** 缺哪个下哪个（.part 续传，下完改名）。失败抛异常，消息给人看 */
     suspend fun fetch(ctx: Context) = lock.withLock {
@@ -63,8 +67,9 @@ object Ear {
                     if (part.length() > size) part.delete()
                     var tries = 0
                     while (part.length() < size) {
-                        try { pull(BASE + name, part, size) { progress = have() / TOTAL.toFloat() } }
-                        catch (e: Exception) { if (++tries >= 3) throw e }
+                        // GitHub 连不上（大陆常见）就换 hf-mirror；两边同一份文件，.part 接着续
+                        try { pull(BASES[tries % BASES.size] + name, part, size) { progress = have() / TOTAL.toFloat() } }
+                        catch (e: Exception) { if (++tries >= 4) throw e }
                     }
                     if (part.length() != size || !part.renameTo(done)) throw Exception("识别模型没下完整")
                 }
@@ -73,6 +78,7 @@ object Ear {
             } catch (e: java.io.IOException) {
                 throw Exception("识别模型下载断了，再进来会接着下")
             } finally { progress = -1f }
+            dropOld(ctx)
         }
     }
 
@@ -101,44 +107,32 @@ object Ear {
         } finally { c.disconnect() }
     }
 
-    /**
-     * 流式识别器：只管出字，不断句（断句归 Talk 里的 Silero + 两票合一；识别器自己的端点是「多久没出字」，认不出字时会把话切断）。
-     * 建一次约 1 秒，在录音线程里建。
-     */
-    fun recognizer(ctx: Context): OnlineRecognizer {
+    /** 识别器：建一次约 1–2 秒（读 237MB），在识别线程里建；同一个识别器只在一条线程上用 */
+    fun recognizer(ctx: Context): OfflineRecognizer {
         val d = dir(ctx)
-        val cfg = OnlineRecognizerConfig(
+        val cfg = OfflineRecognizerConfig(
             featConfig = FeatureConfig(sampleRate = 16000, featureDim = 80),
-            modelConfig = OnlineModelConfig(
-                transducer = OnlineTransducerModelConfig(
-                    encoder = File(d, FILES[0].first).absolutePath,
-                    decoder = File(d, FILES[1].first).absolutePath,
-                    joiner = File(d, FILES[2].first).absolutePath,
+            modelConfig = OfflineModelConfig(
+                senseVoice = OfflineSenseVoiceModelConfig(
+                    model = File(d, FILES[0].first).absolutePath,
+                    language = "",                        // 自动：中英混说也行
+                    useInverseTextNormalization = true,   // 标点 + 「三点」→「3点」
                 ),
-                tokens = File(d, FILES[3].first).absolutePath,
+                tokens = File(d, FILES[1].first).absolutePath,
                 numThreads = 2,
                 provider = "cpu",
-                modelType = "zipformer",
             ),
-            endpointConfig = EndpointConfig(
-                rule1 = EndpointRule(false, 2.4f, 0f),
-                rule2 = EndpointRule(true, 0.5f, 0f),   // 只是「可能说完了」，真断不断由 Talk 两票合一（文字 + Smart Turn）
-                rule3 = EndpointRule(false, 0f, 20f),
-            ),
-            enableEndpoint = false,
-            decodingMethod = "greedy_search",
         )
-        return OnlineRecognizer(null, cfg)
+        return OfflineRecognizer(null, cfg)
     }
 
-    /** 第二遍：整句声音用新流从头认一次；末尾补 0.6 秒静音并 inputFinished，让最后几个字吐干净。和实时识别同一条线程调（同一个识别器不并发） */
-    fun redo(r: OnlineRecognizer, pcm: List<ShortArray>, rate: Int): String {
+    /** 认一段（16k，[-1,1]）。末尾补 0.3 秒静音，最后一个字不吃 */
+    fun decode(r: OfflineRecognizer, pcm: FloatArray, rate: Int): String {
         val st = r.createStream()
         try {
-            for (fr in pcm) st.acceptWaveform(FloatArray(fr.size) { fr[it] / 32768f }, rate)
-            st.acceptWaveform(FloatArray(rate * 6 / 10), rate)
-            st.inputFinished()
-            while (r.isReady(st)) r.decode(st)
+            st.acceptWaveform(pcm, rate)
+            st.acceptWaveform(FloatArray(rate * 3 / 10), rate)
+            r.decode(st)
             return r.getResult(st).text
         } finally { st.release() }
     }
