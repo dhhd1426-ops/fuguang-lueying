@@ -126,7 +126,7 @@ function toggleFx(k){fxT[k]=fxT[k]?0:1;fxUntil[k]=fxT[k]?Infinity:0;return !!fxT
 let heldPose=null,pose=null,poseW=0,poseT=0,rt=null,face=null,nextRt=9000,nextFace=5000,autoIdle=true,gust=0,petting=0,dizzyT=0;
 function setPose(n){if(n){pose=n;poseT=1;}else poseT=0;}
 function playRoutine(name){const n=name||(()=>{const ks=Object.keys(ROUTINES).filter(k=>k[0]!=='@'&&(!rt||k!==rt.name));return ks[Math.floor(Math.random()*ks.length)];})();
-  const r=ROUTINES[n];rt={name:n,r,t:0};busy=Math.max(busy,clock+r.ms);if(r.pose)setPose(r.pose);if(r.fx)r.fx.forEach(k=>flash(k,r.ms-300));
+  const r=ROUTINES[n];rt={name:n,r,t:0};bridge('act',{k:'routine',n});busy=Math.max(busy,clock+r.ms);if(r.pose)setPose(r.pose);if(r.fx)r.fx.forEach(k=>flash(k,r.ms-300));
   if(r.tail)Object.assign(tlT,{jit:0},r.tail);const me=rt;
   if(r.moodK)Object.assign(tlT,{jit:0},MOODS[r.moodK].tail);
   (r.hops||[]).forEach(f=>after(r.ms*f,()=>{if(rt===me)hopV=-230;}));(r.hearts||[]).forEach(f=>after(r.ms*f,()=>{if(rt===me)hearts(3);}));
@@ -219,10 +219,10 @@ async function danceSrc(){if(danceURL)return danceURL;const r=await fetch(APPDIR
 async function dance(){if(!model||danceOn||reduced)return;
   if(!danceURL){speak('等我换个衣服……',false);try{await danceSrc();}catch(e){speak('衣服没找到……',false);return;}}stopRoutine();stopMotion();const v=$('dance'),H=model.height;
   v.style.height=(H*.9)+'px';v.style.left=model.x+'px';v.style.top=(model.y-H*.5+H*.055)+'px';
-  danceOn=true;busy=Infinity;v.currentTime=0;v.muted=false;const pl=v.play();if(pl&&pl.catch)pl.catch(()=>{v.muted=true;v.play().catch(()=>{});});
+  danceOn=true;bridge('act',{k:'dance'});busy=Infinity;v.currentTime=0;v.muted=false;const pl=v.play();if(pl&&pl.catch)pl.catch(()=>{v.muted=true;v.play().catch(()=>{});});
   v.classList.add('on');stage.style.opacity=0;v.onended=endDance;v.onerror=endDance;
   after(2500,()=>{if(danceOn&&v.currentTime<.05){endDance();}});}
-function endDance(){if(!danceOn)return;const v=$('dance');danceOn=false;v.classList.remove('on');setTimeout(()=>v.pause(),200);
+function endDance(){if(!danceOn)return;const v=$('dance');danceOn=false;bridge('act',{k:'danceEnd'});v.classList.remove('on');setTimeout(()=>v.pause(),200);
   stage.style.opacity=SET.show?1:0;busy=clock+1500;setMood('开心',2600);if(clock>sayBusy)after(300,()=>speak(pick(['跳完啦～','嘿嘿，好看吗？','累死鱼了……']),false));}
 function whipTail(){whip=1;whipDir=Math.random()<.5?-1:1;}
 /* 用户自己做的动作（blue-whale 仓库）+ 模型作者的「脱捕」：播放时把它们管的参数让出去，首尾 0.6 秒交叉淡化 */
@@ -497,7 +497,7 @@ scr.addEventListener('pointermove',e=>{if(editing)return;if(pointerDown||e.point
 function release(){if(editing||!pointerDown)return;pointerDown=false;holdLook=clock+1200;clearTimeout(pressTimer);
   const d=downAt;downAt=null;
   if(petting){petting=0;petX=0;fxUntil.xx=clock+500;fxUntil.blush=clock+1500;after(500,()=>T.smile=0);
-    if(Math.random()<.6&&clock>sayBusy)speak(['嘿嘿……','头发要乱啦～','再摸一下下。'][Math.floor(Math.random()*3)]);return;}
+    bridge('act',{k:'pet'});if(Math.random()<.6&&clock>sayBusy)speak(['嘿嘿……','头发要乱啦～','再摸一下下。'][Math.floor(Math.random()*3)]);return;}
   if(d&&d.rg&&!d.used&&clock-d.t<600&&SET.touch)tap(d.rg);}
 addEventListener('pointerup',release);addEventListener('pointercancel',release);
 
@@ -511,7 +511,7 @@ function faceTap(){busy=clock+1800;const r=Math.random();
   else{flash('teeth',1400);T.smile=1;after(1200,()=>T.smile=0);line(['嘻嘻']);}}
 function poke(){busy=clock+1400;hopV=-200;T.wide=1;T.brow=.5;flash('sweat',1400);after(500,()=>{T.wide=0;T.brow=0;});line(['呀！','别戳～','痒……']);}
 /* 连点 5 下：钢盆从天而降砸在头上 → 一沉 → 圈圈眼转晕（点子来自 Rockau/DeepFish-desktop-pet） */
-function dizzy(){busy=clock+4200;stopRoutine();stopMotion();const had=fxT.pan;fxT.pan=1;fxUntil.pan=had?Infinity:clock+3800;
+function dizzy(){bridge('act',{k:'dizzy'});busy=clock+4200;stopRoutine();stopMotion();const had=fxT.pan;fxT.pan=1;fxUntil.pan=had?Infinity:clock+3800;
   after(120,()=>{hopV=420;T.wide=1;flash('xx',300);});after(420,()=>{T.wide=0;flash('dizzy',2800);dizzyT=2600;});after(700,()=>speak('铛——别戳啦，头晕。'));}
 
 /* 点尾巴：甩一下，回头看；短时间连着点会从吃惊变成不耐烦 */
@@ -524,7 +524,7 @@ function tailTap(){tailTaps=tailTaps.filter(t=>clock-t<4000);tailTaps.push(clock
   else{setMood('生气',2600);line(['哼！','再碰就甩你脸上！']);tailTaps=[];}}
 /* 点哪儿：头顶摸头、脸、手（挥手）、身体（被戳）；1.6 秒内连点 5 下转晕 */
 let taps=[];
-function tap(rg){taps=taps.filter(t=>clock-t<1600);taps.push(clock);if(taps.length>=5){taps=[];dizzy();return;}
+function tap(rg){bridge('act',{k:'tap',rg});taps=taps.filter(t=>clock-t<1600);taps.push(clock);if(taps.length>=5){taps=[];dizzy();return;}
   if(rg==='tail'){tailTap();return;}
   if(rg==='head')pat();else if(rg==='face')faceTap();else if(rg==='armL'||rg==='armR'){if(!rt)playRoutine('挥挥手');}else poke();}
 
@@ -586,7 +586,7 @@ function pMove(x,y){if(editing||!pointerDown)return;
     if(petMoved>18){if(!petting){fxT.xx=1;fxUntil.xx=Infinity;fxT.blush=1;fxUntil.blush=Infinity;T.smile=.9;}
       petting=1;petX=clamp(petX+dx*.012,-1,1);busy=clock+2500;}}}
 function pUp(){clearTimeout(grabTimer);ptrOn=false;lastBox='';
-  if(grab){grab=false;dragging=false;pointerDown=false;downAt=null;busy=clock+1000;holdLook=clock+800;hopV=-150;saveLayout();return;}
+  if(grab){grab=false;dragging=false;pointerDown=false;downAt=null;busy=clock+1000;holdLook=clock+800;hopV=-150;saveLayout();bridge('act',{k:'moved'});return;}
   release();}
 window.whale={
   set:applySet,

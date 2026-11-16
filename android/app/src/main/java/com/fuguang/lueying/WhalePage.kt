@@ -55,6 +55,11 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.size
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.input.pointer.PointerEvent
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.node.ModifierNodeElement
+import androidx.compose.ui.node.PointerInputModifierNode
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.sp
 import kotlin.math.ceil
 import kotlin.math.roundToInt
@@ -91,6 +96,7 @@ internal fun WhaleHooks(chat: ChatState) {
             if (busy && len > seen) { Whale.talk(len - seen); seen = len }
             if (!busy && was) {
                 chat.messages.lastOrNull()?.takeIf { it.role == "assistant" }?.let { Whale.replied(it.text) }
+                WhaleTools.flush()
                 seen = 0
             }
             was = busy
@@ -308,4 +314,23 @@ internal fun BoxScope.WhaleDressSheet() {
         }
         }
     }
+}
+
+/**
+ * 盖在上面、但不挡触摸：命中测试时让下面的兄弟层也收到同一次触摸（Compose 1.7+ 的 sharePointerInputWithSiblings）。
+ * 她的 WebView 平时 dispatchTouchEvent 回 false，不会把触摸吃掉。
+ */
+internal fun Modifier.passTouches(): Modifier = this then PassTouches
+
+private object PassTouches : ModifierNodeElement<PassTouchesNode>() {
+    override fun create() = PassTouchesNode()
+    override fun update(node: PassTouchesNode) {}
+    override fun hashCode() = 7301
+    override fun equals(other: Any?) = other === this
+}
+
+private class PassTouchesNode : Modifier.Node(), PointerInputModifierNode {
+    override fun onPointerEvent(pointerEvent: PointerEvent, pass: PointerEventPass, bounds: IntSize) {}
+    override fun onCancelPointerInput() {}
+    override fun sharePointerInputWithSiblings() = true
 }

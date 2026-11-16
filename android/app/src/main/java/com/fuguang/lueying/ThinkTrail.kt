@@ -95,7 +95,7 @@ object Trail {
         PanTools.OPEN -> "正在打开网盘分享"; PanTools.GET -> "正在下网盘里的文件"
         in ClockTools.names -> ClockTools.liveTitle(n)
         in WebHand.names -> WebHand.liveTitle(n)
-        SentFiles.TOOL -> "正在打包文件"; SentPics.TOOL -> "正在拿图"; Pacts.SET -> "正在记约定"; Pacts.DROP -> "正在取消约定"; Works.MAKE -> "正在动手做"; WorkJobs.START -> "正在交代"; WorkJobs.STOP -> "正在停下"; WorkJobs.RESUME -> "正在接着做"; "get_work_status" -> "正在查做到哪"; Works.EDIT -> "正在改作品"; Works.READ -> "正在看原稿"; Steps.TOOL -> "正在理要做的事"; "list_todos" -> "正在查看羽的待办"; "read_note" -> "正在读羽的笔记"
+        SentFiles.TOOL -> "正在打包文件"; SentPics.TOOL -> "正在拿图"; Pacts.SET -> "正在记约定"; Pacts.DROP -> "正在取消约定"; Works.MAKE -> "正在动手做"; WorkJobs.START -> "正在交代"; WorkJobs.STOP -> "正在停下"; WhaleTools.ACT -> "正在动一下"; WorkJobs.RESUME -> "正在接着做"; "get_work_status" -> "正在查做到哪"; Works.EDIT -> "正在改作品"; Works.READ -> "正在看原稿"; Steps.TOOL -> "正在理要做的事"; "list_todos" -> "正在查看羽的待办"; "read_note" -> "正在读羽的笔记"
         else -> if (Mcp.owns(n)) Mcp.note(n).trimEnd('…') else "正在查阅羽的笔记"
     }
 
@@ -114,6 +114,7 @@ object Trail {
         SentPics.TOOL -> "发了 ${a.optJSONArray("images")?.length() ?: 1} 张图"
         WorkJobs.START -> (if (a.optString("id").isNotBlank()) "交代了大改" else "交代了作品") + "「${a.optString("title").trim().ifEmpty { "未命名" }.take(20)}」，后台在写"
         WorkJobs.STOP -> "停下了后台在做的作品"
+        WhaleTools.ACT -> "在屏幕上" + listOf(a.optString("move"), a.optString("mood"), a.optString("face")).filter { it.isNotBlank() }.joinToString("、").ifEmpty { "动了一下" }
         WorkJobs.RESUME -> "让后台从存着的稿接着做"
         "get_work_status" -> "查了做到哪"
         Materials.OPEN -> Materials.doneTitle(a.optString("url"))

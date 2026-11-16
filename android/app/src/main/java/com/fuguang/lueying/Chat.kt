@@ -341,7 +341,7 @@ class ChatState(val history: ConvStore) {
                 val videoRefs = MotionTools.references(history)
                 val motionReviewer = AttachLook.helper(store)?.let { (id, name) -> ArtworkJob.Model(provider(id), store.config(id), name, store.effort(id, name)) }
                 val motion = MotionTools.Session(videoRefs, Attach.vision(p.id, store.activeModel), motionReviewer)
-                val specs = listOf(Steps.spec) + (if (who.noteOn) Memory.toolSpecs else emptyList()) + Works.specs.filter { it.name != Works.MAKE } + WorkJobs.spec + WorkJobs.statusSpec + WorkJobs.stopSpec + WorkJobs.resumeSpec + SentFiles.spec + SentPics.spec + Pacts.specs + Materials.specs + VideoParse.specs + (if (videoRefs.isEmpty()) MotionTools.specs.filter { it.name == MotionTools.RENDER } else MotionTools.specs) + PanTools.specs + ClockTools.specs + WebHand.specs + skills + (if (web) listOf(WebSearch.spec) else emptyList()) + (if (yu) Yu.tools else emptyList()) + (if (recall) listOf(Recall.spec, Recall.openSpec) else emptyList()) + (if (folded != null) listOf(Fold.spec) else emptyList()) + mcp
+                val specs = listOf(Steps.spec) + (if (who.noteOn) Memory.toolSpecs else emptyList()) + Works.specs.filter { it.name != Works.MAKE } + WorkJobs.spec + WorkJobs.statusSpec + WorkJobs.stopSpec + WorkJobs.resumeSpec + SentFiles.spec + SentPics.spec + Pacts.specs + Materials.specs + VideoParse.specs + (if (videoRefs.isEmpty()) MotionTools.specs.filter { it.name == MotionTools.RENDER } else MotionTools.specs) + PanTools.specs + ClockTools.specs + (if (Whale.active) listOf(WhaleTools.spec) else emptyList()) + WebHand.specs + skills + (if (web) listOf(WebSearch.spec) else emptyList()) + (if (yu) Yu.tools else emptyList()) + (if (recall) listOf(Recall.spec, Recall.openSpec) else emptyList()) + (if (folded != null) listOf(Fold.spec) else emptyList()) + mcp
                 val convTitle0 = store0.get(cur)?.title ?: firstSentence(question, 18)
                 // 对方发来的照片，最近的在前：send_image / send_file 里 photo:1 就是最近那张
                 fun photos(): List<java.io.File> = history.filter { it.role == "user" }.flatMap { it.files }.filter { Attach.isImage(it) }.reversed().map { Attach.file(it) }
@@ -359,6 +359,7 @@ class ChatState(val history: ConvStore) {
                     if (videoRefs.isNotEmpty()) append("\n").append(MotionTools.rule).append(MotionTools.context(videoRefs))
                     append("\n").append(PanTools.system(Memory.userCall))
                     append("\n").append(ClockTools.system(Memory.userCall))
+                    WhaleTools.system(Memory.userCall).takeIf { it.isNotEmpty() }?.let { append("\n").append(it) }
                     append("\n").append(WebHand.system(Memory.userCall))
                     append("\n\n").append(Craft.system())
                     if (skills.isNotEmpty()) append("\n").append(Skills.system())
@@ -413,6 +414,7 @@ class ChatState(val history: ConvStore) {
                             }
                             else if (n == VideoParse.TOOL || n == VideoParse.SAVE) VideoParse.run(n, a) { l -> if (messages.none { l in it.clips } && l !in pendingClips) pendingClips.add(l) }
                             else if (n == PanTools.OPEN || n == PanTools.GET) PanTools.run(n, a) { l -> if (messages.none { l in it.clips } && l !in pendingClips) pendingClips.add(l) }
+                            else if (n == WhaleTools.ACT) WhaleTools.run(a)
                             else if (n in ClockTools.names) ClockTools.run(n, a, who.id) { l -> if (l !in pendingClips) pendingClips.add(l) }
                             else if (n == Materials.OPEN || n == Materials.LOOK) Materials.run(n, a, Yu.vision(p.id))
                             else if (n == Skills.OPEN || n == Skills.FIND || n == Skills.LEARN) Skills.run(n, a)
@@ -736,7 +738,6 @@ fun ChatPage(
     val menuPx = with(density) { menuW.toPx() }
     Box(Modifier.fillMaxSize().background(Skin.shade(.38f))) {
       Box(Modifier.fillMaxSize()) {
-        Whale.Stage(Modifier.fillMaxSize().zIndex(if (Whale.editing) 5f else 0f))
         WhaleHooks(chat)
         SpeechHooks(chat)
         Column(
@@ -774,6 +775,8 @@ fun ChatPage(
                 )
             }
         }
+        // 鲸鱼娘站在对话上面（不透字）；触摸照样落到下面的对话列表，点她、拖她由 WhaleTouch 转过去。只有「位置与大小」时她自己收
+        Whale.Stage(Modifier.fillMaxSize().then(if (Whale.editing) Modifier.zIndex(5f) else Modifier.passTouches()))
         SendFlightLayer(flight)
         WhaleDressSheet()
         if (menuOn) {

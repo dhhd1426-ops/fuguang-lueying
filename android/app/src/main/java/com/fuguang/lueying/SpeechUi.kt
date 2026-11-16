@@ -120,16 +120,41 @@ internal fun SpeakPill(key: String, text: String) {
     }
 }
 
-/** 自动朗读：她一轮写完就读；你发下一条时停掉还在读的。 */
+/**
+ * 自动朗读：边写边读。她写完一句就送去合成，不等整段写完；写完后把剩下的补上，
+ * 按钮从 live 换成那条消息。你发下一条时停掉还在读的。
+ */
 @Composable
 internal fun SpeechHooks(chat: ChatState) {
     LaunchedEffect(chat) {
         var was = false
-        snapshotFlow { chat.busy }.collect { busy ->
-            if (busy && !was) Speech.stopMessages()
-            if (!busy && was && Speech.auto && Speech.ready) {
-                chat.messages.lastOrNull()?.takeIf { it.role == "assistant" && it.text.isNotBlank() && !it.interrupted }
-                    ?.let { Speech.play("msg:${it.at}", it.text) }
+        var fed = 0
+        var said = ""
+        var ch: kotlinx.coroutines.channels.SendChannel<String>? = null
+        snapshotFlow { chat.busy to chat.partial }.collect { (busy, part) ->
+            if (busy && !was) {
+                Speech.stopMessages()
+                fed = 0; said = ""
+                ch = if (Speech.auto && Speech.ready) Speech.begin("live") else null
+            }
+            val out = ch
+            if (busy && out != null) {
+                val t = Speech.clean(part, live = true)
+                val (parts, end) = Speech.cut(t, fed)
+                if (end > fed) { parts.forEach { out.trySend(it) }; said = t.substring(0, end); fed = end }
+            }
+            if (!busy && was) {
+                val m = chat.messages.lastOrNull()?.takeIf { it.role == "assistant" && it.text.isNotBlank() }
+                if (out != null) {
+                    if (m != null && !m.interrupted) {
+                        val t = Speech.clean(m.text)
+                        val rest = when { fed == 0 -> t; t.startsWith(said) -> t.substring(said.length); else -> "" }
+                        Speech.cut(rest.trimEnd() + "\n", 0).first.forEach { out.trySend(it) }
+                    }
+                    out.close()
+                    if (m != null) Speech.rekey("live", "msg:${m.at}")
+                }
+                ch = null
             }
             was = busy
         }

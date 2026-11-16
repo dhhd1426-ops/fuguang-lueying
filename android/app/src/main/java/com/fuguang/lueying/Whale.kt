@@ -252,6 +252,7 @@ object Whale {
                 if (editing) w.evaluateJavascript("whale.edit(true)", null)
             }
             "editDone" -> editing = false
+            "act" -> WhaleTools.note(o)
             "grab" -> web?.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
             "error" -> error = o.optString("msg", "鲸鱼娘没能加载")
             "phase" -> if (!ready) phase = o.optString("s")

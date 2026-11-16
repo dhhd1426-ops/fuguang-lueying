@@ -13,11 +13,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -98,6 +96,7 @@ object Speech {
     private lateinit var app: Context
     private lateinit var prefs: Prefs
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    private val io = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var job: Job? = null
     private var player: MediaPlayer? = null
     private val cache = LinkedHashMap<String, ByteArray>()
@@ -262,7 +261,10 @@ object Speech {
 
     private fun fatal(e: Err) = e.status == 0 || e.status == 401 || e.status == 402 || e.status == 403 || e.status == 429
 
-    /** 合成一段话。先用记住的写法；不行就挨个换（Key、余额、限流、断网直接报）。 */
+    /**
+     * 合成一段话。记住了能用的写法就只发这一种；没记住（或记住的不灵了）就几种写法同时发，谁先成功用谁，
+     * 记下来。Key、余额、限流、断网这种换写法也没用的错直接报。
+     */
     suspend fun synth(text: String, voice: String = conf.voice, c: Conf = conf): ByteArray = withContext(Dispatchers.IO) {
         if (c.key.isBlank()) throw Err(-1, "还没填 API Key")
         if (c.model.isBlank()) throw Err(-1, "还没选模型")
@@ -270,27 +272,50 @@ object Speech {
         val ck = "${c.base}|${c.model}|$v|$speed|$text"
         synchronized(cache) { cache[ck] }?.let { return@withContext it }
         val all = if (c.base.contains("volink")) VOLINK_FORMS else listOf("openai")
-        val forms = if (c.form in all) listOf(c.form) + (all - c.form) else all
         val lines = mutableListOf<String>()
-        var first: Err? = null
-        for (f in forms) {
+        fun keep(f: String, b: ByteArray): ByteArray {
+            if (c.form != f) { c.form = f; scope.launch { save() } }
+            synchronized(cache) { cache[ck] = b; while (cache.size > 24) cache.remove(cache.keys.first()) }
+            return b
+        }
+        var left = all
+        if (c.form in all) {
             val t0 = System.currentTimeMillis()
-            fun took() = "%.1f 秒".format((System.currentTimeMillis() - t0) / 1000f)
             try {
-                val b = post(join(c.base, pathOf(f, c)), c.key, body(f, c, text, v))
-                lines += "$f → 成功（${took()}）"; trace = lines.toList()
-                if (c.form != f) { c.form = f; withContext(Dispatchers.Main) { save() } }
-                synchronized(cache) { cache[ck] = b; while (cache.size > 24) cache.remove(cache.keys.first()) }
-                return@withContext b
+                val b = post(join(c.base, pathOf(c.form, c)), c.key, body(c.form, c, text, v))
+                trace = listOf(line(c.form, null, t0)); return@withContext keep(c.form, b)
             } catch (e: Err) {
-                lines += "$f → ${if (e.status > 0) e.status.toString() else "网络"} ${e.message.orEmpty().take(70)}（${took()}）"
-                if (first == null || (first.status >= 500 && e.status in 1..499)) first = e
-                if (fatal(e)) break
+                lines += line(c.form, e, t0)
+                if (fatal(e) || all.size == 1) { trace = lines.toList(); throw e }
+                left = all - c.form
             }
+        }
+        // 几种写法同时发：不挂在这次的协程下面，免得赢了以后还得等慢的那几个（HttpURLConnection 取消不了）
+        val got = kotlinx.coroutines.channels.Channel<Triple<String, Any, Long>>(left.size)
+        left.forEach { f ->
+            io.launch {
+                val t0 = System.currentTimeMillis()
+                val r: Any = try { post(join(c.base, pathOf(f, c)), c.key, body(f, c, text, v)) } catch (e: Err) { e }
+                got.trySend(Triple(f, r, t0))
+            }
+        }
+        var first: Err? = null
+        repeat(left.size) {
+            val (f, r, t0) = got.receive()
+            if (r is ByteArray) { lines += line(f, null, t0); trace = lines.toList(); return@withContext keep(f, r) }
+            val e = r as Err
+            lines += line(f, e, t0)
+            if (first == null || (first!!.status >= 500 && e.status in 1..499)) first = e
         }
         trace = lines.toList()
         throw first ?: Err(0, "合成失败")
     }
+
+    private fun line(f: String, e: Err?, t0: Long): String {
+        val took = "%.1f 秒".format((System.currentTimeMillis() - t0) / 1000f)
+        return if (e == null) "$f → 成功（$took）" else "$f → ${if (e.status > 0) e.status.toString() else "网络"} ${e.message.orEmpty().take(70)}（$took）"
+    }
+
 
     /** 从平台读音色。返回（成功？，说明）。 */
     suspend fun fetchVoices(): Pair<Boolean, String> = withContext(Dispatchers.IO) {
@@ -348,76 +373,117 @@ object Speech {
 
     /* ---------- 朗读 ---------- */
 
-    /** 读出来的字：去掉工具标记、代码、链接、Markdown 符号。 */
-    fun clean(text: String): String = ToolText.clean(text)
-        .replace(Regex("```[\\s\\S]*?```"), "（代码略）")
-        .replace(Regex("!\\[[^\\]]*\\]\\([^)]*\\)"), "")
-        .replace(Regex("\\[([^\\]]+)\\]\\([^)]*\\)"), "$1")
-        .replace(Regex("https?://\\S+"), "")
-        .replace(Regex("[*_#>`|~]+"), "")
-        .replace(Regex("[ \\t]+"), " ")
-        .trim()
+    /** 读出来的字：去掉工具标记、代码、链接、Markdown 符号。[live] 是还在写的那段：没写完的代码块先不读。 */
+    fun clean(text: String, live: Boolean = false): String {
+        var s = if (live) ToolText.visible(text, false) else ToolText.clean(text)
+        if (live && Regex("```").findAll(s).count() % 2 == 1) s = s.substring(0, s.lastIndexOf("```"))
+        return s.replace(Regex("```[\\s\\S]*?```"), "（代码略）")
+            .replace(Regex("!\\[[^\\]]*\\]\\([^)]*\\)"), "")
+            .replace(Regex("\\[([^\\]]+)\\]\\([^)]*\\)"), "$1")
+            .replace(Regex("https?://\\S+"), "")
+            .replace(Regex("[*_#>`|~]+"), "")
+            .replace(Regex("[ \\t]+"), " ")
+            .trim()
+    }
 
-    /** 按句切段：一段不超过 220 字，句子太长再硬切。 */
-    private fun chunks(text: String): List<String> {
+    private val END = Regex("[。！？!?；;\\n]")
+
+    /** 按句切段。第一段只要一句（不超过 60 字），好让声音快点出来；后面一段不超过 220 字。 */
+    private fun chunks(text: String, firstShort: Boolean = true): List<String> {
         val out = mutableListOf<String>()
         val sb = StringBuilder()
+        fun cap() = if (firstShort && out.isEmpty()) 60 else 220
         Regex("[^。！？!?；;\\n]+[。！？!?；;\\n]*").findAll(text).map { it.value.trim() }.filter { it.isNotEmpty() }.forEach { s ->
-            if (sb.isNotEmpty() && sb.length + s.length > 220) { out += sb.toString(); sb.clear() }
-            if (s.length > 220) s.chunked(220).forEach { out += it } else sb.append(s)
+            if (sb.isNotEmpty() && (sb.length + s.length > cap() || (firstShort && out.isEmpty()))) { out += sb.toString(); sb.clear() }
+            if (s.length > cap()) s.chunked(cap()).forEach { out += it } else sb.append(s)
         }
         if (sb.isNotEmpty()) out += sb.toString()
         return out
     }
 
+    /** 一次朗读。[key] 可以中途改名（边写边读：先叫 live，写完换成那条消息的 msg:<时间>）。 */
+    private class Run(var key: String)
+    private var run: Run? = null
+
     fun toggle(key: String, text: String, voice: String = conf.voice, onResult: (String?) -> Unit = {}) {
         if (playing == key || loading == key) stop() else play(key, text, voice, onResult)
     }
 
-    /**
-     * 读一段话。[onResult] 只叫一次：开始出声时给 null，出错时给原因。
-     * 读这一段时下一段已经在合成，段与段之间不停顿。
-     */
+    /** 读一整段话。[onResult] 只叫一次：开始出声时给 null，出错时给原因。 */
     fun play(key: String, text: String, voice: String = conf.voice, onResult: (String?) -> Unit = {}) {
-        stop()
         val parts = chunks(clean(text))
         if (parts.isEmpty()) return
+        val ch = begin(key, voice, onResult)
+        parts.forEach { ch.trySend(it) }
+        ch.close()
+    }
+
+    /**
+     * 开一次朗读，返回往里塞句子的口子，塞完 close()。
+     * 合成在前面跑、放音在后面跟：读这一句的时候，后面一两句已经在合成，句与句之间不停顿。
+     */
+    fun begin(key: String, voice: String = conf.voice, onResult: (String?) -> Unit = {}): kotlinx.coroutines.channels.SendChannel<String> {
+        stop()
+        val r = Run(key); run = r
         loading = key
+        val text = kotlinx.coroutines.channels.Channel<String>(kotlinx.coroutines.channels.Channel.UNLIMITED)
         job = scope.launch {
             var told = false
+            val audio = kotlinx.coroutines.channels.Channel<ByteArray>(1)
+            launch {
+                try { for (t in text) audio.send(synth(t, voice)); audio.close() }
+                catch (e: CancellationException) { throw e }
+                catch (e: Exception) { audio.close(e) }
+            }
             try {
-                var next: Deferred<ByteArray>? = async { synth(parts[0], voice) }
-                for (i in parts.indices) {
-                    val bytes = next!!.await()
-                    next = if (i + 1 < parts.size) async { synth(parts[i + 1], voice) } else null
-                    if (playing != key) { playing = key; loading = ""; since = System.currentTimeMillis() }
-                    if (!told) { told = true; onResult(null) }
-                    playBytes(bytes, i)
+                var i = 0
+                for (b in audio) {
+                    if (!told) { told = true; playing = r.key; loading = ""; since = System.currentTimeMillis(); onResult(null) }
+                    playBytes(b, i++)
                 }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
                 if (!told) { told = true; onResult(e.message ?: "合成失败") }
             } finally {
-                if (playing == key) playing = ""
-                if (loading == key) loading = ""
+                text.cancel()
+                if (run === r) { run = null; if (playing == r.key) playing = ""; if (loading == r.key) loading = "" }
             }
         }
+        return text
+    }
+
+    /** 边写边读写完了：把 live 换成那条消息的 key，消息下面的按钮接着亮。 */
+    fun rekey(from: String, to: String) {
+        val r = run ?: return
+        if (r.key != from) return
+        r.key = to
+        if (playing == from) playing = to
+        if (loading == from) loading = to
     }
 
     fun stop() {
-        job?.cancel(); job = null
+        job?.cancel(); job = null; run = null
         player?.let { runCatching { it.stop() } }
         playing = ""; loading = ""
     }
 
     /** 新一轮开始时停掉还在读的回答；设置页的试听不管。 */
-    fun stopMessages() { if (playing.startsWith("msg:") || loading.startsWith("msg:")) stop() }
+    fun stopMessages() { if (playing.startsWith("msg:") || loading.startsWith("msg:") || playing == "live" || loading == "live") stop() }
+
+    /** 边写边读：从还在写的那段里切出已经写完的句子。返回（这次要读的，读到哪了）。 */
+    fun cut(clean: String, fed: Int): Pair<List<String>, Int> {
+        if (clean.length <= fed) return emptyList<String>() to fed
+        val end = (clean.length - 1 downTo fed).firstOrNull { END.matches(clean[it].toString()) }?.plus(1) ?: return emptyList<String>() to fed
+        val slice = clean.substring(fed, end).trim()
+        // 太短的（「嗯。」）先攒着，和下一句一起读，免得一句一个请求
+        if (fed > 0 && slice.length < 8) return emptyList<String>() to fed
+        return chunks(slice, firstShort = fed == 0) to end
+    }
 
     private suspend fun playBytes(b: ByteArray, i: Int) {
         val f = File(app.cacheDir, "tts_${i % 4}.audio")
         withContext(Dispatchers.IO) { f.writeBytes(b) }
-        val env = if (lips && Whale.active) withContext(Dispatchers.Default) { envelope(f) } else null
         val mp = MediaPlayer()
         player = mp
         var mouth: Job? = null
@@ -427,14 +493,19 @@ object Speech {
                 mp.setOnCompletionListener { if (cont.isActive) cont.resume(Unit) }
                 mp.setOnErrorListener { _, _, _ -> if (cont.isActive) cont.resume(Unit); true }
                 mp.start()
-                // 嘴：每 120ms 看一眼这一刻的响度，有声音就张一下；停顿时不叫，whale.talk 自己会合上
+                // 嘴：先放声音，响度表在旁边算；算好之前「在放就动」，算好后每 120ms 看一眼这一刻响不响，停顿时不叫，whale.talk 自己会合上
                 if (lips && Whale.active) mouth = scope.launch {
-                    while (isActive) {
-                        val ms = runCatching { mp.currentPosition }.getOrDefault(-1)
-                        if (ms < 0) break
-                        if (env == null || env.at(ms) > .18f) Whale.talk(1)
-                        delay(120)
-                    }
+                    var env: Env? = null
+                    val calc = launch(Dispatchers.Default) { env = envelope(f) }
+                    try {
+                        while (isActive) {
+                            val ms = runCatching { mp.currentPosition }.getOrDefault(-1)
+                            if (ms < 0) break
+                            val e = env
+                            if (e == null || e.at(ms) > .18f) Whale.talk(1)
+                            delay(120)
+                        }
+                    } finally { calc.cancel() }
                 }
             }
         } finally {
