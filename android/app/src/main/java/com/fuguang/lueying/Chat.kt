@@ -544,8 +544,11 @@ class ChatState(val history: ConvStore) {
                         }
                     } else error = if (Memory.active.foldOn) "这段聊天太长了，开个新对话接着聊吧" else "这段聊天太长了。开个新对话，或者在记忆页打开前情"
                 }
+                // 语音续句：停下是为了把两截拼成一句重问
+                val amendTo = amendAfterStop; amendAfterStop = null
+                if (amendTo != null) scope.launch { applyAmend(amendTo, store) }
                 // 这轮结束还有排着的话：接着发（你自己点停止的不发，出错的也不发，留着等你）
-                val go = !tooLong && (sendNowAfterStop || (!stopped && error == null))
+                val go = amendTo == null && !tooLong && (sendNowAfterStop || (!stopped && error == null))
                 sendNowAfterStop = false
                 if (go && queue.isNotEmpty()) scope.launch { flushQueue(scope, store) }
                 else if (!onScreen) Chats.finished(this@ChatState)
@@ -554,6 +557,34 @@ class ChatState(val history: ConvStore) {
     }
 
     fun stop() { userStopped = true; job?.cancel() }
+
+    /** 语音续句：等这轮停完再拼（null = 没有） */
+    private var amendAfterStop: String? = null
+
+    /**
+     * 语音续句：上一句是你 10 秒内刚说的、她还没开口，就把这句拼到上一句后面、她写了一半的作废、重问一次。
+     * 不合适（太久了、中间有别的话、在编辑重发）返回 false，照常发。
+     */
+    fun amend(extra: String, store: AssistantStore): Boolean {
+        val i = messages.indexOfLast { it.role == "user" }
+        if (i < 0 || editing >= 0 || queue.isNotEmpty()) return false
+        val u = messages[i]
+        if (System.currentTimeMillis() - u.at > 10_000 || u.files.isNotEmpty()) return false
+        val merged = Talk.join(u.text, extra)
+        if (busy) { amendAfterStop = merged; stop(); return true }
+        applyAmend(merged, store)
+        return true
+    }
+
+    private fun applyAmend(merged: String, store: AssistantStore) {
+        val i = messages.indexOfLast { it.role == "user" }
+        if (i < 0) return
+        while (messages.size > i + 1) messages.removeAt(messages.lastIndex)
+        messages[i] = messages[i].copy(text = merged)
+        error = null
+        persist()
+        ask(store)
+    }
 
     /** Immutable snapshot, independent of animation position; saving must not reset think timing. */
     fun checkpoint() {
@@ -778,7 +809,9 @@ fun ChatPage(
         // 鲸鱼娘站在对话上面（不透字）；触摸照样落到下面的对话列表，点她、拖她由 WhaleTouch 转过去。只有「位置与大小」时她自己收
         // 语音对话：夜海和光在她下面，顶栏和按钮在她上面
         VoiceGate(
-            onText = { said -> chat.draft = said; val n = chat.send(scope, store); if (n >= 0) Whale.sent(said) },
+            onText = { said, cont ->
+                if (!(cont && chat.amend(said, store))) { chat.draft = said; val n = chat.send(scope, store); if (n >= 0) Whale.sent(said) }
+            },
             onBarge = { Speech.stopMessages(); if (chat.busy) chat.stop() },
         )
         if (Talk.open || Talk.shown > 0f) VoiceBackdrop(chat)

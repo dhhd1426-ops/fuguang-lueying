@@ -122,7 +122,7 @@ object Ear {
             ),
             endpointConfig = EndpointConfig(
                 rule1 = EndpointRule(false, 2.4f, 0f),
-                rule2 = EndpointRule(true, 0.8f, 0f),
+                rule2 = EndpointRule(true, 0.5f, 0f),   // 只是「可能说完了」，真断不断由 Talk 两票合一（文字 + Smart Turn）
                 rule3 = EndpointRule(false, 0f, 20f),
             ),
             enableEndpoint = true,

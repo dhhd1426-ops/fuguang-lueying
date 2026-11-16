@@ -65,7 +65,8 @@ object Talk {
     /** 麦克风频谱 45 段 0..1（录音线程写，画面读） */
     val bands = FloatArray(45)
 
-    var onText: ((String) -> Unit)? = null
+    /** 发出一句：(这句话, 是不是接着上一句说的——她还没开口你就接着说了，该拼成一句重问) */
+    var onText: ((String, Boolean) -> Unit)? = null
     var onBarge: (() -> Unit)? = null
 
     private lateinit var app: Context
@@ -75,12 +76,20 @@ object Talk {
     private var rec: SpeechRecognizer? = null
     private var recBusy = false
     private var sysFails = 0
+    /** 上一句发出后她出过声没有（续句判断用） */
+    @Volatile private var spoke = false
+    /** 这一句是不是续句：起句那一刻定 */
+    @Volatile private var cont = false
+    /** 你说话的慢：中途停顿常被续上就慢慢加大等待（1.0..1.6，存着） */
+    @Volatile private var slow = 1.0
 
     fun init(ctx: Context) {
         if (::app.isInitialized) return
         app = ctx.applicationContext
         // v2：默认本地识别（以前存的「手机识别」在很多国产机上不能用，一律换过来，你想用再切回去）
-        src = app.getSharedPreferences("voice", Context.MODE_PRIVATE).getString("src2", "local") ?: "local"
+        val sp = app.getSharedPreferences("voice", Context.MODE_PRIVATE)
+        src = sp.getString("src2", "local") ?: "local"
+        slow = sp.getFloat("slow", 1f).toDouble().coerceIn(1.0, 1.6)
     }
 
     fun cycleSrc() {
@@ -146,39 +155,78 @@ object Talk {
         running = false; thread = null
         stopRecognizer()
         hearing = false; level = 0f; bands.fill(0f)
+        if (::app.isInitialized) app.getSharedPreferences("voice", Context.MODE_PRIVATE).edit().putFloat("slow", slow.toFloat()).apply()
     }
 
     /** 发出一句：字幕上浮淡出，交给对话 */
     private fun deliver(text: String) {
-        partial = ""; sent = text; sentAt = System.currentTimeMillis()
-        onText?.invoke(text)
+        partial = ""
+        // 「停 / 别说了」：插话那一下已经让她停了，这句不用再发给她
+        if (STOP.matches(text)) { sent = ""; if (text.startsWith("等")) say("好，等你"); return }
+        val c = cont; cont = false
+        if (c) slow = minOf(1.6, slow + .15)
+        sent = text; sentAt = System.currentTimeMillis(); spoke = false
+        onText?.invoke(text, c)
     }
 
     /* ---------------- 手机自带识别 ---------------- */
 
     /** 系统识别：空闲（不在说、不在等她）时开一轮；结束或出错后由 [tick] 再开 */
     fun tick(chatBusy: Boolean) {
+        if (Speech.playing.isNotEmpty()) spoke = true
         if (!open || muted || src != "system" || recBusy || busy(chatBusy)) return
         listenSystem()
     }
 
-    private fun stopRecognizer() { rec?.let { runCatching { it.cancel(); it.destroy() } }; rec = null; recBusy = false }
+    private fun stopRecognizer() {
+        rec?.let { runCatching { it.cancel(); it.destroy() } }; rec = null; recBusy = false
+        sysJob?.cancel(); sysJob = null; sysHeld = ""
+    }
+
+    /** 这个识别器是刚新建的（新建的也报错才算真坏） */
+    private var sysFresh = false
+    /** 手机自带的「端侧识别」用不了（没语言包等）：以后只用普通的 */
+    private var noOnDevice = false
+    /** 手机识别也攥一下：一段像没说完就先留着、马上接着听，接上了拼成一句 */
+    private var sysHeld = ""
+    private var sysJob: kotlinx.coroutines.Job? = null
+
+    private fun sysCommit() { sysJob?.cancel(); sysJob = null; val h = sysHeld; sysHeld = ""; if (h.isNotEmpty()) deliver(h) else partial = "" }
 
     private fun listenSystem() {
         if (recBusy || muted) return
-        val r = rec ?: runCatching { SpeechRecognizer.createSpeechRecognizer(app) }.getOrNull()?.also { rec = it }
+        sysFresh = rec == null
+        // Android 13+ 有端侧识别就用（不联网、不走别家服务，国产机上更稳）；用不了退回普通的
+        val r = rec ?: runCatching {
+            if (!noOnDevice && android.os.Build.VERSION.SDK_INT >= 33 && SpeechRecognizer.isOnDeviceRecognitionAvailable(app))
+                SpeechRecognizer.createOnDeviceSpeechRecognizer(app)
+            else SpeechRecognizer.createSpeechRecognizer(app)
+        }.getOrNull()?.also { rec = it }
         if (r == null) { sysBroken("手机识别打不开"); return }
         recBusy = true
         r.setRecognitionListener(object : RecognitionListener {
             override fun onReadyForSpeech(p: Bundle?) { sysFails = 0 }
-            override fun onBeginningOfSpeech() { hearing = true }
+            override fun onBeginningOfSpeech() {
+                hearing = true
+                if (sysHeld.isEmpty()) cont = sentAt > 0 && !spoke && System.currentTimeMillis() - sentAt < 2500
+            }
             override fun onRmsChanged(db: Float) { level = ((db + 2f) / 12f).coerceIn(0f, 1f) }
             override fun onBufferReceived(b: ByteArray?) {}
             override fun onEndOfSpeech() { hearing = false }
             override fun onError(e: Int) {
                 recBusy = false; hearing = false; level = 0f
                 when (e) {
-                    SpeechRecognizer.ERROR_NO_MATCH, SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> {}   // 没说话，正常，下一轮接着听
+                    SpeechRecognizer.ERROR_NO_MATCH, SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> if (sysHeld.isNotEmpty()) sysCommit()   // 没接着说：攥着的发出去
+                    // 5 客户端 / 8 忙 / 11 断开：多半是识别器状态坏了（国产机常见），扔掉重建再来一次；新建的也报才算坏
+                    SpeechRecognizer.ERROR_CLIENT, SpeechRecognizer.ERROR_RECOGNIZER_BUSY, 11 -> {
+                        val held = sysHeld; val job = sysJob
+                        rec?.let { runCatching { it.destroy() } }; rec = null
+                        if (sysFresh) { sysJob = null; sysHeld = ""; job?.cancel(); if (held.isNotEmpty()) deliver(held); sysBroken("手机识别出错（$e）") }
+                        else main.launch { delay(300); if (open && !muted && src == "system") listenSystem() }
+                    }
+                    // 12 / 13：端侧识别没这门语言或没下语言包，换普通的
+                    12, 13 -> { rec?.let { runCatching { it.destroy() } }; rec = null
+                        if (!noOnDevice) { noOnDevice = true; main.launch { delay(200); if (open && !muted && src == "system") listenSystem() } } else sysBroken("手机识别不支持中文") }
                     SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> say("没有麦克风权限")
                     SpeechRecognizer.ERROR_NETWORK, SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> sysBroken("手机识别要联网")
                     else -> sysBroken("手机识别出错（$e）")
@@ -187,10 +235,21 @@ object Talk {
             override fun onResults(b: Bundle?) {
                 recBusy = false; hearing = false; level = 0f
                 val t = b?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()?.trim().orEmpty()
-                if (t.isNotEmpty()) deliver(t) else { partial = "" }
+                if (t.isEmpty()) { if (sysHeld.isNotEmpty()) sysCommit() else partial = ""; return }
+                // 手机识别拿不到声音，只有文字那一票
+                val all = join(sysHeld, t)
+                val w = (patience(all) * slow).toLong()
+                sysJob?.cancel()
+                if (w == 0L) { sysHeld = all; sysCommit(); return }
+                sysHeld = all; partial = all
+                sysJob = main.launch { delay(w + 300); sysCommit() }
+                listenSystem()                       // 马上接着听
             }
             override fun onPartialResults(b: Bundle?) {
-                b?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()?.trim()?.takeIf { it.isNotEmpty() }?.let { partial = it }
+                b?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()?.trim()?.takeIf { it.isNotEmpty() }?.let {
+                    if (sysHeld.isNotEmpty() && sysJob != null) { sysJob?.cancel(); sysJob = null; slow = minOf(1.6, slow + .1) }   // 接上了
+                    partial = join(sysHeld, it)
+                }
             }
             override fun onEvent(t: Int, b: Bundle?) {}
         })
@@ -214,7 +273,48 @@ object Talk {
 
     private const val RATE = 16000
     private const val FRAME = 512                 // 32ms，正好一窗 Silero
-    private val FILLER = Regex("^[嗯啊哦呃额唔哈]$")
+    private val FILLER = Regex("^[嗯啊哦呃额唔哈]+$")
+    /** 只为让她停下的话：不发给她 */
+    private val STOP = Regex("^(停|停停|停一下|停下|别说了|不要说了|不用说了|闭嘴|安静|好了好了|等一下|等等|等会儿)$")
+
+    /** 像说完了：语气词收尾、问句、应答 */
+    private val CLOSED = Regex("(吗|呢|吧|了|呀|嘛|啦|怎么样|多少|几点|哪里|好的|好|行|对|是的|不是|没有|可以|谢谢|再见|拜拜)$|(?i)\\b(please|thanks|ok|okay|yes|no)$")
+    /** 像没说完：时间词、连词、介词、「我想 / 帮我」这类开头 */
+    private val OPEN = Regex("(今天|明天|后天|昨天|现在|刚才|待会|那个|这个|就是|然后|还有|而且|但是|可是|所以|因为|如果|我想|我要|想问|帮我|给我|请你|一下|一个|的|和|跟|在|把|被|从|往|给|是|有|还|再|也|都|又|呃|嗯|[0-9零一二三四五六七八九十百千万])$|(?i)\\b(and|or|but|so|the|a|to|of|for|with|my|i|is|what)$")
+
+    /** 两截拼一句：两边都是英文字母/数字就隔个空格，中文直接接 */
+    fun join(a: String, b: String): String =
+        if (a.isNotEmpty() && b.isNotEmpty() && a.last().isLetterOrDigit() && a.last().code < 128 && b.first().isLetterOrDigit() && b.first().code < 128) "$a $b" else a + b
+
+    /** utt 最后 [sec] 秒，转成 [-1,1] */
+    private fun lastSeconds(utt: List<ShortArray>, sec: Int): FloatArray {
+        val want = RATE * sec
+        var n = 0; var i = utt.size
+        while (i > 0 && n < want) { i--; n += utt[i].size }
+        val out = FloatArray(n); var o = 0
+        for (j in i until utt.size) for (v in utt[j]) out[o++] = v / 32768f
+        return out
+    }
+
+    /**
+     * 两票合一：端点（停 0.5 秒）之后还要再等多久。[text] = 文字那票（patience：0 像说完 / 350 看不出 / 1100 像没说完），[p] = 声音那票（说完的概率；null = 模型不可用）。
+     * 照 Pipecat：声音说没完就多等，最长兜底约 2 秒（再乘你说话的慢）。
+     */
+    private fun fuse(text: Long, p: Float?): Long = when {
+        p == null -> text + 300                    // 没有声音那票：和以前一样（0.8 秒起）
+        text == 0L -> if (p >= .25f) 0 else 500    // 字像说完了：除非声音很肯定没完
+        text >= 1100L -> if (p >= .9f) 400 else 1400
+        p >= .6f -> 0
+        p >= .3f -> 500
+        else -> 1200
+    }
+
+    /** 文字那一票：说完了不等；太短或没说完多等 1.1 秒；其余 0.35 秒 */
+    private fun patience(t: String): Long = when {
+        CLOSED.containsMatchIn(t) -> 0L
+        t.length <= 3 || OPEN.containsMatchIn(t) -> 1100L
+        else -> 350L
+    }
 
     /** 选了云端且有 Key：(地址, Key, 模型)；否则 null（走本地） */
     private fun cloud(): Triple<String, String, String>? {
@@ -261,6 +361,12 @@ object Talk {
             var lastText = ""
             var herWas = false; var herEnd = 0L
             var n0 = 0
+            // 端点后先「攥着」这句：没说完的样子就多等一会儿，接着说就拼成一句（他山之石：LiveKit / Pipecat 的 turn detection）
+            var held = ""; var holdUntil = 0L; var voiceWas = false
+            // 声音那一票：Smart Turn 在自己线程算，算完放进 verdict（序号对不上的作废——中途又开口了）
+            var seq = 0; var textWait = 0L
+            val verdict = java.util.concurrent.atomic.AtomicReference<Pair<Int, Float?>?>(null)
+            Turn.warm(app)
             fun feed(s: ShortArray) {
                 val a = asr ?: return; val st = stream ?: return
                 val x = FloatArray(s.size) { s[it] / 32768f }
@@ -270,13 +376,15 @@ object Talk {
             fun resetAsr() { val a = asr; val st = stream; if (a != null && st != null) a.reset(st); lastText = "" }
             /** 起句。[now] = 马上打断她（她出声时你插话、或没有本地识别）；否则等识别出字再打断，免得一点杂音就把她在想的回复掐掉 */
             fun begin(pushPre: Boolean, now: Boolean) {
-                inUtt = true; utt.clear(); cut = now
+                inUtt = true; utt.clear(); cut = now; held = ""; holdUntil = 0L; seq++
+                // 刚发出一句、她还没开口，你 2.5 秒内又说：多半是一句话被切成了两截
+                cont = sentAt > 0 && !spoke && System.currentTimeMillis() - sentAt < 2500
                 if (pushPre) { utt.addAll(pre); pre.forEach { feed(it) } }
                 pre.clear()
                 main.launch { hearing = true; if (now && busy(false)) onBarge?.invoke() }
             }
             fun finish(text: String) {
-                inUtt = false; loud = 0
+                inUtt = false; loud = 0; held = ""; holdUntil = 0L; seq++
                 val pcm = utt.toList(); utt.clear()
                 val dur = pcm.size * FRAME / RATE.toDouble()
                 val c = cloud()
@@ -302,7 +410,7 @@ object Talk {
                     val lv = ((20 * log10(rms + 1e-6) + 52) / 40).toFloat().coerceIn(0f, 1f)
                     if (muted) {
                         level = 0f; bands.fill(0f)
-                        if (inUtt) { inUtt = false; utt.clear(); main.launch { hearing = false; partial = "" } }
+                        if (inUtt) { inUtt = false; utt.clear(); held = ""; holdUntil = 0L; main.launch { hearing = false; partial = "" } }
                         resetAsr(); vad?.reset(); pre.clear(); continue
                     }
                     level = lv
@@ -320,6 +428,7 @@ object Talk {
                     val her = Speech.playing.isNotEmpty()
                     if (herWas && !her) herEnd = System.currentTimeMillis()
                     herWas = her
+                    if (her) spoke = true
 
                     if (her && !inUtt) {
                         // 她在出声：不喂识别（免得把她自己的声音当成你说的）；你得是人声、够响、连着 0.25 秒才算插话
@@ -343,17 +452,39 @@ object Talk {
 
                     val a = asr; val st = stream
                     if (a != null && st != null) {
+                        val now = System.currentTimeMillis()
+                        // 攥着时又开口：先续 0.6 秒等识别出字；出了字就算接着说
+                        if (holdUntil > 0 && voice && !voiceWas) holdUntil = maxOf(holdUntil, now + 600)
+                        voiceWas = voice
+                        verdict.getAndSet(null)?.let { (sq, p) ->
+                            if (sq == seq && inUtt && holdUntil > 0) {
+                                val w = (fuse(textWait, p) * slow).toLong()
+                                holdUntil = if (w == 0L) 1L else now + w
+                            }
+                        }
                         val txt = tidy(a.getResult(st).text)
                         if (txt != lastText) {
                             lastText = txt
-                            if (inUtt) main.launch { partial = txt }
+                            if (txt.isNotBlank() && holdUntil > 0) { holdUntil = 0L; seq++; slow = minOf(1.6, slow + .1) }
+                            if (inUtt) { val show = join(held, txt); main.launch { partial = show } }
                             if (inUtt && !cut && txt.isNotBlank()) { cut = true; main.launch { if (busy(false)) onBarge?.invoke() } }
                         }
                         if (a.isEndpoint(st)) {
                             val fin = lastText
                             a.reset(st); lastText = ""
-                            if (inUtt) finish(fin)
-                        }
+                            when {
+                                !inUtt -> {}
+                                fin.isBlank() -> finish(held)              // 这段没出字：有攥着的就发，没有就丢
+                                else -> {
+                                    held = join(held, fin)
+                                    // 文字一票先记下；声音一票回来前最多等 1.5 秒
+                                    textWait = patience(held)
+                                    val my = ++seq
+                                    holdUntil = now + 1500
+                                    Turn.judge(app, lastSeconds(utt, 8)) { p -> verdict.set(my to p) }
+                                }
+                            }
+                        } else if (inUtt && holdUntil in 1..now) { slow = maxOf(1.0, slow - .02); finish(held) }
                     } else if (inUtt) {
                         // 没有本地模型：按 VAD 断句（停 0.8 秒）
                         val dur = utt.size * FRAME / RATE.toDouble()

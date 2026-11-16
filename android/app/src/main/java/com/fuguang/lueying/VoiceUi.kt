@@ -327,7 +327,7 @@ private fun DrawScope.voiceScene(cx: Float, cy: Float) {
 
 /** 一直挂在聊天页：点了球先要麦克风权限，给了才开 */
 @Composable
-internal fun VoiceGate(onText: (String) -> Unit, onBarge: () -> Unit) {
+internal fun VoiceGate(onText: (String, Boolean) -> Unit, onBarge: () -> Unit) {
     val ctx = LocalContext.current
     LaunchedEffect(Unit) { Talk.init(ctx) }
     SideEffect { Talk.onText = onText; Talk.onBarge = { Fx.ripple(); onBarge() } }

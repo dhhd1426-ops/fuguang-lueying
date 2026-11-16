@@ -51,13 +51,15 @@ android {
     // youtubedl-android 要把 python、ffmpeg 解压出来运行，本机库不能压在 APK 里
     packaging {
         jniLibs.useLegacyPackaging = true
+        // sherpa-onnx 和 onnxruntime Java 接口各带一份 libonnxruntime.so：同为 1.27.1、逐字节相同，留一份
+        jniLibs.pickFirsts += "**/libonnxruntime.so"
         resources { excludes += "/META-INF/{AL2.0,LGPL2.1}" }
     }
 
     sourceSets {
         getByName("main") {
             // 与网站共用同一份背景视频、静帧与掠影内容
-            assets.srcDirs("../../public/assets", "../../public/content")
+            assets.srcDirs("../../public/assets", "../../public/content", "build/turn-assets")
         }
     }
 }
@@ -74,8 +76,33 @@ if (!sherpaAar.exists()) {
     tmp.renameTo(sherpaAar)
 }
 
+// onnxruntime 的 Java 接口（跑 Smart Turn 用）：必须和 sherpa 自带的 libonnxruntime.so 同版本（1.27.1，.so 带符号版本 VERS_1.27.1），
+// Maven 上安卓包只有 1.27.0，所以用 sherpa 作者构建 sherpa 时用的同一份（csukuangfj/onnxruntime-libs，官方安卓包原样）
+val ortVer = "1.27.1"
+val ortAar = file("libs/onnxruntime-android-$ortVer.aar")
+if (!ortAar.exists()) {
+    ortAar.parentFile.mkdirs()
+    val tmp = file("libs/onnxruntime-android-$ortVer.aar.part")
+    URI("https://github.com/csukuangfj/onnxruntime-libs/releases/download/v$ortVer/onnxruntime-android-$ortVer.zip").toURL().openStream().use { i -> tmp.outputStream().use { i.copyTo(it) } }
+    tmp.renameTo(ortAar)
+}
+
+// 说完没说完：Smart Turn v3.2（pipecat-ai，BSD-2，8.7MB int8），钉在 pipecat 某次提交上，校验 sha256，打进 assets/turn/
+val turnModel = file("build/turn-assets/turn/smart-turn-v3.2-cpu.onnx")
+val turnSha = "2bb026316b14a660486a75b1733cd3fbab8c2fd0314dc9af7be49f8cca967e4f"
+fun sha256(f: File) = java.security.MessageDigest.getInstance("SHA-256").digest(f.readBytes()).joinToString("") { "%02x".format(it) }
+if (!turnModel.exists() || sha256(turnModel) != turnSha) {
+    turnModel.parentFile.mkdirs()
+    val tmp = File(turnModel.path + ".part")
+    URI("https://github.com/pipecat-ai/pipecat/raw/348a9d8c83f6fb6c26a119cea1f5c43c1704fa31/src/pipecat/audio/turn/smart_turn/data/smart-turn-v3.2-cpu.onnx")
+        .toURL().openStream().use { i -> tmp.outputStream().use { i.copyTo(it) } }
+    check(sha256(tmp) == turnSha) { "Smart Turn 模型校验不对" }
+    tmp.renameTo(turnModel)
+}
+
 dependencies {
     implementation(files(sherpaAar))
+    implementation(files(ortAar))
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.activity:activity-compose:1.12.2")
     implementation("androidx.compose.foundation:foundation:1.12.0")
