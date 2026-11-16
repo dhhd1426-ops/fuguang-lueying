@@ -1,3 +1,5 @@
+import java.net.URI
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.plugin.compose")
@@ -68,7 +70,7 @@ val sherpaAar = file("libs/sherpa-onnx-$sherpaVer.aar")
 if (!sherpaAar.exists()) {
     sherpaAar.parentFile.mkdirs()
     val tmp = file("libs/sherpa-onnx-$sherpaVer.aar.part")
-    java.net.URI("https://github.com/k2-fsa/sherpa-onnx/releases/download/v$sherpaVer/sherpa-onnx-$sherpaVer.aar").toURL().openStream().use { i -> tmp.outputStream().use { i.copyTo(it) } }
+    URI("https://github.com/k2-fsa/sherpa-onnx/releases/download/v$sherpaVer/sherpa-onnx-$sherpaVer.aar").toURL().openStream().use { i -> tmp.outputStream().use { i.copyTo(it) } }
     tmp.renameTo(sherpaAar)
 }
 
