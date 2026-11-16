@@ -16,6 +16,8 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -448,6 +450,12 @@ internal fun VoiceControls(chat: ChatState, title: String) {
                     }
                     if (FrameStat.on) Txt(FrameStat.text, Color(0xFFFFD25A), 10.5.sp, Modifier.padding(top = 4.dp)
                         .background(Color.Black.copy(alpha = .55f), RoundedCornerShape(6.dp)).padding(horizontal = 6.dp, vertical = 2.dp), maxLines = 1)
+                    // 同一个浮窗里看断句过程；点「回放上一句」听识别实际收到的声音（含开口前那段）
+                    if (FrameStat.on) Column(Modifier.padding(top = 4.dp).widthIn(max = 320.dp)
+                        .background(Color.Black.copy(alpha = .6f), RoundedCornerShape(6.dp)).padding(horizontal = 8.dp, vertical = 4.dp)) {
+                        Talk.trace.forEach { Txt(it, Color(0xFFCFD6E6), 10.sp, maxLines = 1) }
+                        Txt("▶ 回放上一句", Color(0xFFFFD25A), 11.sp, Modifier.padding(top = 3.dp).clickable { Talk.replay() })
+                    }
                 }
                 Pressable({ Talk.cycleSrc() }, Modifier.align(Alignment.CenterEnd), label = "换识别") { p ->
                     Row(Modifier

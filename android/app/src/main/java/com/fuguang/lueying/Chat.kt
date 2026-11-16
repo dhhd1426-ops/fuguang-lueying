@@ -810,7 +810,8 @@ fun ChatPage(
         // 语音对话：夜海和光在她下面，顶栏和按钮在她上面
         VoiceGate(
             onText = { said, cont ->
-                if (!(cont && chat.amend(said, store))) { chat.draft = said; val n = chat.send(scope, store); if (n >= 0) Whale.sent(said) }
+                if (cont && chat.amend(said, store)) Talk.log("拼到上一句，重问")
+                else { val busy = chat.busy; chat.draft = said; val n = chat.send(scope, store); if (n >= 0) Whale.sent(said); Talk.log(if (n >= 0) "新的一条" else if (busy) "她在忙，排队" else "没发出去") }
             },
             onBarge = { Speech.stopMessages(); if (chat.busy) chat.stop() },
         )
