@@ -1,4 +1,5 @@
 import java.net.URI
+import java.security.MessageDigest
 
 plugins {
     id("com.android.application")
@@ -90,7 +91,7 @@ if (!ortAar.exists()) {
 // 说完没说完：Smart Turn v3.2（pipecat-ai，BSD-2，8.7MB int8），钉在 pipecat 某次提交上，校验 sha256，打进 assets/turn/
 val turnModel = file("build/turn-assets/turn/smart-turn-v3.2-cpu.onnx")
 val turnSha = "2bb026316b14a660486a75b1733cd3fbab8c2fd0314dc9af7be49f8cca967e4f"
-fun sha256(f: File) = java.security.MessageDigest.getInstance("SHA-256").digest(f.readBytes()).joinToString("") { "%02x".format(it) }
+fun sha256(f: File) = MessageDigest.getInstance("SHA-256").digest(f.readBytes()).joinToString("") { "%02x".format(it) }
 if (!turnModel.exists() || sha256(turnModel) != turnSha) {
     turnModel.parentFile.mkdirs()
     val tmp = File(turnModel.path + ".part")
