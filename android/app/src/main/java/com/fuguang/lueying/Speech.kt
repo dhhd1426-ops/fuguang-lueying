@@ -566,6 +566,9 @@ object Speech {
         val f = File(app.cacheDir, "tts_${i % 4}.audio")
         withContext(Dispatchers.IO) { f.writeBytes(b) }
         val mp = MediaPlayer()
+        // 语音对话里走通话通路（和 WebRTC / LiveKit 一样）：录音那边的回声消除只认得通话里放出的声音，走媒体通路它听不出是她自己
+        if (Talk.open) mp.setAudioAttributes(android.media.AudioAttributes.Builder()
+            .setUsage(android.media.AudioAttributes.USAGE_VOICE_COMMUNICATION).setContentType(android.media.AudioAttributes.CONTENT_TYPE_SPEECH).build())
         player = mp
         var mouth: Job? = null
         try {

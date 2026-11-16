@@ -576,6 +576,29 @@ class ChatState(val history: ConvStore) {
         return true
     }
 
+    /**
+     * 语音对话里说的一句（照 OpenAI Realtime / Pipecat：语音里不排队）：
+     * - 上一条是你的、她还没回（在想，或出错了）→ 拼进那一条重问；和那条重复（等不到回你又说了一遍）就不拼、也不重来；
+     * - 她已经在回（写着或读着）→ 停下（写好的留着），马上发这句；
+     * - 否则照常发。返回给断句浮窗看的一句话。
+     */
+    fun voiceSay(text: String, scope: CoroutineScope, store: AssistantStore): String {
+        val i = messages.indexOfLast { it.role == "user" }
+        val u = messages.getOrNull(i)
+        val waiting = u != null && i == messages.lastIndex && editing < 0 && u.files.isEmpty() && queue.isEmpty() && partial.isBlank() &&
+            (busy || error != null) && System.currentTimeMillis() - u.at < 60_000
+        if (waiting && u != null) {
+            fun core(t: String) = t.filter { it.isLetterOrDigit() }
+            if (core(u.text).contains(core(text))) { if (!busy) { error = null; ask(store) }; return "和上一句重复，接着等她" }
+            val merged = Talk.join(u.text, text)
+            if (busy) { amendAfterStop = merged; stop() } else applyAmend(merged, store)
+            return "她还没回：拼到上一句，重问"
+        }
+        if (busy) { queue.add(text); sendNowAfterStop = true; stop(); return "她在回：停下，马上发" }
+        draft = text
+        return if (send(scope, store) >= 0) "新的一条" else "没发出去"
+    }
+
     private fun applyAmend(merged: String, store: AssistantStore) {
         val i = messages.indexOfLast { it.role == "user" }
         if (i < 0) return
@@ -809,10 +832,7 @@ fun ChatPage(
         // 鲸鱼娘站在对话上面（不透字）；触摸照样落到下面的对话列表，点她、拖她由 WhaleTouch 转过去。只有「位置与大小」时她自己收
         // 语音对话：夜海和光在她下面，顶栏和按钮在她上面
         VoiceGate(
-            onText = { said, cont ->
-                if (cont && chat.amend(said, store)) Talk.log("拼到上一句，重问")
-                else { val busy = chat.busy; chat.draft = said; val n = chat.send(scope, store); if (n >= 0) Whale.sent(said); Talk.log(if (n >= 0) "新的一条" else if (busy) "她在忙，排队" else "没发出去") }
-            },
+            onText = { said, _ -> val r = chat.voiceSay(said, scope, store); if (r == "新的一条") Whale.sent(said); Talk.log(r) },
             onBarge = { Speech.stopMessages(); if (chat.busy) chat.stop() },
         )
         if (Talk.open || Talk.shown > 0f) VoiceBackdrop(chat)

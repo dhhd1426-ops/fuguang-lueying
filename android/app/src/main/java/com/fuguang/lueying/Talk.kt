@@ -151,6 +151,7 @@ object Talk {
 
     fun start() {
         open = true; muted = false; note = ""; partial = ""; sent = ""
+        route(true)
         if (!Speech.ready) say("朗读还没配 Key，先用手机自带的声音")
         startMic()
     }
@@ -158,6 +159,7 @@ object Talk {
     fun close() {
         open = false; want = false
         stopMic()
+        route(false)
         Speech.stopMessages()
         partial = ""
     }
@@ -167,6 +169,57 @@ object Talk {
         partial = ""
         if (muted) { hearing = false; stopRecognizer() } else if (sysMode) listenSystem()
     }
+
+    /**
+     * 通话模式（照 WebRTC / LiveKit Android 的 AudioSwitch）：MODE_IN_COMMUNICATION + 选输出（耳机 > 扬声器）。
+     * 这样她的声音和你的麦克风在同一条通话通路上，硬件回声消除才起作用；出语音页还原。
+     */
+    private var routed = false
+    private fun route(on: Boolean) {
+        val am = app.getSystemService(android.media.AudioManager::class.java) ?: return
+        runCatching {
+            if (on && !routed) {
+                am.mode = android.media.AudioManager.MODE_IN_COMMUNICATION
+                if (android.os.Build.VERSION.SDK_INT >= 31) {
+                    val ds = am.availableCommunicationDevices
+                    val head = setOf(android.media.AudioDeviceInfo.TYPE_BLUETOOTH_SCO, android.media.AudioDeviceInfo.TYPE_BLE_HEADSET,
+                        android.media.AudioDeviceInfo.TYPE_WIRED_HEADSET, android.media.AudioDeviceInfo.TYPE_WIRED_HEADPHONES, android.media.AudioDeviceInfo.TYPE_USB_HEADSET)
+                    (ds.firstOrNull { it.type in head } ?: ds.firstOrNull { it.type == android.media.AudioDeviceInfo.TYPE_BUILTIN_SPEAKER })?.let { am.setCommunicationDevice(it) }
+                } else {
+                    @Suppress("DEPRECATION") run { am.isSpeakerphoneOn = !am.isWiredHeadsetOn }
+                }
+                routed = true
+            } else if (!on && routed) {
+                if (android.os.Build.VERSION.SDK_INT >= 31) am.clearCommunicationDevice() else @Suppress("DEPRECATION") run { am.isSpeakerphoneOn = false }
+                am.mode = android.media.AudioManager.MODE_NORMAL
+                routed = false
+            }
+        }
+    }
+
+    /* 回声兜底（硬件回声消除不一定靠得住）：记住她最近 6 秒读出来的字，你这句和它大半重合就当是她的回声 */
+    private val herSaid = StringBuilder()
+    @Volatile private var herAt = 0L
+    private var lastSaying = ""
+    /** 录音线程每帧调：把她正在读的那句记下来 */
+    private fun noteHer() {
+        val sy = Speech.saying
+        val now = System.currentTimeMillis()
+        if (Speech.playing.isNotEmpty()) herAt = now
+        if (sy.isNotEmpty() && sy != lastSaying) { lastSaying = sy; synchronized(herSaid) { herSaid.append(sy); if (herSaid.length > 300) herSaid.delete(0, herSaid.length - 300) }; herAt = now }
+        if (now - herAt > 6000 && herSaid.isNotEmpty()) synchronized(herSaid) { herSaid.setLength(0) }
+    }
+    /** 像她自己的回声：你这句的两字组合有六成以上在她刚说的话里 */
+    private fun echo(t: String): Boolean {
+        val a = t.filter { it.isLetterOrDigit() }
+        if (a.length < 2) return false
+        val h = synchronized(herSaid) { herSaid.toString() }.filter { it.isLetterOrDigit() }
+        if (h.isEmpty()) return false
+        val grams = (0 until a.length - 1).map { a.substring(it, it + 2) }
+        return grams.count { h.contains(it) } >= grams.size * .6
+    }
+    /** 算不算真插话（照 LiveKit interruption.min_words / min_duration）：至少 2 个字、不全是语气词、不是她的回声 */
+    private fun realBarge(t: String): Boolean { val b = bare(t); return b.filter { it.isLetterOrDigit() }.length >= 2 && !FILLER.matches(b) && !echo(b) }
 
     fun say(t: String) { note = t; main.launch { delay(2800); if (note == t) note = "" } }
 
@@ -194,6 +247,7 @@ object Talk {
     private fun deliver(text: String, c: Boolean) {
         partial = ""
         // 「停 / 别说了」：插话那一下已经让她停了，这句不用再发给她
+        if (echo(text)) { log("像她自己的回声，丢掉：「$text」"); return }
         if (STOP.matches(bare(text))) { sent = ""; log("只让她停：「$text」"); if (text.startsWith("等")) say("好，等你"); return }
         log("发出「$text」" + if (c) " ·续上一句" else "")
         if (c) slow = minOf(1.6, slow + .15)
@@ -475,6 +529,7 @@ object Talk {
                         vad.isSpeechDetected()
                     } else rms > maxOf(floor * 3, .014)
                     if (!inUtt) floor = floor * .97 + minOf(rms, floor * 2) * .03
+                    noteHer()
                     val her = Speech.playing.isNotEmpty()
                     if (herWas && !her) herEnd = System.currentTimeMillis()
                     herWas = her
@@ -484,7 +539,8 @@ object Talk {
                         // 她在出声：不起句（免得把她自己的声音当成你说的）；你得是人声、够响、连着 0.25 秒才算插话
                         pre.addLast(frame); while (pre.size > 10) pre.removeFirst()   // 插话只留 320ms，多了会混进她的声音
                         barge = if (voice && rms > maxOf(floor * 5, .045)) barge + 1 else 0
-                        if (barge >= 8) { barge = 0; begin(true, true) }
+                        // 起句但先不打断：等阿里出了字、像真插话才停她（没有边说边出字时只能凭音量）
+                        if (barge >= 8) { barge = 0; begin(true, !aliOn()) }
                         continue
                     }
                     barge = 0
@@ -512,7 +568,7 @@ object Talk {
                         if (u == uid && txt != lastText) {
                             lastText = txt; lastTextAt = now
                             main.launch { partial = txt }
-                            if (!cut && txt.isNotBlank()) { cut = true; main.launch { if (busy(false)) onBarge?.invoke() } }
+                            if (!cut && utt.size >= 36 && realBarge(txt)) { cut = true; main.launch { if (busy(false)) onBarge?.invoke() } }   // 36 帧 ≈ 开口前 0.64 + 说了 0.5 秒
                         }
                     }
                     // 攥着时音量又起来（Silero 要 0.25 秒才重新认人声，先用音量顶一下）
