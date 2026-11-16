@@ -83,6 +83,11 @@ object Speech {
     var sample by mutableStateOf("你好呀，我是 {asst}。今天也要记得照顾好自己。")
 
     val conf: Conf get() = confs[pid] ?: confs.getValue("volink")
+    /** 语音识别借用这两家的 Key（硅基流动的 SenseVoice、OpenAI 的 Whisper） */
+    fun keyOf(id: String): String = confs[id]?.key.orEmpty()
+    fun baseOf(id: String): String = confs[id]?.base.orEmpty()
+    /** 正在放的这句此刻有多响（0..1），语音页的光跟着她的声音动 */
+    var amp by mutableFloatStateOf(0f)
     val prov: Prov get() = PROVS.firstOrNull { it.id == pid } ?: PROVS[0]
     val ready: Boolean get() = conf.key.isNotBlank() && conf.base.isNotBlank() && conf.model.isNotBlank()
 
@@ -565,18 +570,23 @@ object Speech {
                 mp.setOnErrorListener { _, _, _ -> if (cont.isActive) cont.resume(Unit); true }
                 mp.start()
                 // 嘴：先放声音，响度表在旁边算；算好之前「在放就动」，算好后每 120ms 看一眼这一刻响不响，停顿时不叫，whale.talk 自己会合上
-                if (lips && Whale.active) mouth = scope.launch {
+                // 同一张响度表每 40ms 写进 amp，给语音页的光用
+                mouth = scope.launch {
                     var env: Env? = null
                     val calc = launch(Dispatchers.Default) { env = envelope(f) }
+                    var n = 0
                     try {
                         while (isActive) {
                             val ms = runCatching { mp.currentPosition }.getOrDefault(-1)
                             if (ms < 0) break
                             val e = env
-                            if (e == null || e.at(ms) > .18f) Whale.talk(1)
-                            delay(120)
+                            val v = e?.at(ms) ?: .6f
+                            amp = v
+                            if (n % 3 == 0 && lips && Whale.active && (e == null || v > .18f)) Whale.talk(1)
+                            n++
+                            delay(40)
                         }
-                    } finally { calc.cancel() }
+                    } finally { calc.cancel(); amp = 0f }
                 }
             }
         } finally {

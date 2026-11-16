@@ -135,7 +135,7 @@ internal fun SpeechHooks(chat: ChatState) {
             if (busy && !was) {
                 Speech.stopMessages()
                 fed = 0; said = ""
-                ch = if (Speech.auto && Speech.ready) Speech.begin("live") else null
+                ch = if ((Speech.auto || Talk.open) && Speech.ready) Speech.begin("live") else null
             }
             val out = ch
             if (busy && out != null) {

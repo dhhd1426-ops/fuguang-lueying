@@ -4,6 +4,7 @@
     <!-- 打开时检查网上有没有新的掠影和留言 -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
     <!-- 内置浏览器下载视频：后台接着下，通知栏有进度 -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
@@ -22,6 +23,7 @@
 
     <!-- 连接器：能看到笔记 App「羽」，读取它提供的笔记接口 -->
     <queries>
+        <intent><action android:name="android.speech.RecognitionService" /></intent>
         <package android:name="com.yu.notes" />
     </queries>
 

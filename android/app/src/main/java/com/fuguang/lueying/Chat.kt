@@ -376,7 +376,7 @@ class ChatState(val history: ConvStore) {
                 val stepNudge = Steps.Nudge()
                 var searchedOnce = false
                 // 项目里的对话：自定义指令和文字资料接在最后（每轮一样，能缓存）
-                val sys0 = Prompt.system(who, model0) + Projects.system(this@ChatState.project ?: Projects.of(cur))
+                val sys0 = Prompt.system(who, model0) + Projects.system(this@ChatState.project ?: Projects.of(cur)) + (if (Talk.open) Talk.RULE else "")
                 sentEst = CtxWin.est(sent0) + CtxWin.est(sys0) + CtxWin.est(extra)
                 ChatApi.stream(
                     p, c, model0, sys0, Entries.weave(who, sent0, Prompt.aside(who, history, who.prevAt) + Lessons.aside(shownLessons, slips) + Recall.note(hits).let { if (it.isEmpty()) "" else "\n$it" } + Fold.note(conv0).let { if (it.isEmpty()) "" else "\n$it" }), effort,
@@ -776,7 +776,14 @@ fun ChatPage(
             }
         }
         // 鲸鱼娘站在对话上面（不透字）；触摸照样落到下面的对话列表，点她、拖她由 WhaleTouch 转过去。只有「位置与大小」时她自己收
+        // 语音对话：夜海和光在她下面，顶栏和按钮在她上面
+        VoiceGate(
+            onText = { said -> chat.draft = said; val n = chat.send(scope, store); if (n >= 0) Whale.sent(said) },
+            onBarge = { Speech.stopMessages(); if (chat.busy) chat.stop() },
+        )
+        if (Talk.open || Talk.shown > 0f) VoiceBackdrop(chat)
         Whale.Stage(Modifier.fillMaxSize().then(if (Whale.editing) Modifier.zIndex(5f) else Modifier.passTouches()))
+        if (Talk.open || Talk.shown > 0f) VoiceControls(chat, title)
         SendFlightLayer(flight)
         WhaleDressSheet()
         if (menuOn) {
@@ -1279,7 +1286,8 @@ private fun ChatInput(
         // 以前用 translationY 只是画下去，位置还占着，对话底下空出一条底色，像一层遮罩把卡片切掉（真机 461 版）
         .layout { m, c ->
             val pl = m.measure(c)
-            val sink = (bottomGap.toPx() * fold.dock.coerceIn(0f, 1f)).toInt().coerceIn(0, pl.height)
+            // 展开时是一整块（照 Claude App）：不贴死键盘，离键盘留 10dp，四角都圆
+            val sink = ((bottomGap - 10.dp).toPx() * fold.dock.coerceIn(0f, 1f)).toInt().coerceIn(0, pl.height)
             layout(pl.width, pl.height - sink) { pl.place(0, 0) }
         }
         .graphicsLayer {
@@ -1388,9 +1396,9 @@ private fun ChatInput(
         Box(Modifier.matchParentSize()) { SendGoo(t, pulse.value, pressed, inset, sep, ball) }
         val icon = when { canSend -> ChatIcons.up; chat.busy -> ChatIcons.stop; else -> ChatIcons.wave }
         Pressable(
-            { if (canSend) { onSend(); keyboard?.hide(); focus.clearFocus() } else if (chat.busy) onStop() },  // 发出去就收起键盘
+            { if (canSend) { onSend(); keyboard?.hide(); focus.clearFocus() } else if (chat.busy) onStop() else { keyboard?.hide(); focus.clearFocus(); Talk.want = true } },  // 发出去就收起键盘；空着点 = 语音对话
             Modifier.align(Alignment.BottomEnd).offset(x = -inset * (1f - t), y = -inset)
-                .onGloballyPositioned { flight.from = it.boundsInRoot().center },
+                .onGloballyPositioned { flight.from = it.boundsInRoot().center; Talk.from = it.boundsInWindow().center },
             label = when { canSend -> "发送"; chat.busy -> "停止"; else -> "语音" },
         ) { p ->
             LaunchedEffect(p) { pressed = p }
@@ -1416,9 +1424,8 @@ private class InputFold {
     val over: Float get() = open - open.coerceIn(0f, 1f)
     fun shape(): RoundedCornerShape {
         val o = open.coerceIn(0f, 1f)
-        val top = (27f - 5f * o).dp
-        val bottom = ((27f - 5f * o) * (1f - dock.coerceIn(0f, 1f))).dp
-        return RoundedCornerShape(top, top, bottom, bottom)
+        // 一行胶囊 27 → 展开成块 22，下面两角不再压平
+        return RoundedCornerShape((27f - 5f * o).dp)
     }
 }
 

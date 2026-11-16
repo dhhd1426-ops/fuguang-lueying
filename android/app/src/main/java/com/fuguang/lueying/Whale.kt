@@ -207,12 +207,18 @@ object Whale {
     private var lastRoom = ""
     fun room(top: Float, bottom: Float) { roomTop = top; roomBot = bottom; pushRoom() }
     fun sheet(top: Float) { if (dressing) { sheetTop = top; pushRoom() } }
+    // 语音页开着时她站在语音页给的范围里（顶栏下到按钮上），关了还回聊天的范围
+    private var voiceTop = 0f
+    private var voiceBot = 0f
+    fun voiceRoom(top: Float, bottom: Float) { voiceTop = top; voiceBot = bottom; pushRoom() }
     private fun pushRoom() {
         val w = web ?: return
         if (!ready || w.height == 0 || roomBot <= roomTop) return
         val at = IntArray(2); w.getLocationInWindow(at)
-        val b = if (dressing && sheetTop > roomTop) minOf(roomBot, sheetTop) else roomBot
-        val s = "whale.room(%.4f,%.4f)".format(Locale.US, (roomTop - at[1]) / w.height, (b - at[1]) / w.height)
+        val v = voiceBot > voiceTop
+        val top = if (v) voiceTop else roomTop
+        val b = if (v) voiceBot else if (dressing && sheetTop > roomTop) minOf(roomBot, sheetTop) else roomBot
+        val s = "whale.room(%.4f,%.4f)".format(Locale.US, (top - at[1]) / w.height, (b - at[1]) / w.height)
         if (s != lastRoom) { lastRoom = s; w.evaluateJavascript(s, null) }
     }
 
