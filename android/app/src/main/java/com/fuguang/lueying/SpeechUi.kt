@@ -135,7 +135,8 @@ internal fun SpeechHooks(chat: ChatState) {
             if (busy && !was) {
                 Speech.stopMessages()
                 fed = 0; said = ""
-                ch = if ((Speech.auto || Talk.open) && Speech.ready) Speech.begin("live") else null
+                // 语音对话里朗读没配好也要出声（Speech.synth 会改用手机自带的声音）；读不出来在语音页说一声
+                ch = if (Talk.open || (Speech.auto && Speech.ready)) Speech.begin("live") { err -> if (err != null && Talk.open) Talk.say("朗读失败：$err") } else null
             }
             val out = ch
             if (busy && out != null) {

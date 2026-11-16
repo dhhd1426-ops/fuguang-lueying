@@ -61,6 +61,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
@@ -449,16 +450,32 @@ internal fun VoiceControls(chat: ChatState, title: String) {
                         .background(Color.Black.copy(alpha = .55f), RoundedCornerShape(6.dp)).padding(horizontal = 6.dp, vertical = 2.dp), maxLines = 1)
                 }
                 Pressable({ Talk.cycleSrc() }, Modifier.align(Alignment.CenterEnd), label = "换识别") { p ->
-                    Txt(Talk.label(), Color(0xFFC9CFDC), 11.5.sp, Modifier
+                    Row(Modifier
                         .background(Color.White.copy(alpha = if (p) .1f else .06f), RoundedCornerShape(50))
                         .border(.5.dp, Color.White.copy(alpha = .12f), RoundedCornerShape(50))
-                        .padding(horizontal = 12.dp, vertical = 7.dp), maxLines = 1)
+                        .padding(horizontal = 12.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Txt(Talk.label(), Color(0xFFC9CFDC), 11.5.sp, maxLines = 1)
+                        val tg = Talk.tag()
+                        if (tg.isNotEmpty()) { Spacer(Modifier.width(5.dp)); Txt(tg, Color(0xFF8FE0B0), 9.5.sp, maxLines = 1) }
+                    }
                 }
             }
             Spacer(Modifier.weight(1f))
-            // 提示（识别失败、没 Key 之类）
+            VoiceCaption(st, title, Modifier.graphicsLayer { alpha = rise })
+            // 提示（识别失败、没 Key 之类）；本地识别模型下载时显示进度
             Box(Modifier.fillMaxWidth().height(36.dp), contentAlignment = Alignment.Center) {
-                val n = Talk.note
+                val dl = Ear.progress
+                if (dl >= 0f) Row(Modifier.background(Color(0x1FFFFFFF), RoundedCornerShape(12.dp)).border(.5.dp, Color.White.copy(alpha = .1f), RoundedCornerShape(12.dp))
+                    .padding(horizontal = 14.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Txt("下载本地识别", Color(0xFFC9CFDC), 12.5.sp, maxLines = 1)
+                    Spacer(Modifier.width(10.dp))
+                    Box(Modifier.width(110.dp).height(3.dp).background(Color.White.copy(alpha = .12f), RoundedCornerShape(2.dp))) {
+                        Box(Modifier.fillMaxWidth(dl.coerceIn(0f, 1f)).height(3.dp).background(Brush.horizontalGradient(listOf(Color(0xFF5AA8FF), Color(0xFF8FE0FF))), RoundedCornerShape(2.dp)))
+                    }
+                    Spacer(Modifier.width(10.dp))
+                    Txt("${(dl * Ear.TOTAL / 1048576f).toInt()} / ${(Ear.TOTAL / 1048576f).toInt()}MB", Color(0xFF7F879B), 11.5.sp, maxLines = 1)
+                }
+                val n = if (dl >= 0f) "" else Talk.note
                 val na by animateFloatAsState(if (n.isNotEmpty()) 1f else 0f, tween(200), label = "note")
                 if (na > 0f) Txt(n, Color(0xFF141826), 12.5.sp, Modifier.graphicsLayer { alpha = na }
                     .background(Color(0xF5F4F6FB), RoundedCornerShape(12.dp)).padding(horizontal = 14.dp, vertical = 8.dp), maxLines = 1)
@@ -506,5 +523,71 @@ internal fun VoiceControls(chat: ChatState, title: String) {
                     Color(0xFF5B6377), 11.5.sp, spacing = .7.sp)
             }
         }
+    }
+}
+
+
+/* ---------------- 字幕（原型 1Uiwfpn4YePtw973uUAzEy） ---------------- */
+
+private val CAP_INK = Color(0xFFF3F5FA)
+private val CAP_DIM = Color(0x7AF3F5FA)
+private val CAP_UNREAD = Color(0x61F3F5FA)
+
+/**
+ * 你说的：边说边出，最后三个字还在变（淡），前面的定了（白），太长只留后 40 字；
+ * 她说的：正在读的那句，读到哪亮到哪；在想：「…」。刚发出的那句上浮 26dp、缩到 .94、淡出（450ms）。
+ */
+@Composable
+private fun VoiceCaption(st: Int, title: String, modifier: Modifier) {
+    val you = Talk.partial
+    val her = Speech.saying
+    val fly = remember { Animatable(1f) }
+    LaunchedEffect(Talk.sentAt) {
+        if (Talk.sentAt > 0L) { fly.snapTo(0f); fly.animateTo(1f, tween(450, easing = CubicBezierEasing(.3f, 0f, .2f, 1f))) }
+    }
+    val flying = fly.value < 1f && Talk.sent.isNotEmpty()
+    val youC = Color(0xFF5AA8FF)
+    var who = ""; var whoC = youC
+    val text = androidx.compose.ui.text.buildAnnotatedString {
+        fun put(t: String, c: Color) = withStyle(androidx.compose.ui.text.SpanStyle(color = c)) { append(t) }
+        when {
+            you.isNotBlank() -> {
+                who = "你"
+                val t = if (you.length > 40) "…" + you.takeLast(40) else you
+                val k = (t.length - 3).coerceAtLeast(0)
+                put(t.substring(0, k), CAP_INK); put(t.substring(k), CAP_DIM)
+            }
+            flying -> { who = "你"; put(Talk.sent.let { if (it.length > 40) "…" + it.takeLast(40) else it }, CAP_INK) }
+            st == SPEAK && her.isNotBlank() -> {
+                who = title; whoC = Color(0xFFFF9BC8)
+                val k = kotlin.math.ceil(her.length * Speech.sayingP).toInt().coerceIn(0, her.length)
+                put(her.substring(0, k), CAP_INK); put(her.substring(k), CAP_UNREAD)
+            }
+            st == THINK -> { who = title; whoC = Color(0xFFB08CFF); put("…", CAP_UNREAD) }
+        }
+    }
+    val wa by animateFloatAsState(if (who.isNotEmpty()) 1f else 0f, tween(250), label = "capWho")
+    Column(
+        modifier.fillMaxWidth().height(84.dp).padding(horizontal = 30.dp),
+        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Bottom,
+    ) {
+        Row(Modifier.graphicsLayer { alpha = wa }, verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(4.dp).background(whoC, CircleShape))
+            Spacer(Modifier.width(6.dp))
+            Txt(who, whoC, 11.sp, spacing = 1.5.sp, maxLines = 1)
+        }
+        Spacer(Modifier.height(4.dp))
+        androidx.compose.foundation.text.BasicText(
+            text,
+            Modifier.graphicsLayer {
+                if (flying && you.isBlank()) { val e = fly.value; translationY = -26.dp.toPx() * e; scaleX = 1 - .06f * e; scaleY = scaleX; alpha = 1 - e }
+            },
+            style = androidx.compose.ui.text.TextStyle(
+                fontFamily = Sans, fontSize = 18.sp, lineHeight = 27.sp, letterSpacing = .4.sp,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                shadow = androidx.compose.ui.graphics.Shadow(Color.Black.copy(alpha = .6f), blurRadius = 12f),
+            ),
+            maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+        )
     }
 }

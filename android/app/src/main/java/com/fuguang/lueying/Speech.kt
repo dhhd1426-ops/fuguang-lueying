@@ -88,6 +88,9 @@ object Speech {
     fun baseOf(id: String): String = confs[id]?.base.orEmpty()
     /** 正在放的这句此刻有多响（0..1），语音页的光跟着她的声音动 */
     var amp by mutableFloatStateOf(0f)
+    /** 正在读的这一句、读到哪（0..1）：语音页她的字幕用 */
+    var saying by mutableStateOf("")
+    var sayingP by mutableFloatStateOf(0f)
     val prov: Prov get() = PROVS.firstOrNull { it.id == pid } ?: PROVS[0]
     val ready: Boolean get() = conf.key.isNotBlank() && conf.base.isNotBlank() && conf.model.isNotBlank()
 
@@ -277,6 +280,8 @@ object Speech {
      * 记下来。Key、余额、限流、断网这种换写法也没用的错直接报。
      */
     suspend fun synth(text: String, voice: String = conf.voice, c: Conf = conf): ByteArray = withContext(Dispatchers.IO) {
+        // 语音对话里朗读还没配好：先用手机自带的语音合成，保证她能出声
+        if (Talk.open && (c.key.isBlank() || c.base.isBlank() || c.model.isBlank())) return@withContext SysVoice.synth(app, text)
         if (c.key.isBlank()) throw Err(-1, "还没填 API Key")
         if (c.model.isBlank()) throw Err(-1, "还没选模型")
         val v = voice.ifBlank { defaultVoice(c) }
@@ -440,17 +445,17 @@ object Speech {
         val text = kotlinx.coroutines.channels.Channel<String>(kotlinx.coroutines.channels.Channel.UNLIMITED)
         job = scope.launch {
             var told = false
-            val audio = kotlinx.coroutines.channels.Channel<ByteArray>(1)
+            val audio = kotlinx.coroutines.channels.Channel<Pair<String, ByteArray>>(1)
             launch {
-                try { for (t in text) audio.send(synth(t, voice)); audio.close() }
+                try { for (t in text) audio.send(t to synth(t, voice)); audio.close() }
                 catch (e: CancellationException) { throw e }
                 catch (e: Exception) { audio.close(e) }
             }
             try {
                 var i = 0
-                for (b in audio) {
+                for ((t, b) in audio) {
                     if (!told) { told = true; playing = r.key; loading = ""; since = System.currentTimeMillis(); onResult(null) }
-                    playBytes(b, i++)
+                    playBytes(b, i++, t)
                 }
             } catch (e: CancellationException) {
                 throw e
@@ -458,7 +463,7 @@ object Speech {
                 if (!told) { told = true; onResult(e.message ?: "合成失败") }
             } finally {
                 text.cancel()
-                if (run === r) { run = null; if (playing == r.key) playing = ""; if (loading == r.key) loading = "" }
+                if (run === r) { run = null; saying = ""; sayingP = 0f; if (playing == r.key) playing = ""; if (loading == r.key) loading = "" }
             }
         }
         return text
@@ -476,7 +481,7 @@ object Speech {
     fun stop() {
         job?.cancel(); job = null; run = null
         player?.let { runCatching { it.stop() } }
-        playing = ""; loading = ""
+        playing = ""; loading = ""; saying = ""; sayingP = 0f
     }
 
     /* ---------- 鲸鱼娘自己的话 ---------- */
@@ -557,7 +562,7 @@ object Speech {
         return chunks(slice, firstShort = fed == 0) to end
     }
 
-    private suspend fun playBytes(b: ByteArray, i: Int) {
+    private suspend fun playBytes(b: ByteArray, i: Int, text: String = "") {
         val f = File(app.cacheDir, "tts_${i % 4}.audio")
         withContext(Dispatchers.IO) { f.writeBytes(b) }
         val mp = MediaPlayer()
@@ -569,6 +574,7 @@ object Speech {
                 mp.setOnCompletionListener { if (cont.isActive) cont.resume(Unit) }
                 mp.setOnErrorListener { _, _, _ -> if (cont.isActive) cont.resume(Unit); true }
                 mp.start()
+                saying = text; sayingP = 0f
                 // 嘴：先放声音，响度表在旁边算；算好之前「在放就动」，算好后每 120ms 看一眼这一刻响不响，停顿时不叫，whale.talk 自己会合上
                 // 同一张响度表每 40ms 写进 amp，给语音页的光用
                 mouth = scope.launch {
@@ -582,6 +588,8 @@ object Speech {
                             val e = env
                             val v = e?.at(ms) ?: .6f
                             amp = v
+                            val dur = runCatching { mp.duration }.getOrDefault(0)
+                            if (dur > 0) sayingP = (ms / dur.toFloat()).coerceIn(0f, 1f)
                             if (n % 3 == 0 && lips && Whale.active && (e == null || v > .18f)) Whale.talk(1)
                             n++
                             delay(40)

@@ -62,7 +62,18 @@ android {
 
 val torrentNative: Configuration by configurations.creating
 
+// 本地听写引擎 sherpa-onnx（k2-fsa，Apache-2.0）：官方 Releases 的 AAR（含 Kotlin 接口 + onnxruntime），第一次构建时下到 libs/，不进仓库
+val sherpaVer = "1.13.7"
+val sherpaAar = file("libs/sherpa-onnx-$sherpaVer.aar")
+if (!sherpaAar.exists()) {
+    sherpaAar.parentFile.mkdirs()
+    val tmp = file("libs/sherpa-onnx-$sherpaVer.aar.part")
+    java.net.URI("https://github.com/k2-fsa/sherpa-onnx/releases/download/v$sherpaVer/sherpa-onnx-$sherpaVer.aar").toURL().openStream().use { i -> tmp.outputStream().use { i.copyTo(it) } }
+    tmp.renameTo(sherpaAar)
+}
+
 dependencies {
+    implementation(files(sherpaAar))
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.activity:activity-compose:1.12.2")
     implementation("androidx.compose.foundation:foundation:1.12.0")
