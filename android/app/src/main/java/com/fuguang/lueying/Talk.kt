@@ -39,7 +39,7 @@ import kotlin.math.sqrt
 
 /**
  * 语音对话（原型 HqPFuGXT73T5RuKRexxyLd 第 6 版）：输入框空着点杏色球进来。
- * 录音 16k 单声道（通话音源 + 回声消除）→ Silero VAD 判断人声 → 本地流式识别（sherpa-onnx，边说边出字幕，停 0.8 秒断句）；
+ * 录音 16k 单声道（通话音源 + 回声消除）→ Silero VAD 判断人声、也只由它断句（静 0.5 秒 + 两票合一）→ 本地流式识别只管出字（sherpa-onnx，一句一条流，中途不重置）；
  * 选了 SenseVoice / Whisper 时整句再送云端（失败退回本地那句）；手机自带识别走 SpeechRecognizer（不能插话，坏了自动换本地）。
  * 她说话时你开口（人声 + 够响 + 连着 0.25 秒）就停朗读、停生成。
  * 回复照常进对话，朗读走 Speech.begin（SpeechHooks 在语音模式下强制边写边读）。
@@ -388,11 +388,13 @@ object Talk {
             var lastText = ""
             var herWas = false; var herEnd = 0L
             var n0 = 0
-            // 端点后先「攥着」这句：没说完的样子就多等一会儿，接着说就拼成一句（他山之石：LiveKit / Pipecat 的 turn detection）
-            var held = ""; var holdUntil = 0L; var voiceWas = false
+            // 断句只听 Silero（他山之石：Pipecat / LiveKit / sherpa 的 VAD+ASR 都是 VAD 定边界，识别只管出字）：
+            // 以前由识别器「0.5 秒没出字」断句——模型一时认不出字就把还在说的话切断，只剩前几个字或后几个字。
+            // 现在：人声还在就绝不收句；静下来（Silero 0.5 秒）才开始「攥着」，两票合一决定再等多久，又出人声就接着听。
+            var holdUntil = 0L
+            var quiet = 0                                 // 连着多少帧没有人声
             // 声音那一票：Smart Turn 在自己线程算，算完放进 verdict（序号对不上的作废——中途又开口了）
-            var seq = 0; var textWait = 0L
-            var segs = 0                                  // 这句被端点切成了几截（≥2 才要第二遍）
+            var seq = 0
             var uttCont = false                           // 这句是不是上一句的后半截（起句时定，跟着这句走，不用全局的）
             var rise = 0                                  // 攥着时音量连着高了几帧（Silero 有 0.8 秒拖尾，接着说时它不会「重新开口」）
             val verdict = java.util.concurrent.atomic.AtomicReference<Pair<Int, Float?>?>(null)
@@ -406,7 +408,7 @@ object Talk {
             fun resetAsr() { val a = asr; val st = stream; if (a != null && st != null) a.reset(st); lastText = "" }
             /** 起句。[now] = 马上打断她（她出声时你插话、或没有本地识别）；否则等识别出字再打断，免得一点杂音就把她在想的回复掐掉 */
             fun begin(pushPre: Boolean, now: Boolean) {
-                inUtt = true; utt.clear(); cut = now; held = ""; holdUntil = 0L; seq++; segs = 0
+                inUtt = true; utt.clear(); cut = now; holdUntil = 0L; seq++; quiet = 0
                 // 上一句刚收（不论发没发出去）、她还没开口，你 2.5 秒内又说：多半是一句话被切成了两截
                 uttCont = lastEnd > 0 && !spoke && System.currentTimeMillis() - lastEnd < 2500
                 log("起句 预录${pre.size * 32}ms" + (if (now) " ·插话" else "") + (if (uttCont) " ·像续句" else ""))
@@ -416,26 +418,25 @@ object Talk {
                 pre.clear()
                 main.launch { hearing = true; if (now && busy(false)) onBarge?.invoke() }
             }
-            fun finish(text0: String) {
-                inUtt = false; loud = 0; held = ""; holdUntil = 0L; seq++
+            fun finish(text: String) {
+                inUtt = false; loud = 0; holdUntil = 0L; seq++
                 val pcm = utt.toList(); utt.clear()
-                val dur = pcm.size * FRAME / RATE.toDouble()
-                // 第二遍：这句中途被切过（识别流重置过），接缝处的字可能残缺 → 整句声音（含开口前）用新流从头再认一次（sherpa two-pass 的思路，同一个模型不用另下）。
-                // 没切过的不必：实时那条流本来就是从开口前一路认到底的，再认一遍只是多等
-                val text = if (segs >= 2 && text0.isNotBlank() && dur <= 15) asr?.let { tidy(Ear.redo(it, pcm, RATE)) }?.takeIf { it.isNotBlank() } ?: text0 else text0
-                if (segs >= 2) log("第二遍「$text」")
+                val dur = pcm.size * FRAME / RATE.toDouble()      // 含开口前 0.64 秒和收尾的静音
+                resetAsr()
                 val k = uttCont; uttCont = false
                 if (text.isNotBlank()) { lastEnd = System.currentTimeMillis(); spoke = false }
                 lastPcm = pcm
-                log("收句「$text0」" + "%.1f秒".format(dur))
+                log("收句「$text」" + "%.1f秒".format(dur))
                 val c = cloud()
                 main.launch {
                     hearing = false
                     when {
                         dur < .35 && text.isBlank() -> { partial = "" }
-                        c != null && (text.isNotBlank() || asr == null) -> transcribe(pcm, c, text, k)
+                        // 云端：本地没出字也送（人声够长就行），不让本地模型的短板卡住云端
+                        c != null && (text.isNotBlank() || asr == null || dur >= 1.6) -> transcribe(pcm, c, text, k)
                         text.isNotBlank() && !FILLER.matches(text) -> deliver(text, k)
                         text.isBlank() && asr == null -> { partial = ""; say(if (Ear.progress >= 0f) "识别模型还在下载，等一下" else "本地识别没装好") }
+                        text.isBlank() && dur >= 2.0 -> { partial = ""; say("没听清，再说一遍？") }
                         else -> { partial = "" }
                     }
                 }
@@ -451,7 +452,7 @@ object Talk {
                     val lv = ((20 * log10(rms + 1e-6) + 52) / 40).toFloat().coerceIn(0f, 1f)
                     if (muted) {
                         level = 0f; bands.fill(0f)
-                        if (inUtt) { inUtt = false; utt.clear(); held = ""; holdUntil = 0L; main.launch { hearing = false; partial = "" } }
+                        if (inUtt) { inUtt = false; utt.clear(); holdUntil = 0L; main.launch { hearing = false; partial = "" } }
                         resetAsr(); vad?.reset(); pre.clear(); continue
                     }
                     level = lv
@@ -493,46 +494,44 @@ object Talk {
                     val a = asr; val st = stream
                     if (a != null && st != null) {
                         val now = System.currentTimeMillis()
-                        // 攥着时又开口：先续 0.6 秒等识别出字；出了字就算接着说
-                        if (holdUntil > 0 && voice && !voiceWas) holdUntil = maxOf(holdUntil, now + 600)
-                        voiceWas = voice
+                        quiet = if (voice) 0 else quiet + 1
+                        // 攥着时音量又起来（Silero 要 0.25 秒才重新认人声，先用音量顶一下）
                         rise = if (inUtt && rms > maxOf(floor * 3, .02)) rise + 1 else 0
                         if (holdUntil > 0 && rise == 3) { holdUntil = maxOf(holdUntil, now + 900); log("又有声音，多等") }
                         verdict.getAndSet(null)?.let { (sq, p) ->
                             if (sq == seq && inUtt && holdUntil > 0) {
-                                val w = (fuse(textWait, p) * slow).toLong()
+                                val tw = patience(lastText)              // 文字票现在算：收尾那几个字这时才吐完
+                                val w = (fuse(tw, p) * slow).toLong()
                                 holdUntil = if (w == 0L) 1L else now + w
-                                log("声音票 " + (p?.let { "%.2f".format(it) } ?: "无") + " 文字票 $textWait → 再等 ${w}ms")
+                                log("声音票 " + (p?.let { "%.2f".format(it) } ?: "无") + " 文字票 $tw → 再等 ${w}ms")
                             }
                         }
                         val txt = tidy(a.getResult(st).text)
                         if (txt != lastText) {
                             lastText = txt
-                            if (txt.isNotBlank() && holdUntil > 0) { holdUntil = 0L; seq++; slow = minOf(1.6, slow + .1); log("接着说了") }
-                            if (inUtt) { val show = join(held, txt); main.launch { partial = show } }
+                            if (inUtt) main.launch { partial = txt }
                             if (inUtt && !cut && txt.isNotBlank()) { cut = true; main.launch { if (busy(false)) onBarge?.invoke() } }
                         }
-                        if (a.isEndpoint(st)) {
-                            val fin = lastText
-                            a.reset(st); lastText = ""
+                        if (inUtt) {
+                            val dur = utt.size * FRAME / RATE.toDouble()
                             when {
-                                !inUtt -> {}
-                                fin.isBlank() -> finish(held)              // 这段没出字：有攥着的就发，没有就丢
-                                else -> {
-                                    held = join(held, fin); segs++
-                                    log("停顿「$fin」")
-                                    // 文字一票先记下；声音一票回来前最多等 1.5 秒
-                                    textWait = patience(held)
+                                dur > 30 -> finish(lastText)                       // 一句最长 30 秒
+                                voice -> if (holdUntil > 0) { holdUntil = 0L; seq++; slow = minOf(1.6, slow + .1); log("接着说了") }
+                                // 刚静下来：先攥着，声音一票回来前最多等 1.5 秒（没有 Silero 时自己数 0.5 秒）
+                                holdUntil == 0L -> if (quiet >= (if (vad != null) 1 else 16)) {
+                                    log("停顿「$lastText」")
                                     val my = ++seq
                                     holdUntil = now + 1500
                                     Turn.judge(app, lastSeconds(utt, 8)) { p -> verdict.set(my to p) }
                                 }
+                                holdUntil <= now -> { slow = maxOf(1.0, slow - .02); finish(lastText) }
                             }
-                        } else if (inUtt && holdUntil in 1..now) { slow = maxOf(1.0, slow - .02); finish(held) }
+                        }
                     } else if (inUtt) {
-                        // 没有本地模型：按 VAD 断句（停 0.8 秒）
+                        // 没有本地模型：按 VAD 断句（Silero 0.5 秒 + 再静 0.3 秒）
+                        quiet = if (voice) 0 else quiet + 1
                         val dur = utt.size * FRAME / RATE.toDouble()
-                        if (!voice || dur > 20) finish("")
+                        if (quiet >= (if (vad != null) 10 else 25) || dur > 30) finish("")
                     }
                 }
             } finally {

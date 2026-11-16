@@ -102,7 +102,7 @@ object Ear {
     }
 
     /**
-     * 流式识别器。断句：说过话之后停 0.8 秒；一直不说话 2.4 秒清一次；一句最长 20 秒。
+     * 流式识别器：只管出字，不断句（断句归 Talk 里的 Silero + 两票合一；识别器自己的端点是「多久没出字」，认不出字时会把话切断）。
      * 建一次约 1 秒，在录音线程里建。
      */
     fun recognizer(ctx: Context): OnlineRecognizer {
@@ -125,7 +125,7 @@ object Ear {
                 rule2 = EndpointRule(true, 0.5f, 0f),   // 只是「可能说完了」，真断不断由 Talk 两票合一（文字 + Smart Turn）
                 rule3 = EndpointRule(false, 0f, 20f),
             ),
-            enableEndpoint = true,
+            enableEndpoint = false,
             decodingMethod = "greedy_search",
         )
         return OnlineRecognizer(null, cfg)
@@ -143,14 +143,14 @@ object Ear {
         } finally { st.release() }
     }
 
-    /** Silero VAD：一窗 512 点（32ms），判定 0.5；停 0.8 秒算一段说完 */
+    /** Silero VAD：一窗 512 点（32ms），判定 0.5；静 0.5 秒算「可能说完」，真断不断由 Talk 两票合一 */
     fun vad(ctx: Context): Vad = Vad(
         ctx.assets,
         VadModelConfig(
             sileroVadModelConfig = SileroVadModelConfig(
                 model = "sherpa/silero_vad.onnx",
                 threshold = 0.5f,
-                minSilenceDuration = 0.8f,
+                minSilenceDuration = 0.5f,
                 minSpeechDuration = 0.25f,
                 windowSize = 512,
                 maxSpeechDuration = 20f,
