@@ -131,6 +131,18 @@ object Ear {
         return OnlineRecognizer(null, cfg)
     }
 
+    /** 第二遍：整句声音用新流从头认一次；末尾补 0.6 秒静音并 inputFinished，让最后几个字吐干净。和实时识别同一条线程调（同一个识别器不并发） */
+    fun redo(r: OnlineRecognizer, pcm: List<ShortArray>, rate: Int): String {
+        val st = r.createStream()
+        try {
+            for (fr in pcm) st.acceptWaveform(FloatArray(fr.size) { fr[it] / 32768f }, rate)
+            st.acceptWaveform(FloatArray(rate * 6 / 10), rate)
+            st.inputFinished()
+            while (r.isReady(st)) r.decode(st)
+            return r.getResult(st).text
+        } finally { st.release() }
+    }
+
     /** Silero VAD：一窗 512 点（32ms），判定 0.5；停 0.8 秒算一段说完 */
     fun vad(ctx: Context): Vad = Vad(
         ctx.assets,

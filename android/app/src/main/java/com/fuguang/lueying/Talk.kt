@@ -337,7 +337,7 @@ object Talk {
         val t = Thread {
             val min = AudioRecord.getMinBufferSize(RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
             val ar = runCatching {
-                AudioRecord(MediaRecorder.AudioSource.VOICE_COMMUNICATION, RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, maxOf(min, RATE * 2))
+                AudioRecord(MediaRecorder.AudioSource.VOICE_COMMUNICATION, RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, maxOf(min, RATE * 2 * 4))   // 4 秒缓冲：第二遍识别占着线程时不丢声音
             }.getOrNull()
             if (ar == null || ar.state != AudioRecord.STATE_INITIALIZED) { main.launch { say("麦克风打不开（可能被别的应用占着）") }; running = false; return@Thread }
             val aec = if (AcousticEchoCanceler.isAvailable()) runCatching { AcousticEchoCanceler.create(ar.audioSessionId)?.apply { enabled = true } }.getOrNull() else null
@@ -353,7 +353,7 @@ object Talk {
             load()
             val buf = ShortArray(FRAME)
             val f = FloatArray(FRAME)
-            val pre = ArrayDeque<ShortArray>()          // 开口前 320ms
+            val pre = ArrayDeque<ShortArray>()          // 开口前 640ms（Silero 要 0.25 秒才认人声，开头一两个字在这里）
             val utt = ArrayList<ShortArray>()
             var floor = .01
             var inUtt = false
@@ -365,6 +365,7 @@ object Talk {
             var held = ""; var holdUntil = 0L; var voiceWas = false
             // 声音那一票：Smart Turn 在自己线程算，算完放进 verdict（序号对不上的作废——中途又开口了）
             var seq = 0; var textWait = 0L
+            var segs = 0                                  // 这句被端点切成了几截（≥2 才要第二遍）
             val verdict = java.util.concurrent.atomic.AtomicReference<Pair<Int, Float?>?>(null)
             Turn.warm(app)
             fun feed(s: ShortArray) {
@@ -376,17 +377,22 @@ object Talk {
             fun resetAsr() { val a = asr; val st = stream; if (a != null && st != null) a.reset(st); lastText = "" }
             /** 起句。[now] = 马上打断她（她出声时你插话、或没有本地识别）；否则等识别出字再打断，免得一点杂音就把她在想的回复掐掉 */
             fun begin(pushPre: Boolean, now: Boolean) {
-                inUtt = true; utt.clear(); cut = now; held = ""; holdUntil = 0L; seq++
+                inUtt = true; utt.clear(); cut = now; held = ""; holdUntil = 0L; seq++; segs = 0
                 // 刚发出一句、她还没开口，你 2.5 秒内又说：多半是一句话被切成了两截
                 cont = sentAt > 0 && !spoke && System.currentTimeMillis() - sentAt < 2500
+                // 每句从干净的识别流开始，先喂开口前那段（照 sherpa VAD+ASR 示例 / Pipecat pre_speech）；空闲时不喂识别，免得它自己断句重置把开头吞掉
+                resetAsr()
                 if (pushPre) { utt.addAll(pre); pre.forEach { feed(it) } }
                 pre.clear()
                 main.launch { hearing = true; if (now && busy(false)) onBarge?.invoke() }
             }
-            fun finish(text: String) {
+            fun finish(text0: String) {
                 inUtt = false; loud = 0; held = ""; holdUntil = 0L; seq++
                 val pcm = utt.toList(); utt.clear()
                 val dur = pcm.size * FRAME / RATE.toDouble()
+                // 第二遍：这句中途被切过（识别流重置过），接缝处的字可能残缺 → 整句声音（含开口前）用新流从头再认一次（sherpa two-pass 的思路，同一个模型不用另下）。
+                // 没切过的不必：实时那条流本来就是从开口前一路认到底的，再认一遍只是多等
+                val text = if (segs >= 2 && text0.isNotBlank() && dur <= 15) asr?.let { tidy(Ear.redo(it, pcm, RATE)) }?.takeIf { it.isNotBlank() } ?: text0 else text0
                 val c = cloud()
                 main.launch {
                     hearing = false
@@ -432,19 +438,18 @@ object Talk {
 
                     if (her && !inUtt) {
                         // 她在出声：不喂识别（免得把她自己的声音当成你说的）；你得是人声、够响、连着 0.25 秒才算插话
-                        pre.addLast(frame); if (pre.size > 10) pre.removeFirst()
+                        pre.addLast(frame); while (pre.size > 10) pre.removeFirst()   // 插话只留 320ms，多了会混进她的声音
                         barge = if (voice && rms > maxOf(floor * 5, .045)) barge + 1 else 0
                         if (barge >= 8) { barge = 0; resetAsr(); begin(true, true) }
                         continue
                     }
                     barge = 0
                     if (!inUtt) {
-                        pre.addLast(frame); if (pre.size > 10) pre.removeFirst()
-                        // 她刚说完的 0.6 秒里不起句（回声尾巴）
+                        // 她刚说完的 0.6 秒里不起句（回声尾巴），开口前那段也不留她的回声
                         val calm = System.currentTimeMillis() - herEnd > 600
+                        if (calm) { pre.addLast(frame); if (pre.size > 20) pre.removeFirst() } else pre.clear()
                         loud = if (voice && calm) loud + 1 else 0
-                        if (asr != null) feed(frame)
-                        if (loud >= (if (vad != null) 1 else 3)) begin(false, asr == null)
+                        if (loud >= (if (vad != null) 1 else 3)) begin(true, asr == null)
                     } else {
                         utt += frame
                         if (asr != null) feed(frame)
@@ -476,7 +481,7 @@ object Talk {
                                 !inUtt -> {}
                                 fin.isBlank() -> finish(held)              // 这段没出字：有攥着的就发，没有就丢
                                 else -> {
-                                    held = join(held, fin)
+                                    held = join(held, fin); segs++
                                     // 文字一票先记下；声音一票回来前最多等 1.5 秒
                                     textWait = patience(held)
                                     val my = ++seq
