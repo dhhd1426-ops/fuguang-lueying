@@ -232,6 +232,17 @@ internal fun SpeechPage(onBack: () -> Unit, onApi: () -> Unit) {
         Toggle("自动朗读 $who 的回答", "写完就开始读；点消息下面的喇叭停", Speech.auto) { Speech.auto = it; Speech.save() }
         Toggle("消息下面显示朗读按钮", "点一下读这一条，再点停", Speech.btn) { Speech.btn = it; Speech.save() }
         Toggle("鲸鱼娘跟着声音动嘴", "按读出来的音量开合，停顿时闭上", Speech.lips) { Speech.lips = it; Speech.save() }
+        Toggle(
+            "鲸鱼娘冒泡的话也读出来",
+            when {
+                !Speech.whaleVoice -> "她头上冒的那句话（「别戳啦」这些）也用这个声音说"
+                Speech.warming -> "正在把她的台词存到手机上：${Speech.warmHave} / ${Speech.warmAll}"
+                Speech.warmAll > 0 && Speech.warmHave == Speech.warmAll -> "${Speech.warmAll} 句台词已经存在手机上，说的时候不用等"
+                Speech.warmAll > 0 -> "存好了 ${Speech.warmHave} / ${Speech.warmAll} 句，缺的说到时现合成"
+                else -> "她的台词会先合成好存在手机上，说的时候不用等"
+            },
+            Speech.whaleVoice,
+        ) { Speech.whaleVoice = it; Speech.save(); if (it) Speech.warm() }
         Block {
             Txt("语速", Page.ink, 15.sp)
             Row(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {

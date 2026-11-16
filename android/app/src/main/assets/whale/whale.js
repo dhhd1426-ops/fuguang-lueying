@@ -529,7 +529,7 @@ function tap(rg){bridge('act',{k:'tap',rg});taps=taps.filter(t=>clock-t<1600);ta
   if(rg==='head')pat();else if(rg==='face')faceTap();else if(rg==='armL'||rg==='armR'){if(!rt)playRoutine('挥挥手');}else poke();}
 
 /* 说话：每字 90ms，嘴按“音量”开合，标点合上 */
-function speak(text,withMood=true,show=true){if(show&&quiet)return;const mk=withMood&&SET.mood?moodOf(text):null;text=text.replace(/^[【\[][^】\]]{1,4}[】\]]/,'');
+function speak(text,withMood=true,show=true){if(show&&quiet)return;const mk=withMood&&SET.mood?moodOf(text):null;text=text.replace(/^[【\[][^】\]]{1,4}[】\]]/,'');bridge('speak',{text});
   if(mk)setMood(mk,text.length*90+2500);
   if(!authorT&&!heldPose&&!(rt&&rt.r.pose)&&!reduced&&text.length>=8&&Math.random()<.6)playBW(pick(['bw_talk_chest','bw_talk_grass','bw_talk_finger']),text.length*90+900);
   const tok=++sayTok,el=$('say');busy=Math.max(busy,clock+text.length*90+600);sayBusy=clock+text.length*90+2500;
@@ -588,6 +588,7 @@ function pMove(x,y){if(editing||!pointerDown)return;
 function pUp(){clearTimeout(grabTimer);ptrOn=false;lastBox='';
   if(grab){grab=false;dragging=false;pointerDown=false;downAt=null;busy=clock+1000;holdLook=clock+800;hopV=-150;saveLayout();bridge('act',{k:'moved'});return;}
   release();}
+const LINES=["bw_talk_chest", "bw_talk_finger", "bw_talk_grass", "再摸一下下。", "再碰就甩你脸上！", "别戳～", "呀！", "呀！尾巴！", "哼！", "嗯？", "嗯？谁碰我尾巴", "嗯～", "嘻嘻", "嘿嘿", "嘿嘿……", "嘿嘿，好看吗？", "嘿～", "头发要乱啦～", "尾巴不能随便摸的！", "尾巴很敏感的", "干嘛呀", "换哪件呢～", "略略略", "痒……", "看什么看～", "等我换个衣服……", "累死鱼了……", "衣服没找到……", "跳完啦～", "都说了别碰啦……", "铛——别戳啦，头晕。"];
 window.whale={
   set:applySet,
   /* 有没有在聊天：没聊天站中间，聊天时缩到右下角 */
@@ -599,7 +600,7 @@ window.whale={
   /* 等回复：抬眼想 */
   think(){if(editing||danceOn)return;T.lookX=-.5;T.lookY=.7;T.brow=.6;holdLook=clock+2600;busy=Math.max(busy,clock+2600);after(1800,()=>T.brow=0);},
   /* 回复流进来 n 个字：嘴跟着动；第一次配个说话手势 */
-  talk(n){if(editing||danceOn||n<=0)return;if(authorT&&(AUTHOR_IDS===UNTRACKED_IDS||idleMo))stopMotion(400);if(rt&&rt.name[0]!=='@')stopRoutine();talkLeft=Math.min(talkLeft+n,14);if(!talkOn){talkOn=true;talkStep();}},
+  talk(n){if(editing||danceOn||n<=0)return;if(authorT&&(AUTHOR_IDS===UNTRACKED_IDS||idleMo))stopMotion(400);if(rt&&rt.name[0]!=='@'&&!rt.keep)stopRoutine();talkLeft=Math.min(talkLeft+n,14);if(!talkOn){talkOn=true;talkStep();}},
   /* 回复完了：按整句定情绪 */
   replied(text){replyGesture=false;talkLeft=0;nextGesture=0;if(editing||danceOn)return;stopMotion(500);T.mouth=0;
     const mk=SET.mood?moodOf(String(text||'')):null;if(mk)setMood(mk,3600);else if(Math.random()<.4)playFace('笑');},
@@ -611,7 +612,7 @@ window.whale={
   cover(on){covered=!!on;syncRun();},
   mood(k,ms){k=MOOD_ALIAS[k]||k;if(MOODS[k])setMood(k,ms||3000);},
   routine(n){if(editing)return;if(danceOn)endDance();
-    if(n==='@dance')dance();else if(n==='@author')playAuthor();else if(n==='@idle60')playBW('bw_idle60');else if(ROUTINES[n]){stopRoutine();playRoutine(n);}},
+    if(n==='@dance')dance();else if(n==='@author')playAuthor();else if(n==='@idle60')playBW('bw_idle60');else if(ROUTINES[n]){stopRoutine();playRoutine(n);if(rt)rt.keep=true;}},
   face(k){if(editing)return;busy=clock+2200;if(FACES[k])playFace(k);else if(FX[k])flash(k,2000);},
   ptr(kind,fx,fy){const x=fx*innerWidth,y=fy*innerHeight;if(kind==='down')pDown(x,y);else if(kind==='move')pMove(x,y);else pUp();},
   edit(on){setEdit(!!on);},
@@ -619,6 +620,8 @@ window.whale={
   dress(on){dressing=!!on;if(dressing){stopRoutine();after(500,()=>speak('换哪件呢～',false));}},
   pause(on){paused=!!on;syncRun();},
   dance(){dance();},
+  /* 她自己会说的固定台词：App 预先合成好存在手机上，说的时候不用等 */
+  lines(){const a=new Set(LINES);Object.values(ROUTINES).forEach(r=>(r.lines||[]).forEach(x=>a.add(x)));return JSON.stringify([...a]);},
   routines(){return JSON.stringify(Object.keys(ROUTINES).filter(k=>k[0]!=='@'));},
   faces(){return JSON.stringify(Object.keys(FACES));},
 };

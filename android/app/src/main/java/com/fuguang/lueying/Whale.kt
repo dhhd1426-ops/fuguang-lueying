@@ -216,6 +216,18 @@ object Whale {
         if (s != lastRoom) { lastRoom = s; w.evaluateJavascript(s, null) }
     }
 
+    /** 她自己会说的固定台词（Speech 预先合成存在手机上）；没就绪时给空 */
+    fun lines(done: (List<String>) -> Unit) {
+        val w = web ?: return done(emptyList())
+        if (!ready) return done(emptyList())
+        w.evaluateJavascript("whale.lines()") { raw ->
+            done(runCatching {
+                val a = JSONArray(JSONArray("[$raw]").getString(0))
+                (0 until a.length()).map { a.getString(it) }
+            }.getOrDefault(emptyList()))
+        }
+    }
+
     /** 页面里的动作名（试动作用）；没就绪时给空 */
     fun routines(done: (List<String>) -> Unit) {
         val w = web ?: return done(emptyList())
@@ -253,6 +265,7 @@ object Whale {
             }
             "editDone" -> editing = false
             "act" -> WhaleTools.note(o)
+            "speak" -> Speech.whaleSay(o.optString("text"))
             "grab" -> web?.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
             "error" -> error = o.optString("msg", "鲸鱼娘没能加载")
             "phase" -> if (!ready) phase = o.optString("s")

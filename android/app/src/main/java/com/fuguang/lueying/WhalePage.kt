@@ -80,6 +80,8 @@ internal fun WhaleHooks(chat: ChatState) {
     androidx.activity.compose.BackHandler(enabled = Whale.editing) { Whale.edit(false) }
     val empty = chat.messages.isEmpty() && !chat.busy
     LaunchedEffect(empty, Whale.ready) { Whale.chat(!empty) }
+    // 她的固定台词先合成好存在手机上：她站出来、语音配好、换了音色时补一遍
+    LaunchedEffect(Whale.ready, Speech.ready, Speech.pid, Speech.conf.model, Speech.conf.voice, Speech.whaleVoice) { if (Whale.ready && Speech.ready) Speech.warm() }
     LaunchedEffect(Unit) {
         var last = 0L
         snapshotFlow { chat.draft }.collect {

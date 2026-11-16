@@ -73,6 +73,12 @@ object Speech {
     var auto by mutableStateOf(false)
     var btn by mutableStateOf(true)
     var lips by mutableStateOf(true)
+    /** 鲸鱼娘自己冒泡说的话也读出来（固定台词预先合成，存在手机上）。 */
+    var whaleVoice by mutableStateOf(true)
+    /** 台词缓存：存好了几句 / 一共几句；正在存时 warming。 */
+    var warmHave by mutableStateOf(0)
+    var warmAll by mutableStateOf(0)
+    var warming by mutableStateOf(false)
     var speed by mutableFloatStateOf(1f)
     var sample by mutableStateOf("你好呀，我是 {asst}。今天也要记得照顾好自己。")
 
@@ -106,7 +112,7 @@ object Speech {
         runCatching {
             val o = JSONObject(p.string(KEY) ?: return)
             pid = o.optString("pid", pid).takeIf { id -> PROVS.any { it.id == id } } ?: "volink"
-            auto = o.optBoolean("auto", auto); btn = o.optBoolean("btn", btn); lips = o.optBoolean("lips", lips)
+            auto = o.optBoolean("auto", auto); btn = o.optBoolean("btn", btn); lips = o.optBoolean("lips", lips); whaleVoice = o.optBoolean("whaleVoice", whaleVoice)
             speed = o.optDouble("speed", 1.0).toFloat().coerceIn(.5f, 2f)
             sample = o.optString("sample", sample)
             val cs = o.optJSONObject("conf") ?: JSONObject()
@@ -127,7 +133,7 @@ object Speech {
                 .put("voice", c.voice).put("form", c.form)
                 .put("voices", JSONArray().apply { c.voices.forEach { put(JSONObject().put("id", it.id).put("name", it.name).put("desc", it.desc)) } }))
         }
-        prefs.putString(KEY, JSONObject().put("pid", pid).put("auto", auto).put("btn", btn).put("lips", lips)
+        prefs.putString(KEY, JSONObject().put("pid", pid).put("auto", auto).put("btn", btn).put("lips", lips).put("whaleVoice", whaleVoice)
             .put("speed", speed.toDouble()).put("sample", sample).put("conf", cs).toString())
     }
 
@@ -463,9 +469,77 @@ object Speech {
     }
 
     fun stop() {
+        stopWhale()
         job?.cancel(); job = null; run = null
         player?.let { runCatching { it.stop() } }
         playing = ""; loading = ""
+    }
+
+    /* ---------- 鲸鱼娘自己的话 ---------- */
+
+    private var whalePlayer: MediaPlayer? = null
+    private fun stopWhale() { whalePlayer?.let { runCatching { it.stop() }; it.release() }; whalePlayer = null }
+
+    /** 存在手机上的台词音频：按 地址 + 模型 + 音色 + 语速 + 字 取名，换音色就是另一份。 */
+    private fun voiceFile(text: String): File {
+        val c = conf
+        val k = "${c.base}|${c.model}|${c.voice.ifBlank { defaultVoice(c) }}|$speed|$text"
+        val h = java.security.MessageDigest.getInstance("MD5").digest(k.toByteArray()).joinToString("") { "%02x".format(it) }
+        return File(File(app.filesDir, "whale_voice").apply { mkdirs() }, "$h.audio")
+    }
+
+    /**
+     * 她冒泡说一句：存过就立刻放；没存过就现合成、存下来，合成得快（1.5 秒内）才放，慢了这次不放、下次就有了。
+     * 正在读回答、试听时不插嘴。
+     */
+    fun whaleSay(text: String) {
+        if (text.isBlank() || !whaleVoice || !ready || !::app.isInitialized) return
+        scope.launch {
+            if (playing.isNotEmpty() || loading.isNotEmpty()) return@launch
+            val f = voiceFile(text)
+            if (!f.exists()) {
+                val t0 = System.currentTimeMillis()
+                val b = runCatching { synth(text) }.getOrNull() ?: return@launch
+                withContext(Dispatchers.IO) { f.writeBytes(b) }
+                if (System.currentTimeMillis() - t0 > 1500) return@launch
+            }
+            if (playing.isNotEmpty() || loading.isNotEmpty()) return@launch
+            stopWhale()
+            val mp = MediaPlayer()
+            whalePlayer = mp
+            runCatching {
+                withContext(Dispatchers.IO) { mp.setDataSource(f.absolutePath); mp.prepare() }
+                mp.setOnCompletionListener { if (whalePlayer === mp) stopWhale() }
+                mp.start()
+            }.onFailure { if (whalePlayer === mp) stopWhale(); f.delete() }
+        }
+    }
+
+    private var warmJob: Job? = null
+
+    /** 把她的固定台词都合成好存在手机上（缺哪句补哪句）。配好语音、她站出来以后自动跑一次；换了音色再跑。 */
+    fun warm(force: Boolean = false) {
+        if (!whaleVoice || !ready || !::app.isInitialized) return
+        if (warmJob?.isActive == true) return
+        Whale.lines { lines ->
+            if (lines.isEmpty()) return@lines
+            warmJob = scope.launch {
+                if (force) lines.forEach { voiceFile(it).delete() }
+                warmAll = lines.size
+                warmHave = lines.count { voiceFile(it).exists() }
+                if (warmHave == warmAll) return@launch
+                warming = true
+                try {
+                    for (t in lines) {
+                        val f = voiceFile(t)
+                        if (f.exists()) continue
+                        val b = try { synth(t) } catch (e: Err) { if (fatal(e)) break else continue }
+                        withContext(Dispatchers.IO) { f.writeBytes(b) }
+                        warmHave++
+                    }
+                } finally { warming = false }
+            }
+        }
     }
 
     /** 新一轮开始时停掉还在读的回答；设置页的试听不管。 */

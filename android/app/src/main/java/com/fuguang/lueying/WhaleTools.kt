@@ -10,7 +10,7 @@ import org.json.JSONObject
 
 /**
  * 鲸鱼娘就是她自己：她知道屏幕上的自己刚才被怎么了、在做什么（whale.js 报 act 事件 → [note]），
- * 也能自己动一下（whale_act）。动作在这一轮写完、读完之后才做：说话时嘴一动会把小动作打断。
+ * 也能自己动一下（whale_act）：马上做，边说边做（whale.js 给 App 让做的动作打了 keep，说话时不打断）。
  */
 object WhaleTools {
     const val ACT = "whale_act"
@@ -27,7 +27,6 @@ object WhaleTools {
     private var dancing = false
     /** 她自己让做的动作：刚做完那一下报回来的事件别再记成「你自己……」。 */
     private var selfUntil = 0L
-    private var pending: JSONObject? = null
 
     private fun add(t: String) = synchronized(log) { log.addLast(Ev(System.currentTimeMillis(), t)); while (log.size > 8) log.removeFirst() }
 
@@ -61,7 +60,7 @@ object WhaleTools {
             append("【屏幕上的你】${call}手机的聊天页上站着一个蓝头发、长着鲸鱼尾巴的女仆小姑娘（鲸鱼娘）——那就是你在他手机里的样子。")
             append(if (dancing) "你这会儿正在跳舞。" else "你这会儿站在聊天旁边。")
             if (recent.isNotEmpty()) append("最近：").append(recent.joinToString("；") { "${it.text}（${ago(it.at)}）" }).append("。")
-            append("\n想用身体表达时可以调用 $ACT 做一个动作、换个表情（这一轮说完才做；一轮最多一次，别每句都动）。")
+            append("\n想用身体表达时可以调用 $ACT 做一个动作、换个表情，马上就做、边说边做（一轮最多一次，别每句都动）。")
             append("没调用就不要说自己做了什么动作；他问你在做什么、刚才怎么了，照上面写的说。")
         }
     }
@@ -69,7 +68,7 @@ object WhaleTools {
     private fun enumOf(d: String, xs: List<String>) = JSONObject().put("type", "string").put("description", d).put("enum", JSONArray(xs))
 
     val spec = ToolSpec(
-        ACT, "让屏幕上的你（鲸鱼娘）做一个动作、换个表情。这一轮说完才做。三项至少写一项。",
+        ACT, "让屏幕上的你（鲸鱼娘）做一个动作、换个表情，马上就做，你接着说话她也不停。三项至少写一项。",
         JSONObject().put("type", "object").put("properties", JSONObject()
             .put("move", enumOf("动作", MOVES))
             .put("mood", enumOf("情绪（表情和小动作跟着变，持续几秒）", MOODS))
@@ -82,28 +81,22 @@ object WhaleTools {
         val mood = a.optString("mood").takeIf { it in MOODS }
         val face = a.optString("face").takeIf { it in FACES }
         if (move == null && mood == null && face == null) return ToolOut("没写要做什么：move、mood、face 至少写一项，只能从给的里面选。", failed = true)
-        pending = JSONObject().put("move", move ?: "").put("mood", mood ?: "").put("face", face ?: "")
-        val what = listOfNotNull(move, mood?.let { "${it}的样子" }, face?.let { "做个「$it」的表情" }).joinToString("、")
-        return ToolOut("好，这一轮说完你就会$what。")
+        // 马上做，边说边做：whale.js 里 App 让做的动作（rt.keep）说话时不会被嘴打断
+        selfUntil = System.currentTimeMillis() + 2500
+        if (mood != null) { Whale.moodOn(mood); keepMood = mood }
+        if (face != null) Whale.face(face)
+        if (move != null) Whale.routine(if (move == "跳舞") "@dance" else move)
+        val what = listOfNotNull(move, mood?.let { "露出${it}的样子" }, face?.let { "做了个「$it」的表情" }).joinToString("、")
+        add("你自己$what")
+        return ToolOut("屏幕上的你正在$what。")
     }
 
-    /** 这一轮写完（鲸鱼娘已经按整句定过情绪）：等她读完再做她要的动作。 */
+    private var keepMood: String? = null
+
+    /** 这一轮写完时鲸鱼娘会按整句重新定情绪：她自己挑过情绪的，再按她挑的来一次。 */
     fun flush() {
-        val p = pending ?: return
-        pending = null
-        scope.launch {
-            delay(700)
-            var w = 0
-            while ((Speech.playing.isNotEmpty() || Speech.loading.isNotEmpty()) && w++ < 400) delay(150)
-            if (!Whale.active) return@launch
-            selfUntil = System.currentTimeMillis() + 2500
-            val move = p.optString("move")
-            val mood = p.optString("mood")
-            val face = p.optString("face")
-            if (mood.isNotEmpty()) Whale.moodOn(mood)
-            if (face.isNotEmpty()) Whale.face(face)
-            if (move.isNotEmpty()) Whale.routine(if (move == "跳舞") "@dance" else move)
-            add("你自己" + listOf(move, mood.takeIf { it.isNotEmpty() }?.let { "露出${it}的样子" }.orEmpty(), face.takeIf { it.isNotEmpty() }?.let { "做了个「$it」的表情" }.orEmpty()).filter { it.isNotEmpty() }.joinToString("、"))
-        }
+        val m = keepMood ?: return
+        keepMood = null
+        scope.launch { delay(120); if (Whale.active) Whale.moodOn(m) }
     }
 }
