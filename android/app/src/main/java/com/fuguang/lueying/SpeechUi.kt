@@ -272,7 +272,7 @@ internal fun SpeechPage(onBack: () -> Unit, onApi: () -> Unit) {
         LaunchedEffect(Unit) { Talk.init(ctx) }
         Label("语音识别", "ASR")
         Block {
-            Txt("语音对话右上角点一下换识别。本地识别不联网、免费（第一次下载 237MB）；SenseVoice 用硅基流动的 Key，Whisper 用 OpenAI 的。", Page.muted, 12.5.sp, lineHeight = 20.sp)
+            Txt("语音对话右上角点一下换识别。阿里实时用下面的 Key；SenseVoice 用硅基流动的 Key，Whisper 用 OpenAI 的；都没填就用手机自带识别。", Page.muted, 12.5.sp, lineHeight = 20.sp)
             Field("阿里百炼 API Key（阿里实时识别）")
             CardField(Talk.aliKey, { Talk.setAli(it) }, "sk-…，百炼控制台 › API-KEY", secret = true)
             Txt("边说边出字，中文和方言最准；按说话时长计费，很便宜。", Page.muted, 11.5.sp, Modifier.padding(start = 2.dp, top = 6.dp))

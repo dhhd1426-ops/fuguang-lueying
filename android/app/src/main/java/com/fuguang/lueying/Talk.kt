@@ -18,7 +18,6 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.geometry.Offset
-import com.k2fsa.sherpa.onnx.OfflineRecognizer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -39,14 +38,14 @@ import kotlin.math.sqrt
 /**
  * 语音对话（原型 HqPFuGXT73T5RuKRexxyLd 第 6 版）：输入框空着点杏色球进来。
  * 录音 16k 单声道（通话音源 + 回声消除）→ Silero VAD 判断人声、也只由它断句（静 0.5 秒 + 两票合一）。
- * 出字：本地 SenseVoice（sherpa-onnx，说话时每 0.3 秒左右整句重认出字幕，说完定稿）；阿里实时（Paraformer WebSocket，边说边出字，失败退回本地）；
- * 选了 SenseVoice / Whisper（云）时整句送云端（失败退回本地那句）；手机自带识别走 SpeechRecognizer（不能插话，坏了自动换本地）。
+ * 出字全在云端（手机上跑识别模型太烫）：阿里实时（Paraformer WebSocket，边说边出字，失败退到硅基流动 SenseVoice）；
+ * SenseVoice / Whisper 整句送云端；选的那家没填 Key 就用手机自带识别（SpeechRecognizer，不能插话）。
  * 她说话时你开口（人声 + 够响 + 连着 0.25 秒）就停朗读、停生成。
  * 回复照常进对话，朗读走 Speech.begin（SpeechHooks 在语音模式下强制边写边读）。
  */
 object Talk {
     const val RULE = "\n\n【语音对话】对方正在和你语音聊天，你说的话会被直接读出来：用口语、短句，一次两三句；不要列表、标题、链接、代码、表情符号和括号里的动作描写。"
-    val SRCS = listOf("local" to "本地识别", "ali" to "阿里实时", "sense" to "SenseVoice", "whisper" to "Whisper", "system" to "手机识别")
+    val SRCS = listOf("ali" to "阿里实时", "sense" to "SenseVoice", "whisper" to "Whisper", "system" to "手机识别")
     /** 阿里百炼 API Key（阿里实时识别用；「我的 › 语音 › 语音识别」里填） */
     var aliKey by mutableStateOf("")
         private set
@@ -60,7 +59,9 @@ object Talk {
     var transcribing by mutableStateOf(false)
     var level by mutableFloatStateOf(0f)       // 麦克风音量 0..1
     var note by mutableStateOf("")
-    var src by mutableStateOf("local")
+    var src by mutableStateOf("ali")
+    /** 这次用的是手机自带识别（选了它，或选的那家没填 Key） */
+    private var sysMode = false
     /** 你这句话的实时字幕（边说边出）；发出去后清空 */
     var partial by mutableStateOf("")
     /** 刚发出去的那句和发出时刻：字幕上浮淡出用 */
@@ -118,7 +119,8 @@ object Talk {
         app = ctx.applicationContext
         // v2：默认本地识别（以前存的「手机识别」在很多国产机上不能用，一律换过来，你想用再切回去）
         val sp = app.getSharedPreferences("voice", Context.MODE_PRIVATE)
-        src = sp.getString("src2", "local") ?: "local"
+        src = (sp.getString("src2", "ali") ?: "ali").let { s -> if (SRCS.any { it.first == s }) s else "ali" }   // 以前的「本地识别」去掉了
+        main.launch(Dispatchers.IO) { Ear.purge(app) }
         slow = sp.getFloat("slow", 1f).toDouble().coerceIn(1.0, 1.6)
         aliKey = sp.getString("ali", "") ?: ""
     }
@@ -143,9 +145,9 @@ object Talk {
         if (open) { stopMic(); startMic() }
     }
 
-    fun label() = SRCS.firstOrNull { it.first == src }?.second ?: "本地识别"
+    fun label() = SRCS.firstOrNull { it.first == src }?.second ?: "阿里实时"
     /** 识别来源旁边的小字：本地 = 离线，云端 = 云 */
-    fun tag() = when (src) { "local" -> "离线"; "sense", "whisper", "ali" -> "云"; else -> "" }
+    fun tag() = when (src) { "sense", "whisper", "ali" -> "云"; else -> "" }
 
     fun start() {
         open = true; muted = false; note = ""; partial = ""; sent = ""
@@ -163,7 +165,7 @@ object Talk {
     fun toggleMute() {
         muted = !muted
         partial = ""
-        if (muted) { hearing = false; stopRecognizer() } else if (src == "system") listenSystem()
+        if (muted) { hearing = false; stopRecognizer() } else if (sysMode) listenSystem()
     }
 
     fun say(t: String) { note = t; main.launch { delay(2800); if (note == t) note = "" } }
@@ -172,29 +174,18 @@ object Talk {
     fun busy(chatBusy: Boolean) = chatBusy || Speech.playing.isNotEmpty() || Speech.loading.isNotEmpty() || transcribing
 
     private fun startMic() {
-        if (src == "system") {
-            if (SpeechRecognizer.isRecognitionAvailable(app)) { sysFails = 0; listenSystem(); return }
-            say("这台手机没有语音识别服务，已改用本地识别"); src = "local"
+        sysMode = false
+        if (src == "system" || (!aliOn() && cloud() == null)) {
+            if (src != "system") say("${label()} 的 Key 没填（我的 › 语音），先用手机识别")
+            if (SpeechRecognizer.isRecognitionAvailable(app)) { sysMode = true; sysFails = 0; listenSystem(); return }
+            say("这台手机没有语音识别服务，去「我的 › 语音」填阿里百炼 Key"); return
         }
-        if (src != "local" && cloud() == null && !aliOn()) say("${label()} 的 Key 没填（我的 › 语音），先用本地识别")
         startRecorder()
-        if (!aliOn()) ensureModel()      // 阿里实时自己出字，不为它下 237MB；本地模型已经有就留着兜底
-    }
-
-    /** 本地模型没下就下（云端识别时也下：字幕和兜底都靠它） */
-    private fun ensureModel() {
-        if (Ear.ready(app) || Ear.progress >= 0f) return
-        main.launch {
-            if (open) say("第一次用，下载本地识别模型（237MB）")
-            try { Ear.fetch(app); if (open) say("识别装好了，不联网也能听") }
-            catch (e: Exception) { if (open) say(e.message ?: "识别模型下载失败") }
-        }
     }
 
     private fun stopMic() {
         running = false; thread = null
         stopRecognizer()
-        earDrop()
         hearing = false; level = 0f; bands.fill(0f)
         if (::app.isInitialized) app.getSharedPreferences("voice", Context.MODE_PRIVATE).edit().putFloat("slow", slow.toFloat()).apply()
     }
@@ -215,7 +206,7 @@ object Talk {
     /** 系统识别：空闲（不在说、不在等她）时开一轮；结束或出错后由 [tick] 再开 */
     fun tick(chatBusy: Boolean) {
         if (Speech.playing.isNotEmpty()) spoke = true
-        if (!open || muted || src != "system" || recBusy || busy(chatBusy)) return
+        if (!open || muted || !sysMode || recBusy || busy(chatBusy)) return
         listenSystem()
     }
 
@@ -263,11 +254,11 @@ object Talk {
                         val held = sysHeld; val job = sysJob
                         rec?.let { runCatching { it.destroy() } }; rec = null
                         if (sysFresh) { sysJob = null; sysHeld = ""; job?.cancel(); if (held.isNotEmpty()) deliver(held, sysCont); sysCont = false; sysBroken("手机识别出错（$e）") }
-                        else main.launch { delay(300); if (open && !muted && src == "system") listenSystem() }
+                        else main.launch { delay(300); if (open && !muted && sysMode) listenSystem() }
                     }
                     // 12 / 13：端侧识别没这门语言或没下语言包，换普通的
                     12, 13 -> { rec?.let { runCatching { it.destroy() } }; rec = null
-                        if (!noOnDevice) { noOnDevice = true; main.launch { delay(200); if (open && !muted && src == "system") listenSystem() } } else sysBroken("手机识别不支持中文") }
+                        if (!noOnDevice) { noOnDevice = true; main.launch { delay(200); if (open && !muted && sysMode) listenSystem() } } else sysBroken("手机识别不支持中文") }
                     SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> say("没有麦克风权限")
                     SpeechRecognizer.ERROR_NETWORK, SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> sysBroken("手机识别要联网")
                     else -> sysBroken("手机识别出错（$e）")
@@ -302,12 +293,12 @@ object Talk {
         runCatching { r.startListening(i) }.onFailure { recBusy = false; sysBroken("手机识别打不开") }
     }
 
-    /** 手机识别连着坏两次：说清楚，换本地识别（这一次不改你存的选择以外的东西） */
+    /** 手机识别连着坏两次：有百炼 Key 就换阿里实时，没有就说去哪填 */
     private fun sysBroken(why: String) {
         if (++sysFails < 2) return
-        stopRecognizer()
-        say("$why，已改用本地识别")
-        main.launch { useSrc("local") }
+        stopRecognizer(); sysMode = false
+        if (aliKey.isNotBlank()) { say("$why，已改用阿里实时"); main.launch { useSrc("ali") } }
+        else say("$why，去「我的 › 语音」填阿里百炼 Key 用阿里实时")
     }
 
     /* ---------------- 自己录音：Silero VAD + 本地流式识别（+ 可选云端识别） ---------------- */
@@ -361,6 +352,10 @@ object Talk {
     } }
 
     /** 选了云端且有 Key：(地址, Key, 模型)；否则 null（走本地） */
+    /** 硅基流动 SenseVoice（有 Key 才有）：阿里失败时兜底 */
+    private fun sense(): Triple<String, String, String>? =
+        Triple(Speech.baseOf("siliconflow").ifBlank { "https://api.siliconflow.cn/v1" }, Speech.keyOf("siliconflow"), "FunAudioLLM/SenseVoiceSmall").takeIf { it.second.isNotBlank() }
+
     private fun cloud(): Triple<String, String, String>? {
         val sense = Triple(Speech.baseOf("siliconflow").ifBlank { "https://api.siliconflow.cn/v1" }, Speech.keyOf("siliconflow"), "FunAudioLLM/SenseVoiceSmall")
         val whisper = Triple(Speech.baseOf("openai").ifBlank { "https://api.openai.com/v1" }, Speech.keyOf("openai"), "whisper-1")
@@ -369,33 +364,6 @@ object Talk {
             "whisper" -> whisper.takeIf { it.second.isNotBlank() }
             else -> null
         }
-    }
-
-    /** 本地模型的字：中文之间不留空格 */
-    private fun tidy(t: String) = t.trim().replace(Regex("(?<=[\\u4e00-\\u9fff])\\s+(?=[\\u4e00-\\u9fff])"), "")
-
-    /* 本地 SenseVoice：自己一条线程（同一个识别器不能并发；不卡录音线程）。进语音页装上（1–2 秒），出来释放（占 300MB 内存） */
-    private val ear = java.util.concurrent.Executors.newSingleThreadExecutor { Thread(it, "ear").apply { isDaemon = true } }
-    private var earAsr: OfflineRecognizer? = null          // 只在 ear 线程上碰
-    @Volatile private var earOk = false
-    @Volatile private var earLoading = false
-    private fun earLoad() {
-        if (earOk || earLoading || !Ear.ready(app)) return
-        earLoading = true
-        ear.execute {
-            earAsr = runCatching { Ear.recognizer(app) }.onFailure { main.launch { say("本地识别启动失败") } }.getOrNull()
-            earOk = earAsr != null; earLoading = false
-        }
-    }
-    private fun earDrop() { earOk = false; ear.execute { runCatching { earAsr?.release() }; earAsr = null } }
-    /** 在 ear 线程上认一段；没装好返回 null */
-    private fun earRun(pcm: FloatArray): String? = earAsr?.let { r -> runCatching { tidy(Ear.decode(r, pcm, RATE)) }.getOrNull() }
-    private suspend fun earDecode(pcm: FloatArray): String? = kotlinx.coroutines.suspendCancellableCoroutine { c -> ear.execute { val t = earRun(pcm); if (c.isActive) c.resumeWith(Result.success(t)) } }
-
-    private fun floats(pcm: List<ShortArray>): FloatArray {
-        val out = FloatArray(pcm.sumOf { it.size }); var o = 0
-        for (fr in pcm) for (v in fr) out[o++] = v / 32768f
-        return out
     }
 
     @SuppressLint("MissingPermission")
@@ -411,7 +379,6 @@ object Talk {
             val aec = if (AcousticEchoCanceler.isAvailable()) runCatching { AcousticEchoCanceler.create(ar.audioSessionId)?.apply { enabled = true } }.getOrNull() else null
             val ns = if (NoiseSuppressor.isAvailable()) runCatching { NoiseSuppressor.create(ar.audioSessionId)?.apply { enabled = true } }.getOrNull() else null
             val vad = runCatching { Ear.vad(app) }.getOrNull()
-            earLoad()
             val buf = ShortArray(FRAME)
             val f = FloatArray(FRAME)
             val pre = ArrayDeque<ShortArray>()          // 开口前 640ms（Silero 要 0.25 秒才认人声，开头一两个字在这里）
@@ -432,31 +399,16 @@ object Talk {
             var uttCont = false                           // 这句是不是上一句的后半截（起句时定，跟着这句走，不用全局的）
             var rise = 0                                  // 攥着时音量连着高了几帧
             val verdict = java.util.concurrent.atomic.AtomicReference<Pair<Int, Float?>?>(null)
-            // 字幕：本地 SenseVoice 整句重认 / 阿里实时推过来的，都放进 heard（带句号 uid）
+            // 字幕：阿里实时推过来的，放进 heard（带句号 uid，对不上的丢）
             val heard = java.util.concurrent.atomic.AtomicReference<Pair<Int, String>?>(null)
-            val decoding = java.util.concurrent.atomic.AtomicBoolean(false)
-            var lastSubmit = 0L
-            val decMs = java.util.concurrent.atomic.AtomicLong(300L)
+            var lastTextAt = 0L                           // 字上次变的时刻：环境吵、Silero 一直说「有人声」时靠它断句
             var ali: Ali.Session? = null
             Turn.warm(app)
-            /** 能出字吗（本地装好了 / 这句连着阿里） */
-            fun textOn() = earOk || ali != null
-            /** 本地出字幕：上一次认完才送下一次，间隔 ≥ 0.3 秒且不短于上次耗时（长句不至于拖垮） */
-            fun caption(now: Long) {
-                if (ali != null || !earOk || decoding.get() || now - lastSubmit < maxOf(300L, decMs.get())) return
-                decoding.set(true); lastSubmit = now
-                val pcm = floats(utt); val u = uid
-                ear.execute {
-                    val t0 = System.currentTimeMillis()
-                    val t = earRun(pcm)
-                    decMs.set(System.currentTimeMillis() - t0)
-                    if (t != null) heard.set(u to t)
-                    decoding.set(false)
-                }
-            }
+            /** 这句能边说边出字吗（连着阿里） */
+            fun textOn() = ali != null
             /** 起句。[now] = 马上打断她（她出声时你插话、或没法出字）；否则等出了字再打断，免得一点杂音就把她在想的回复掐掉 */
             fun begin(pushPre: Boolean, now: Boolean) {
-                inUtt = true; utt.clear(); cut = now; holdUntil = 0L; seq++; uid++; quiet = 0; lastText = ""; heard.set(null)
+                inUtt = true; utt.clear(); cut = now; holdUntil = 0L; seq++; uid++; quiet = 0; lastText = ""; heard.set(null); lastTextAt = System.currentTimeMillis()
                 // 上一句刚收（不论发没发出去）、她还没开口，你 2.5 秒内又说：多半是一句话被切成了两截
                 uttCont = lastEnd > 0 && !spoke && System.currentTimeMillis() - lastEnd < 2500
                 if (aliOn()) { val u = uid; ali = runCatching { Ali.Session(aliKey) { t -> heard.set(u to t) } }.getOrNull() }
@@ -481,18 +433,20 @@ object Talk {
                 main.launch {
                     hearing = false
                     when {
-                        // 阿里实时：等定稿（最多 4 秒）；没拿到用本地认一遍
+                        // 阿里实时：等定稿（最多 4 秒）；没拿到、有硅基流动 Key 就整句送 SenseVoice 再认
                         s != null -> order.withLock {
                             transcribing = true
                             try {
-                                val t = withContext(Dispatchers.IO) { s.await(4000) }
-                                if (t.isBlank()) s.error?.let { say("$it，这句用本地识别") }
-                                land(t.ifBlank { if (earOk) earDecode(floats(pcm)).orEmpty() else cap }, dur, k)
+                                var t = withContext(Dispatchers.IO) { s.await(4000) }
+                                val err = s.error
+                                if (err != null) log("阿里：$err")
+                                if (t.isBlank() && dur >= .9) sense()?.let { sv -> t = runCatching { withContext(Dispatchers.IO) { asr(wav(pcm), sv) } }.getOrDefault("") }
+                                if (t.isBlank() && err != null) say(err)
+                                land(t, dur, k)
                             } finally { transcribing = false }
                         }
-                        c != null && (cap.isNotBlank() || !earOk || dur >= 1.6) -> transcribe(pcm, c, cap, k)
-                        // 本地：整句定稿（和字幕同一条线程，排在后面）
-                        else -> order.withLock { land(if (earOk) earDecode(floats(pcm)) ?: cap else cap, dur, k) }
+                        c != null && dur >= .9 -> transcribe(pcm, c, cap, k)
+                        else -> partial = ""
                     }
                 }
             }
@@ -512,7 +466,6 @@ object Talk {
                     }
                     level = lv
                     spectrum(buf, n, lv)
-                    if (++n0 % 30 == 0) earLoad()                    // 模型刚下完就接上
                     val frame = buf.copyOf(n)
                     // Silero 判断有没有人声；装不上就退回音量门槛
                     val voice = if (vad != null) {
@@ -540,7 +493,7 @@ object Talk {
                         val calm = System.currentTimeMillis() - herEnd > 600
                         if (calm) { pre.addLast(frame); if (pre.size > 20) pre.removeFirst() } else pre.clear()
                         loud = if (voice && calm) loud + 1 else 0
-                        if (loud >= (if (vad != null) 1 else 3)) begin(true, !(earOk || aliOn()))
+                        if (loud >= (if (vad != null) 1 else 3)) begin(true, !aliOn())
                     } else {
                         utt += frame
                         ali?.send(frame)
@@ -551,14 +504,13 @@ object Talk {
                     quiet = if (voice) 0 else quiet + 1
                     val dur = utt.size * FRAME / RATE.toDouble()
                     if (!textOn()) {
-                        // 没法出字（模型没下好、也没连阿里）：按 VAD 断句（Silero 0.5 秒 + 再静 0.3 秒）
+                        // 不边说边出字（SenseVoice / Whisper 云，或阿里没连上）：按 VAD 断句（Silero 0.5 秒 + 再静 0.3 秒）
                         if (quiet >= (if (vad != null) 10 else 25) || dur > 30) finish()
                         continue
                     }
-                    caption(now)
                     heard.getAndSet(null)?.let { (u, txt) ->
                         if (u == uid && txt != lastText) {
-                            lastText = txt
+                            lastText = txt; lastTextAt = now
                             main.launch { partial = txt }
                             if (!cut && txt.isNotBlank()) { cut = true; main.launch { if (busy(false)) onBarge?.invoke() } }
                         }
@@ -574,11 +526,13 @@ object Talk {
                             log("声音票 " + (p?.let { "%.2f".format(it) } ?: "无") + " 文字票 $tw → 再等 ${w}ms")
                         }
                     }
+                    // 环境吵（风扇、电视）时 Silero 可能一直说「有人声」：字 2.5 秒没变就当停了，别一直干等
+                    val talking = voice && !(lastText.isNotBlank() && now - lastTextAt > 2500)
                     when {
                         dur > 30 -> finish()                                // 一句最长 30 秒
-                        voice -> if (holdUntil > 0) { holdUntil = 0L; seq++; slow = minOf(1.6, slow + .1); log("接着说了") }
+                        talking -> if (holdUntil > 0) { holdUntil = 0L; seq++; slow = minOf(1.6, slow + .1); log("接着说了") }
                         // 刚静下来：先攥着，声音一票回来前最多等 1.5 秒（没有 Silero 时自己数 0.5 秒）
-                        holdUntil == 0L -> if (quiet >= (if (vad != null) 1 else 16)) {
+                        holdUntil == 0L -> if (quiet >= (if (vad != null) 1 else 16) || voice) {
                             log("停顿「$lastText」")
                             val my = ++seq
                             holdUntil = now + 1500
@@ -596,12 +550,12 @@ object Talk {
         thread = t; t.start()
     }
 
-    /** 一句定稿后：有字就发；没字说清楚为什么 */
+    /** 一句定稿后：有字就发；没字也说一声，不让你干等 */
     private fun land(text: String, dur: Double, k: Boolean) {
+        log("定稿「$text」")
         when {
             bare(text).isNotBlank() && !FILLER.matches(bare(text)) -> deliver(text, k)
-            text.isBlank() && !earOk && !aliOn() -> { partial = ""; say(if (Ear.progress >= 0f) "识别模型还在下载，等一下" else "本地识别没装好") }
-            text.isBlank() && dur >= 2.0 -> { partial = ""; say("没听清，再说一遍？") }
+            text.isBlank() && dur >= 1.2 -> { partial = ""; say("没听清，再说一遍？") }
             else -> partial = ""
         }
     }

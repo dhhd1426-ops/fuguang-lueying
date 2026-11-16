@@ -470,20 +470,9 @@ internal fun VoiceControls(chat: ChatState, title: String) {
             }
             Spacer(Modifier.weight(1f))
             VoiceCaption(st, title, Modifier.graphicsLayer { alpha = rise })
-            // 提示（识别失败、没 Key 之类）；本地识别模型下载时显示进度
+            // 提示（识别失败、没 Key 之类）
             Box(Modifier.fillMaxWidth().height(36.dp), contentAlignment = Alignment.Center) {
-                val dl = Ear.progress
-                if (dl >= 0f) Row(Modifier.background(Color(0x1FFFFFFF), RoundedCornerShape(12.dp)).border(.5.dp, Color.White.copy(alpha = .1f), RoundedCornerShape(12.dp))
-                    .padding(horizontal = 14.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Txt("下载本地识别", Color(0xFFC9CFDC), 12.5.sp, maxLines = 1)
-                    Spacer(Modifier.width(10.dp))
-                    Box(Modifier.width(110.dp).height(3.dp).background(Color.White.copy(alpha = .12f), RoundedCornerShape(2.dp))) {
-                        Box(Modifier.fillMaxWidth(dl.coerceIn(0f, 1f)).height(3.dp).background(Brush.horizontalGradient(listOf(Color(0xFF5AA8FF), Color(0xFF8FE0FF))), RoundedCornerShape(2.dp)))
-                    }
-                    Spacer(Modifier.width(10.dp))
-                    Txt("${(dl * Ear.TOTAL / 1048576f).toInt()} / ${(Ear.TOTAL / 1048576f).toInt()}MB", Color(0xFF7F879B), 11.5.sp, maxLines = 1)
-                }
-                val n = if (dl >= 0f) "" else Talk.note
+                val n = Talk.note
                 val na by animateFloatAsState(if (n.isNotEmpty()) 1f else 0f, tween(200), label = "note")
                 if (na > 0f) Txt(n, Color(0xFF141826), 12.5.sp, Modifier.graphicsLayer { alpha = na }
                     .background(Color(0xF5F4F6FB), RoundedCornerShape(12.dp)).padding(horizontal = 14.dp, vertical = 8.dp), maxLines = 1)
