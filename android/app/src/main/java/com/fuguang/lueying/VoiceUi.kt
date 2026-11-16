@@ -90,8 +90,8 @@ private const val MUTED = 3
 private class Rib(c: LongArray, val k: Float, val s: Float, val l: FloatArray, val bias: Float, val tw: Float, val a: Float) {
     val c = c.map { Color(it) }
     /** 声波横向渐变（按屏宽）、光环斜向渐变（按环外接方框），停点和原来的 Brush 一样 */
-    val wave = Grad(floatArrayOf(0f, .3f, .5f, .7f, 1f), arrayOf(this.c[0], this.c[0].copy(alpha = .9f), this.c[1].copy(alpha = .45f), this.c[2].copy(alpha = .9f), this.c[2]))
-    val ring = Grad(floatArrayOf(0f, .5f, 1f), arrayOf(this.c[0], this.c[1], this.c[2]))
+    val wave = StopGrad(floatArrayOf(0f, .3f, .5f, .7f, 1f), arrayOf(this.c[0], this.c[0].copy(alpha = .9f), this.c[1].copy(alpha = .45f), this.c[2].copy(alpha = .9f), this.c[2]))
+    val ring = StopGrad(floatArrayOf(0f, .5f, 1f), arrayOf(this.c[0], this.c[1], this.c[2]))
 }
 
 private val RIBS = listOf(

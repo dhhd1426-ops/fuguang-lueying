@@ -97,7 +97,7 @@ internal class GlowMesh(private val strands: Int, private val pts: Int, private 
 }
 
 /** 多段渐变取色（跟 Brush 的颜色停点一样：未预乘、线性插值、两头夹住） */
-internal class Grad(private val pos: FloatArray, private val argb: Array<androidx.compose.ui.graphics.Color>) {
+internal class StopGrad(private val pos: FloatArray, private val argb: Array<androidx.compose.ui.graphics.Color>) {
     /** 取 t 处颜色：返回 0xRRGGBB，透明度写进 alphaOut[i] */
     fun at(t0: Float, alphaOut: FloatArray, i: Int): Int {
         val t = t0.coerceIn(0f, 1f)
