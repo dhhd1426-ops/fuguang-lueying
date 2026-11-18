@@ -5,6 +5,7 @@ import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
 import androidx.compose.ui.layout.boundsInWindow
 import kotlinx.coroutines.flow.collectLatest
@@ -758,15 +759,21 @@ fun ChatPage(
     androidx.activity.compose.BackHandler(enabled = picker) { picker = false }
     // 左侧菜单：从左边滑出，盖在聊天页上面（聊天页不动，只压暗）；点右边露出的部分收回
     var menu by remember { mutableStateOf(false) }
+    val dressing = Whale.dressing
     var editFly by remember { mutableStateOf<Pair<String, androidx.compose.ui.geometry.Rect>?>(null) }
     var flyHost by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
-    androidx.activity.compose.BackHandler(enabled = menu) { menu = false }
+    androidx.activity.compose.BackHandler(enabled = menu && !dressing) { menu = false }
     LaunchedEffect(Projects.chatTick) { if (Projects.chatTick > 0) menu = false }
+    LaunchedEffect(dressing) { if (dressing) menu = false }
     // 侧栏滑出 320ms：值只在 graphicsLayer 里读，整页只在「开始露出 / 完全收起」时重组
     val menuA = androidx.compose.animation.core.animateFloatAsState(
-        if (menu) 1f else 0f, tween(320, easing = androidx.compose.animation.core.CubicBezierEasing(.2f, .8f, .2f, 1f)), label = "menu",
+        if (menu && !dressing) 1f else 0f,
+        if (dressing) snap() else tween(320, easing = androidx.compose.animation.core.CubicBezierEasing(.2f, .8f, .2f, 1f)),
+        label = "menu",
     )
-    val menuOn by remember { derivedStateOf { menuA.value > 0f } }
+    // 换装面板入场的同一帧移除侧栏及遮罩，不等侧栏动画结束。
+    val menuVisible by remember { derivedStateOf { menuA.value > 0f } }
+    val menuOn = !dressing && menuVisible
     val density = LocalDensity.current
     val ime = WindowInsets.ime
     val imeOpen by remember(density) { derivedStateOf { ime.getBottom(density) > 0 } }
@@ -780,12 +787,12 @@ fun ChatPage(
     }
     // 以前在 SideEffect 里读 chat.draft：每打一个字整页重组。现在在后台跟着这些值，变了才写
     LaunchedEffect(chat) {
-        snapshotFlow { menu || shelf || workOpen != null || thinkOpen || picker || press != null || viewing != null || selectText != null || chat.draft.isNotBlank() || imeOpen || plus.open || chat.atts.isNotEmpty() }
+        snapshotFlow { Whale.dressing || menu || shelf || workOpen != null || thinkOpen || picker || press != null || viewing != null || selectText != null || chat.draft.isNotBlank() || imeOpen || plus.open || chat.atts.isNotEmpty() }
             .collect { Zen.held = it }
     }
     // 鲸鱼娘让路：助理在回复、键盘开着、输入框里有字时不说自己的话；侧栏完全拉开、整页卡片打开时停帧
     LaunchedEffect(chat) { snapshotFlow { chat.busy || imeOpen || chat.draft.isNotBlank() }.collect { Whale.hold("chat", it) } }
-    LaunchedEffect(Unit) { snapshotFlow { menuA.value > .98f || MineCard.open }.collect { Whale.cover(it) } }
+    LaunchedEffect(Unit) { snapshotFlow { (!Whale.dressing && menuA.value > .98f) || MineCard.open }.collect { Whale.cover(it) } }
     // 换装时输入框和对话退下去，主页标志收起
     val dressA by animateFloatAsState(if (Whale.dressing && Whale.active) 1f else 0f, tween(if (Whale.dressing) 320 else 200, easing = androidx.compose.animation.core.CubicBezierEasing(.2f, 0f, 0f, 1f)), label = "dress")
     val menuW = min(width.value * .86f, 340f).dp
@@ -801,7 +808,7 @@ fun ChatPage(
                 .imePadding()
                 .padding(start = side, end = side, top = if (compact) 26.dp else 38.dp, bottom = if (compact) 22.dp else 30.dp),
         ) {
-            ChatHeader(compact, chat.messages.isEmpty() && !chat.busy, false, chat.convId?.let { chat.history.get(it) }, chat.project, onMenu = { menu = true }) { Chats.fresh() }
+            ChatHeader(compact, chat.messages.isEmpty() && !chat.busy, false, chat.convId?.let { chat.history.get(it) }, chat.project, menuEnabled = !dressing, onMenu = { menu = true }) { Chats.fresh() }
             val hello = chat.messages.isEmpty() && !chat.busy
             Box(
                 Modifier.weight(1f).fillMaxWidth()
@@ -945,10 +952,10 @@ fun ChatPage(
 }
 
 @Composable
-private fun ChatHeader(compact: Boolean, empty: Boolean, busy: Boolean, conv: Conv?, project: String?, onMenu: () -> Unit, onNew: () -> Unit) {
+private fun ChatHeader(compact: Boolean, empty: Boolean, busy: Boolean, conv: Conv?, project: String?, menuEnabled: Boolean, onMenu: () -> Unit, onNew: () -> Unit) {
     // 左：侧栏（对话、作品、手记、切换助理、新对话）；右：新对话（照 Claude App），有话了再加一个 ⋮（ConvMenu.kt）
     Box(Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
-        Pressable(onMenu, Modifier.align(Alignment.CenterStart), label = "对话和助理") { pressed ->
+        Pressable(onMenu, Modifier.align(Alignment.CenterStart), enabled = menuEnabled, label = "对话和助理") { pressed ->
             SvgIcon(Ic("M4 6.5h15M4 12h10M4 17.5h13"), if (pressed) Page.ink else Page.ink.copy(alpha = .85f), 22.dp, modifier = Modifier.padding(6.dp))
         }
         // 项目里的对话：正中一枚「项目名」，点了回到这个项目（ProjectsUi.kt）
