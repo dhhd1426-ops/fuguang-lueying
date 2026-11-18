@@ -1631,7 +1631,7 @@ private fun ColumnScope.McpServerScreen(key: String, compact: Boolean, blur: Dp,
         auth == "key" && item != null -> item.url.replace("{key}", keyText.trim())
         else -> url.trim()
     }
-    val canConnect = finalUrl.startsWith("http") && (auth != "key" || keyText.isNotBlank()) && !busy
+    val canConnect = finalUrl.startsWith("http") && (auth != "key" || keyText.isNotBlank())
 
     Title(name.ifBlank { item?.name ?: "新服务" }, compact, onBack = { nav.back() })
     Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()).padding(bottom = 24.dp)) {
@@ -1693,7 +1693,8 @@ private fun ColumnScope.McpServerScreen(key: String, compact: Boolean, blur: Dp,
                         val serverId = existing?.id ?: Mcp.newId()
                         busy = true
                         try {
-                            mcpMorph.run(if (suunto) "等待颂拓授权" else "正在连接", clock = true) {
+                            mcpMorph.run(if (suunto) "等待颂拓授权" else "正在连接", clock = !suunto) {
+                                fail = ""
                                 runCatching {
                                     if (suunto) Mcp.connectSuunto(serverId, uriHandler::openUri)
                                     else Mcp.probe(finalUrl, token.trim())
