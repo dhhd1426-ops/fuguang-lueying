@@ -1502,7 +1502,12 @@ private fun ColumnScope.McpMarketTab(blur: Dp, nav: MineNav) {
     val query = q.trim()
     val isUrl = query.startsWith("http://") || query.startsWith("https://")
     if (isUrl) {
-        Pressable({ nav.screen = "mcp/new?" + java.net.URLEncoder.encode(query, "UTF-8") }, Modifier.fillMaxWidth().padding(bottom = 10.dp), label = "连接这个地址") { pressed ->
+        val destination = if (query.trimEnd('/') == SuuntoOAuth.URL) {
+            Mcp.byCatalog(SuuntoOAuth.ID)?.let { "mcp/${it.id}" } ?: "mcp/new:${SuuntoOAuth.ID}"
+        } else {
+            "mcp/new?" + java.net.URLEncoder.encode(query, "UTF-8")
+        }
+        Pressable({ nav.screen = destination }, Modifier.fillMaxWidth().padding(bottom = 10.dp), label = "连接这个地址") { pressed ->
             Row(
                 Modifier.fillMaxWidth().glass(RoundedCornerShape(20.dp), blur, fill = if (pressed) veil(.08f) else glassFill).padding(horizontal = 16.dp, vertical = 16.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -1542,7 +1547,7 @@ private fun ColumnScope.McpMarketTab(blur: Dp, nav: MineNav) {
                             Spacer(Modifier.width(6.dp))
                             Txt(if (have.enabled) "已连接" else "已关", Page.muted, 12.sp)
                         } else Chip(
-                            when (item.auth) { "key" -> "填 key"; "paste" -> "贴地址"; "bearer" -> "填 token"; else -> "连接" },
+                            when (item.auth) { "key" -> "填 key"; "paste" -> "贴地址"; "bearer" -> "填 token"; "oauth" -> "登录授权"; else -> "连接" },
                             fill = Skin.accent.copy(alpha = .92f), ink = Skin.onAccent,
                         )
                     }
@@ -1606,6 +1611,7 @@ private fun ColumnScope.McpServerScreen(key: String, compact: Boolean, blur: Dp,
     }
     val pasted = if (key.startsWith("new?")) java.net.URLDecoder.decode(key.removePrefix("new?"), "UTF-8") else ""
     val auth = item?.auth ?: "bearer"
+    val suunto = item?.id == SuuntoOAuth.ID
     val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
 
     var name by remember(key) { mutableStateOf(existing?.name ?: item?.name ?: "") }
@@ -1620,7 +1626,11 @@ private fun ColumnScope.McpServerScreen(key: String, compact: Boolean, blur: Dp,
     var okMsg by remember { mutableStateOf("") }
     val mcpMorph = remember { Morph() }
 
-    val finalUrl = if (auth == "key" && item != null) item.url.replace("{key}", keyText.trim()) else url.trim()
+    val finalUrl = when {
+        suunto -> SuuntoOAuth.URL
+        auth == "key" && item != null -> item.url.replace("{key}", keyText.trim())
+        else -> url.trim()
+    }
     val canConnect = finalUrl.startsWith("http") && (auth != "key" || keyText.isNotBlank()) && !busy
 
     Title(name.ifBlank { item?.name ?: "新服务" }, compact, onBack = { nav.back() })
@@ -1634,10 +1644,16 @@ private fun ColumnScope.McpServerScreen(key: String, compact: Boolean, blur: Dp,
             }
         }
 
-        SectionLabel(when (auth) { "key" -> "KEY"; "paste" -> "地址"; else -> "地址与 TOKEN" })
-        when (auth) {
-            "key" -> Field(keyText, { keyText = it }, "粘贴 key", secret = true)
-            "paste" -> Field(url, { url = it }, "粘贴你的 MCP 地址")
+        SectionLabel(if (suunto) "账号授权" else when (auth) { "key" -> "KEY"; "paste" -> "地址"; else -> "地址与 TOKEN" })
+        when {
+            suunto -> Txt(
+                if (busy) "请在浏览器登录颂拓并授权，然后返回助理。"
+                else if (existing != null) "颂拓已连接。授权失效时，可重新登录。"
+                else "用颂拓账号授权。查询结果会发送给当前聊天模型，用于回答你的问题。",
+                Page.muted, 13.sp, lineHeight = 19.sp,
+            )
+            auth == "key" -> Field(keyText, { keyText = it }, "粘贴 key", secret = true)
+            auth == "paste" -> Field(url, { url = it }, "粘贴你的 MCP 地址")
             else -> {
                 Field(url, { url = it }, "https://…")
                 Spacer(Modifier.height(8.dp))
@@ -1663,27 +1679,46 @@ private fun ColumnScope.McpServerScreen(key: String, compact: Boolean, blur: Dp,
         // 连接（第 379 版，原型 V8FnfRLAXjmBryEUQTd4cT 第 2 版）：按钮自己变形——转圈 + 「正在连接」+ 毫秒数 → 「已连上 · N 个工具」或「连不上 · 点我重试」
         Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
             MorphPill(
-                mcpMorph, if (existing == null) "连接" else "重新连接", null,
+                mcpMorph,
+                when {
+                    existing != null -> "重新连接"
+                    suunto -> "登录颂拓并授权"
+                    else -> "连接"
+                },
+                null,
                 onClick = {
                     fail = ""; okMsg = ""
                     scope.launch {
                         var made: McpServer? = null
-                        mcpMorph.run("正在连接", clock = true) {
-                            runCatching { Mcp.probe(finalUrl, token.trim()) }.fold(
-                                { (serverName, list) ->
-                                    tools = list
-                                    if (name.isBlank()) name = item?.name ?: serverName.ifBlank { "MCP 服务" }
-                                    // 精选单说了默认只开哪几个，就照它的；别的全开
-                                    if (existing == null && item != null && item.defaultTools.isNotEmpty()) off = list.map { it.name }.filter { it !in item.defaultTools }.toSet()
-                                    val s = existing ?: McpServer(Mcp.newId(), name, finalUrl, token.trim(), list, off, true, item?.id.orEmpty())
-                                    s.name = name; s.url = finalUrl; s.token = token.trim(); s.tools = list; s.off = off; s.enabled = true
-                                    if (existing == null) Mcp.add(s) else Mcp.save()
-                                    okMsg = "连上了，${list.size} 个工具"
-                                    made = s
-                                    Morph.Ok("已连上", "${list.size} 个工具")
-                                },
-                                { fail = it.message ?: "连不上"; Morph.Bad("连不上") },
-                            )
+                        val serverId = existing?.id ?: Mcp.newId()
+                        busy = true
+                        try {
+                            mcpMorph.run(if (suunto) "等待颂拓授权" else "正在连接", clock = true) {
+                                runCatching {
+                                    if (suunto) Mcp.connectSuunto(serverId, uriHandler::openUri)
+                                    else Mcp.probe(finalUrl, token.trim())
+                                }.fold(
+                                    { (serverName, list) ->
+                                        tools = list
+                                        if (name.isBlank()) name = item?.name ?: serverName.ifBlank { "MCP 服务" }
+                                        // 精选单说了默认只开哪几个，就照它的；别的全开
+                                        if (existing == null && item != null && item.defaultTools.isNotEmpty()) off = list.map { it.name }.filter { it !in item.defaultTools }.toSet()
+                                        val s = existing ?: McpServer(serverId, name, finalUrl, token.trim(), list, off, true, item?.id.orEmpty())
+                                        s.name = name; s.url = finalUrl; s.token = token.trim(); s.tools = list; s.off = off; s.enabled = true
+                                        if (existing == null) Mcp.add(s) else Mcp.save()
+                                        okMsg = "连上了，${list.size} 个工具"
+                                        made = s
+                                        Morph.Ok("已连上", "${list.size} 个工具")
+                                    },
+                                    {
+                                        if (it is kotlinx.coroutines.CancellationException) throw it
+                                        fail = it.message ?: "连不上"
+                                        Morph.Bad("连不上")
+                                    },
+                                )
+                            }
+                        } finally {
+                            busy = false
                         }
                         // 新建的连上了：按钮报完再进它自己的页面
                         if (existing == null) made?.let { nav.screen = "mcp/${it.id}" }
@@ -1727,7 +1762,7 @@ private fun ColumnScope.McpServerScreen(key: String, compact: Boolean, blur: Dp,
 
         if (existing != null) {
             Spacer(Modifier.height(26.dp))
-            Pressable({ Mcp.remove(existing.id); nav.back() }, Modifier.fillMaxWidth(), label = "删除") { pressed ->
+            Pressable({ if (!busy) { Mcp.remove(existing.id); nav.back() } }, Modifier.fillMaxWidth(), label = "删除") { pressed ->
                 Txt("删除这个服务", if (pressed) rose.copy(alpha = .7f) else rose, 14.sp, Modifier.fillMaxWidth().padding(vertical = 12.dp), align = androidx.compose.ui.text.style.TextAlign.Center)
             }
         }

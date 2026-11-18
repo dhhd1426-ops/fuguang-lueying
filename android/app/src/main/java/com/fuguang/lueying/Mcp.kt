@@ -1,9 +1,11 @@
 package com.fuguang.lueying
 
+import android.content.Context
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -86,6 +88,7 @@ class McpCatalogItem(
 )
 
 object Mcp {
+    private lateinit var context: Context
     private lateinit var prefs: Prefs
     val servers = mutableStateListOf<McpServer>()
 
@@ -95,7 +98,8 @@ object Mcp {
 
     private var loaded = false
 
-    fun init(p: Prefs) {
+    fun init(context: Context, p: Prefs) {
+        this.context = context.applicationContext
         prefs = p
         catalog = BUILTIN
         // 页面重建时会再走一遍（进程还在）：读过就不再读，不然每个服务多一份
@@ -114,7 +118,20 @@ object Mcp {
     fun enabled() = servers.filter { it.enabled && it.onTools.isNotEmpty() }
 
     fun add(s: McpServer) { servers.removeAll { it.id == s.id }; servers.add(s); save() }
-    fun remove(id: String) { servers.removeAll { it.id == id }; save() }
+    fun remove(id: String) {
+        if (get(id)?.catalog == SuuntoOAuth.ID) SuuntoOAuth.remove(context, id)
+        servers.removeAll { it.id == id }
+        save()
+    }
+
+    suspend fun connectSuunto(id: String, openBrowser: (String) -> Unit): Pair<String, List<McpTool>> =
+        withContext(Dispatchers.IO) {
+            val credentials = SuuntoOAuth.authorize(openBrowser)
+            val discovered = probe(SuuntoOAuth.URL, credentials.accessToken, managedAuth = true)
+            check(discovered.second.isNotEmpty()) { "颂拓没有返回可用工具，请重新连接" }
+            SuuntoOAuth.save(context, id, credentials)
+            discovered
+        }
 
     fun newId(): String = "m" + java.lang.Long.toString(System.currentTimeMillis(), 36)
 
@@ -130,7 +147,7 @@ object Mcp {
                 )
             }.filter { it.id.isNotBlank() && it.name.isNotBlank() }
         }.getOrNull()
-        if (!list.isNullOrEmpty()) withContext(Dispatchers.Main) { catalog = list }
+        if (!list.isNullOrEmpty()) withContext(Dispatchers.Main) { catalog = list.filterNot { it.id == SuuntoOAuth.ID } + suunto }
     }
 
     /* ---------- 给模型 ---------- */
@@ -154,7 +171,7 @@ object Mcp {
         val s = get(name.substringBefore(SEP)) ?: return@withContext ToolOut("没有这个服务。")
         val tool = name.substringAfter(SEP)
         runCatching {
-            val r = Client(s.url, s.token).call("tools/call", JSONObject().put("name", tool).put("arguments", args))
+            val r = callTool(s, JSONObject().put("name", tool).put("arguments", args))
             val result = r.optJSONObject("result") ?: return@runCatching ToolOut("〈${s.name}〉出错：" + (r.optJSONObject("error")?.optString("message") ?: r.toString().take(300)))
             // content 里把文字拼起来；图片交给模型（能看图的话）
             val texts = ArrayList<String>()
@@ -171,14 +188,28 @@ object Mcp {
             if (texts.isEmpty() && result.has("structuredContent")) texts.add(result.optJSONObject("structuredContent").toString())
             val text = texts.joinToString("\n").ifBlank { if (imgs.isEmpty()) "（没有返回内容）" else "" }
             ToolOut((if (result.optBoolean("isError")) "〈${s.name}〉出错：" else "") + text.take(24_000), imgs)
-        }.getOrElse { ToolOut("〈${s.name}〉连不上：${it.message}") }
+        }.getOrElse {
+            if (it is CancellationException) throw it
+            ToolOut("〈${s.name}〉连不上：${it.message}")
+        }
+    }
+
+    private suspend fun callTool(server: McpServer, params: JSONObject): JSONObject {
+        if (server.catalog != SuuntoOAuth.ID) return Client(server.url, server.token).call("tools/call", params)
+        val token = SuuntoOAuth.accessToken(context, server.id)
+        return try {
+            Client(SuuntoOAuth.URL, token, managedAuth = true).call("tools/call", params)
+        } catch (_: AuthorizationRequired) {
+            val freshToken = SuuntoOAuth.accessToken(context, server.id, rejectedToken = token)
+            Client(SuuntoOAuth.URL, freshToken, managedAuth = true).call("tools/call", params)
+        }
     }
 
     /* ---------- 连接 / 拉工具 ---------- */
 
     /** 连一次，拿回服务名和工具列表；失败抛异常，message 是能看懂的中文。 */
-    suspend fun probe(url: String, token: String): Pair<String, List<McpTool>> = withContext(Dispatchers.IO) {
-        val c = Client(url, token)
+    suspend fun probe(url: String, token: String, managedAuth: Boolean = false): Pair<String, List<McpTool>> = withContext(Dispatchers.IO) {
+        val c = Client(url, token, managedAuth)
         val init = c.initialize()
         val name = init.optJSONObject("result")?.optJSONObject("serverInfo")?.optString("name").orEmpty()
         val r = c.call("tools/list", JSONObject())
@@ -191,8 +222,11 @@ object Mcp {
     }
 
     /** 一次连接：先 initialize，之后每次 call 复用会话。 */
-    private class Client(val url: String, val token: String) {
+    private class AuthorizationRequired : Exception("颂拓授权已失效，请重新连接")
+
+    private class Client(val url: String, val token: String, val managedAuth: Boolean = false) {
         private var session: String? = null
+        private var protocolVersion: String? = null
         private var endpoint: String? = null
         private var inited = false
         private var seq = 0
@@ -204,6 +238,7 @@ object Mcp {
                 .put("capabilities", JSONObject())
                 .put("clientInfo", JSONObject().put("name", "fuguang-lueying").put("version", "1"))))
             if (r.has("error")) throw Exception(r.getJSONObject("error").optString("message", "初始化失败"))
+            if (managedAuth) protocolVersion = r.optJSONObject("result")?.optString("protocolVersion")?.ifBlank { null }
             inited = true
             runCatching { send(JSONObject().put("jsonrpc", "2.0").put("method", "notifications/initialized"), expectReply = false) }
             return r
@@ -218,10 +253,12 @@ object Mcp {
 
         private fun open(u: String, method: String): HttpURLConnection = (URL(u).openConnection() as HttpURLConnection).apply {
             requestMethod = method
+            if (managedAuth) instanceFollowRedirects = false
             connectTimeout = 12_000; readTimeout = 60_000
             setRequestProperty("User-Agent", "fuguang-lueying")
             if (token.isNotBlank()) setRequestProperty("Authorization", if (token.startsWith("Bearer ", true)) token else "Bearer $token")
             session?.let { setRequestProperty("Mcp-Session-Id", it) }
+            protocolVersion?.let { setRequestProperty("MCP-Protocol-Version", it) }
         }
 
         private fun send(msg: JSONObject, expectReply: Boolean = true): JSONObject =
@@ -235,6 +272,14 @@ object Mcp {
             conn.outputStream.use { it.write(msg.toString().toByteArray()) }
             val code = conn.responseCode
             conn.getHeaderField("Mcp-Session-Id")?.let { session = it }
+            if (managedAuth && code == 401) {
+                conn.disconnect()
+                throw AuthorizationRequired()
+            }
+            if (managedAuth && code in 300..399) {
+                conn.disconnect()
+                error("颂拓 MCP 地址返回了重定向")
+            }
             if (code == 202 || !expectReply) { conn.disconnect(); return JSONObject() }
             if (code >= 400) {
                 val err = conn.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
@@ -309,8 +354,14 @@ object Mcp {
 
     private const val KEY = "mcp-servers"
 
+    private val suunto = McpCatalogItem(
+        SuuntoOAuth.ID, "颂拓 SUUNTO", "查询已同步的运动、睡眠、恢复和路线数据。",
+        "运动", "oauth", SuuntoOAuth.URL, "查看颂拓连接指南", "https://mcp.suunto.cn/mcpguide",
+    )
+
     /** 内置精选单，和公开仓库 mcp/catalog.json 同一份；仓库里的更新了就以它为准。 */
     val BUILTIN = listOf(
+        suunto,
         McpCatalogItem("amap", "高德地图", "查天气、找地方、路线规划、周边吃喝。她问“附近有什么好吃的”“去机场怎么走”都靠它。", "生活", "key",
             "https://mcp.amap.com/mcp?key={key}", "去高德开放平台申请一个 Web 服务 key（免费）", "https://lbs.amap.com/api/mcp-server/summary",
             listOf("maps_weather", "maps_text_search", "maps_around_search", "maps_direction_transit_integrated", "maps_direction_driving", "maps_geo", "maps_regeocode"),
