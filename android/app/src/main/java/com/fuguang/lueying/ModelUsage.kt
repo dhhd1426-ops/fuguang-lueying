@@ -131,16 +131,23 @@ internal object ModelUsage {
         URI(base.trim()).takeIf { it.scheme.equals("https", true) && it.userInfo == null && (it.port == -1 || it.port == 443) }?.host?.lowercase()
     }.getOrNull()
 
-    fun canRefresh(c: ProviderConfig) = c.configured && officialHost(c.base) in setOf("api.deepseek.com", "openrouter.ai")
+    private val accountPaths = mapOf(
+        "api.deepseek.com" to "/user/balance",
+        "openrouter.ai" to "/api/v1/key",
+        "api.moonshot.cn" to "/v1/users/me/balance",
+        "api.moonshot.ai" to "/v1/users/me/balance",
+        "api.siliconflow.cn" to "/v1/user/info",
+    )
+
+    fun canRefresh(c: ProviderConfig) = c.configured && officialHost(c.base) in accountPaths.keys
 
     /** 只向与当前渠道一致的官方 HTTPS 主机发送凭据，账户接口不跟随重定向。 */
     suspend fun refresh(p: Provider, c: ProviderConfig): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching<Unit> {
-            if (!canRefresh(c)) return@runCatching
-            val host = officialHost(c.base)
-            val deepseek = host == "api.deepseek.com"
-            val endpoint = if (deepseek) "https://api.deepseek.com/user/balance" else "https://openrouter.ai/api/v1/key"
-            val conn = URI(endpoint).toURL().openConnection() as HttpURLConnection
+            if (!c.configured) return@runCatching
+            val host = officialHost(c.base) ?: return@runCatching
+            val path = accountPaths[host] ?: return@runCatching
+            val conn = URI("https://$host$path").toURL().openConnection() as HttpURLConnection
             val body = try {
                 conn.instanceFollowRedirects = false
                 conn.connectTimeout = 8000
@@ -149,25 +156,35 @@ internal object ModelUsage {
                 check(conn.responseCode in 200..299) { "无法更新账户额度" }
                 JSONObject(conn.inputStream.bufferedReader().use { it.readText() })
             } finally { conn.disconnect() }
-            val now = System.currentTimeMillis()
-            val account = if (deepseek) {
-                val items = body.optJSONArray("balance_infos") ?: error("供应商未返回余额")
-                val info = (0 until items.length()).mapNotNull { items.optJSONObject(it) }
-                    .firstOrNull { it.optString("currency") in setOf("CNY", "USD") && it.money("total_balance") != null }
-                    ?: error("供应商未返回余额")
-                Account(now, info.getString("currency"), info.money("total_balance")!!)
-            } else {
-                val info = body.optJSONObject("data") ?: error("供应商未返回额度")
-                val limit = info.money("limit")
-                val remaining = info.money("limit_remaining")
-                if (limit != null && remaining != null) Account(now, "USD", remaining, limit, info.optString("limit_reset").takeUnless { it.isBlank() || it == "null" }) else null
-            }
+            val account = decodeAccount(host, body, System.currentTimeMillis())
             val route = accountKey(p, c)
             synchronized(this@ModelUsage) {
                 if (account == null) accounts.remove(route) else accounts[route] = account
                 changes.value++
             }
         }
+    }
+
+    internal fun decodeAccount(host: String, body: JSONObject, now: Long): Account? {
+        if (host == "api.deepseek.com") {
+            val items = body.optJSONArray("balance_infos") ?: error("供应商未返回余额")
+            return (0 until items.length()).asSequence().mapNotNull { items.optJSONObject(it) }.mapNotNull {
+                val currency = it.optString("currency")
+                val balance = it.money("total_balance")
+                if (currency in setOf("CNY", "USD") && balance != null) Account(now, currency, balance) else null
+            }.firstOrNull() ?: error("供应商未返回余额")
+        }
+        val data = body.optJSONObject("data") ?: error("供应商未返回账户数据")
+        if (host == "openrouter.ai") {
+            val limit = data.money("limit") ?: return null
+            val remaining = data.money("limit_remaining") ?: error("供应商未返回剩余额度")
+            val period = data.optString("limit_reset").takeUnless { it.isBlank() || it == "null" }
+            return Account(now, "USD", remaining, limit, period)
+        }
+        val field = if (host == "api.siliconflow.cn") "totalBalance" else "available_balance"
+        val currency = data.optString("currency").takeIf { it == "USD" || it == "CNY" }
+            ?: if (host == "api.moonshot.ai") "USD" else "CNY"
+        return Account(now, currency, data.money(field) ?: error("供应商未返回余额"))
     }
 
     private fun JSONObject.money(key: String) = optString(key).toDoubleOrNull()?.takeIf { it.isFinite() }
