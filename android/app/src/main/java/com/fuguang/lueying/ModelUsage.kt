@@ -24,7 +24,7 @@ internal object ModelUsage {
 
     data class Tokens(val input: Long?, val output: Long?)
     data class Totals(val requests: Long, val input: Long, val output: Long, val incomplete: Long)
-    data class Rate(val name: String, val limit: Long, val remaining: Long, val reset: Long?, val observed: Long) {
+    data class Rate(val name: String, val limit: Long, val remaining: Long, val reset: Long?, val observed: Long, val isToken: Boolean) {
         val fraction: Float get() = ((limit - remaining).toDouble() / limit).toFloat().coerceIn(0f, 1f)
     }
     data class Account(
@@ -36,7 +36,10 @@ internal object ModelUsage {
     ) {
         val fraction: Float? get() = limit?.takeIf { it > 0 }?.let { ((it - remaining) / it).toFloat().coerceIn(0f, 1f) }
     }
-    data class Snapshot(val totals: Totals, val rates: List<Rate>, val account: Account?)
+    data class Snapshot(val totals: Totals, val rates: List<Rate>, val account: Account?) {
+        val tokenRates get() = rates.filter { it.isToken }
+        val entryTokenRate get() = tokenRates.firstOrNull { it.name == "Token" } ?: tokenRates.maxByOrNull { it.fraction }
+    }
 
     @Synchronized
     fun init(storage: Prefs) {
@@ -105,7 +108,7 @@ internal object ModelUsage {
             val reset = connection.getHeaderField("$claude-reset") ?: connection.getHeaderField("$generic-reset-$field")
             val total = limit?.trim()?.toLongOrNull()?.takeIf { it > 0 } ?: return@mapNotNull null
             val left = remaining?.trim()?.toLongOrNull()?.takeIf { it >= 0 } ?: return@mapNotNull null
-            Rate(name, total, left, resetAt(reset, now), now)
+            Rate(name, total, left, resetAt(reset, now), now, isToken = field != "requests")
         }
         if (values.isEmpty()) return
         synchronized(this) {

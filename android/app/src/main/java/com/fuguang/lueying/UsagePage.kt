@@ -10,6 +10,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
@@ -60,6 +61,21 @@ private fun UsageMeter(fraction: Float, modifier: Modifier = Modifier) {
     }
 }
 
+/** 没有上限时，横条只表达已记录的输入和输出构成。 */
+@Composable
+private fun TokenMix(totals: ModelUsage.Totals, modifier: Modifier = Modifier) {
+    val sum = totals.input.toDouble() + totals.output
+    val inputShare = if (sum > 0) (totals.input / sum).toFloat() else 0f
+    val outputTint = Skin.accent
+    val inputTint = Color(0xFF7FB88A)
+    val description = if (sum > 0) "本机 Token 构成，输入 ${count(totals.input)}，输出 ${count(totals.output)}" else "暂无已记录的 Token"
+    Box(modifier.fillMaxWidth().height(6.dp)
+        .background(if (sum > 0) outputTint else Page.muted.copy(alpha = .18f), RoundedCornerShape(50))
+        .semantics { contentDescription = description }) {
+        if (inputShare > 0f) Box(Modifier.fillMaxWidth(inputShare).fillMaxHeight().background(inputTint, RoundedCornerShape(50)))
+    }
+}
+
 @Composable
 private fun rememberUsage(p: Provider, config: ProviderConfig, model: String, now: Long): ModelUsage.Snapshot {
     val route = remember(p.id, config.base, config.key) { ModelUsage.accountKey(p, config) }
@@ -82,19 +98,19 @@ internal fun MineUsageRow(store: AssistantStore, t: Float, onOpen: () -> Unit) {
             ModelUsage.refresh(p, config)
         }
     }
-    val account = snapshot.account
-    val rate = snapshot.rates.maxByOrNull { it.fraction }
-    val fraction = account?.fraction ?: rate?.fraction
+    val tokenRate = snapshot.entryTokenRate
+    val totals = snapshot.totals
     val detail = when {
-        account?.fraction != null -> "${periodTitle(account.period)} · ${percent(account.fraction!!)}"
-        rate != null -> "${rate.name} · ${percent(rate.fraction)}"
-        account != null -> "账户余额 ${money(account.currency, account.remaining)}"
         !config.configured -> "尚未配置模型"
-        else -> "最近 7 天 · ${count(snapshot.totals.requests)} 次请求"
+        tokenRate != null -> "${tokenRate.name} · ${percent(tokenRate.fraction)}"
+        totals.input + totals.output > 0 -> "近 7 天 · ${count(totals.input + totals.output)} Token"
+        else -> "暂无 Token 记录"
     }
     Box(Modifier.spot("usage")) {
         MineRow(3, t, "用量", "", onOpen, glyph = { SvgIcon(gauge, Skin.accent, 19.dp) }, subSlot = {
-            if (fraction != null) UsageMeter(fraction, Modifier.padding(top = 3.dp, bottom = 5.dp))
+            val meterPadding = Modifier.padding(top = 3.dp, bottom = 5.dp)
+            if (tokenRate != null) UsageMeter(tokenRate.fraction, meterPadding)
+            else TokenMix(totals, meterPadding)
             Txt(detail, Page.muted, 12.sp, maxLines = 1)
         }) {
             if (config.configured) ProviderLogo(p.id, p.letter, 24.dp)
@@ -143,6 +159,33 @@ internal fun ColumnScope.UsagePage(store: AssistantStore, compact: Boolean, onBa
                 }
             }
         }
+        UsageHeading("Token 用量")
+        val totals = snapshot.totals
+        val tokenRates = snapshot.tokenRates
+        if (tokenRates.isEmpty()) {
+            UsageCard {
+                UsageTitle("本机 Token 构成", "最近 7 天")
+                TokenMix(totals, Modifier.padding(vertical = 8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Txt("输入 ${count(totals.input)}", Color(0xFF7FB88A), 13.sp)
+                    Txt("输出 ${count(totals.output)}", Skin.accent, 13.sp)
+                }
+                Txt(
+                    if (totals.input + totals.output > 0) "按已记录的 Token 构成显示 · 供应商上限未提供"
+                    else "收到模型返回的 Token 数据后，横条会自动更新。",
+                    Page.muted, 12.sp, Modifier.padding(top = 5.dp),
+                )
+            }
+        } else {
+            tokenRates.forEach { rate ->
+                UsageCard {
+                    UsageTitle(rate.name, percent(rate.fraction))
+                    UsageMeter(rate.fraction, Modifier.padding(vertical = 8.dp))
+                    Txt("剩余 ${count(rate.remaining)} / ${count(rate.limit)} · ${resetLabel(rate.reset, now)}", Page.muted, 12.sp)
+                }
+                Spacer(Modifier.height(6.dp))
+            }
+        }
         if (!config.configured) {
             Spacer(Modifier.height(12.dp))
             Txt("配置模型后会自动记录用量。", Page.muted, 13.sp)
@@ -173,9 +216,10 @@ internal fun ColumnScope.UsagePage(store: AssistantStore, compact: Boolean, onBa
                 }
             }
         }
-        if (snapshot.rates.isNotEmpty()) {
-            UsageHeading("API 速率限制")
-            snapshot.rates.forEach { rate ->
+        val requestRates = snapshot.rates.filterNot { it.isToken }
+        if (requestRates.isNotEmpty()) {
+            UsageHeading("API 请求速率")
+            requestRates.forEach { rate ->
                 UsageCard {
                     UsageTitle(rate.name, percent(rate.fraction))
                     UsageMeter(rate.fraction, Modifier.padding(vertical = 8.dp))
@@ -186,7 +230,6 @@ internal fun ColumnScope.UsagePage(store: AssistantStore, compact: Boolean, onBa
             Txt("根据最近一次模型请求的响应头显示。", Page.muted, 12.sp, Modifier.padding(start = 2.dp))
         }
         UsageHeading("本机用量 · 最近 7 天")
-        val totals = snapshot.totals
         UsageCard {
             UsageTitle("模型请求", "${count(totals.requests)} 次")
             Spacer(Modifier.height(8.dp))
