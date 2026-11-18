@@ -580,6 +580,9 @@ object ChatApi {
         val url = if (anthropic) trim(c.base) + "/messages"
         else trim(c.base) + c.path.trim().let { if (it.startsWith("/")) it else "/$it" }
         val conn = URL(url).openConnection() as HttpURLConnection
+        val usageKey = ModelUsage.modelKey(ModelUsage.accountKey(p, c), c, model)
+        var accepted = false
+        var usage = ModelUsage.Tokens(null, null)
         try {
             conn.requestMethod = "POST"
             conn.connectTimeout = 15_000
@@ -603,17 +606,24 @@ object ChatApi {
             } else if (p.id == "deepseek") body.put("thinking", JSONObject().put("type", "disabled"))
             ModelFit.strip(p.id, model, body)
             conn.outputStream.use { it.write(body.toString().toByteArray()) }
-            if (conn.responseCode !in 200..299) {
+            val code = conn.responseCode
+            accepted = code in 200..299
+            if (accepted || code == 429) runCatching { ModelUsage.receiveLimits(usageKey, conn) }
+            if (!accepted) {
                 val err = runCatching { conn.errorStream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() } }.getOrNull().orEmpty()
                 if (QwenSearch.audited(err)) throw IllegalStateException(QwenSearch.AUDIT)
                 throw IllegalStateException("记忆整理失败（${conn.responseCode}）")
             }
             val o = JSONObject(conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() })
+            usage = ModelUsage.merge(usage, o.optJSONObject("usage"), anthropic)
             if (anthropic) {
                 val arr = o.optJSONArray("content") ?: JSONArray()
                 (0 until arr.length()).mapNotNull { arr.optJSONObject(it) }.filter { it.optString("type") == "text" }.joinToString("") { it.optString("text") }
             } else o.optJSONArray("choices")?.optJSONObject(0)?.optJSONObject("message")?.optString("content").orEmpty()
-        } finally { runCatching { conn.disconnect() } }
+        } finally {
+            if (accepted) runCatching { ModelUsage.record(usageKey, usage) }
+            runCatching { conn.disconnect() }
+        }
     }
 
     /** 能一起并发着做的工具（只读、不问人）。 */
@@ -679,6 +689,9 @@ object ChatApi {
         // DeepSeek 把工具调用写进正文时（DSML 标记）：不显示，抠出来照样去做
         val inline = ToolText()
         val boundary = StreamBoundary()
+        val usageKey = ModelUsage.modelKey(ModelUsage.accountKey(p, c), c, model)
+        var accepted = false
+        var usage = ModelUsage.Tokens(null, null)
         try {
             conn.requestMethod = "POST"
             conn.connectTimeout = 15_000
@@ -722,6 +735,8 @@ object ChatApi {
             conn.outputStream.use { it.write(body.toString().toByteArray()) }
 
             val code = conn.responseCode
+            accepted = code in 200..299
+            if (accepted || code == 429) runCatching { ModelUsage.receiveLimits(usageKey, conn) }
             if (code in 200..299) tools?.onEffort?.let { report -> withContext(Dispatchers.Main) { report(lv.takeIf { sentThink && !ModelFit.drops(p.id, model, "think") }) } }
             val err = if (code !in 200..299) conn.errorStream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() } ?: "" else ""
             if (QwenSearch.audited(err)) throw IllegalStateException(QwenSearch.AUDIT)
@@ -760,6 +775,9 @@ object ChatApi {
                     val o = runCatching { JSONObject(data) }.getOrNull() ?: continue
                     if (!anthropic && o.optJSONObject("error") != null)
                         throw IllegalStateException("模型服务返回流式错误，已保留收到的内容")
+                    val reported = if (anthropic && o.optString("type") == "message_start")
+                        o.optJSONObject("message")?.optJSONObject("usage") else o.optJSONObject("usage")
+                    if (reported != null) usage = ModelUsage.merge(usage, reported, anthropic)
                     if (anthropic) {
                         when (o.optString("type")) {
                             "message_stop" -> boundary.stop()
@@ -868,6 +886,7 @@ object ChatApi {
             throw IllegalStateException("连接中断：" + (e.message ?: e.javaClass.simpleName).take(60))
         } finally {
             closer.cancel()
+            if (accepted) runCatching { ModelUsage.record(usageKey, usage) }
             runCatching { conn.disconnect() }
         }
     }

@@ -29,6 +29,7 @@ class MainActivity : ComponentActivity() {
         ClockTools.init(this)
         Yiyan.init(this)
         val prefs = Prefs(this)
+        ModelUsage.init(prefs)
         Yu.init(this)
         Works.init(this)
         ArtworkJob.init(this)

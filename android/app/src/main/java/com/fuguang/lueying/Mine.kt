@@ -118,7 +118,7 @@ class MineNav {
             screen == "memprompt" -> "memmodel"
             screen == "memcatalog" -> "memories"
             screen == "fold" -> "persona"
-            screen == "features" -> "mine"
+            screen == "features" || screen == "usage" -> "mine"
             screen == "theme" -> "mine"
             screen.startsWith("mcp/") -> "mcp"
             screen == "mcp" -> "mine"
@@ -138,6 +138,7 @@ internal fun ColumnScope.MineSub(store: AssistantStore, screen: String, compact:
         screen == "persona" -> Memory.get(nav.persona)?.let { PersonaScreen(store, it, compact, blur, nav) } ?: AssistantScreen(compact, blur, nav)
         screen == "providers" -> ProvidersScreen(store, compact, blur, nav)
         screen.startsWith("provider/") -> ProviderScreen(store, provider(screen.removePrefix("provider/")), compact, blur, nav)
+        screen == "usage" -> UsagePage(store, compact) { nav.back() }
         screen == "mcp" -> McpScreen(compact, blur, nav)
         screen.startsWith("mcp/") -> McpServerScreen(screen.removePrefix("mcp/"), compact, blur, nav)
         screen.startsWith("letter/") -> {

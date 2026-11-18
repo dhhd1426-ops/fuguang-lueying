@@ -82,7 +82,7 @@ private val warmInk: Color get() = Skin.onAccent
 /** 页面深度：往深处走新页从右边进，往回走从左边进。 */
 private fun depth(s: String) = when {
     s == "mine" -> 0
-    s == "assistant" || s == "mcp" || s == "about" || s == "features" || s == "theme" || s == "whale" || s == "voice" -> 1
+    s == "assistant" || s == "usage" || s == "mcp" || s == "about" || s == "features" || s == "theme" || s == "whale" || s == "voice" -> 1
     s == "persona" || s == "voice/api" || s.startsWith("mcp/") || s == "search" || s == "skills" || s == "gallery" -> 2
     s.startsWith("search/") || s.startsWith("skills/") || s.startsWith("gallery/") -> 3
     s == "providers" || s == "memories" || s == "fold" -> 3
@@ -107,7 +107,7 @@ fun MineCardLayer(store: AssistantStore, nav: MineNav) {
     ) { screen, rise ->
         when (screen) {
             "mine" -> Column(Modifier.widthIn(max = 560.dp).fillMaxSize().verticalScroll(rememberScrollState())) {
-                MineCardBody(rise, { nav.screen = it }) { x ->
+                MineCardBody(store, rise, { nav.screen = it }) { x ->
                     SpotFlash.set(x.key)
                     when {
                         x.tab >= 0 -> nav.open(Memory.activeId, x.tab)
@@ -133,7 +133,7 @@ fun MineCardLayer(store: AssistantStore, nav: MineNav) {
 }
 
 @Composable
-private fun MineCardBody(t: Float, onGo: (String) -> Unit, onSpot: (SettingSpot) -> Unit) {
+private fun MineCardBody(store: AssistantStore, t: Float, onGo: (String) -> Unit, onSpot: (SettingSpot) -> Unit) {
     val me = Memory.userName.trim()
     var searching by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
@@ -156,12 +156,12 @@ private fun MineCardBody(t: Float, onGo: (String) -> Unit, onSpot: (SettingSpot)
         if (on) SearchResults(query, { query = it }) { x ->
             searching = false; query = ""
             if (x.screen == "mine") SpotFlash.set(x.key) else onSpot(x)
-        } else Column { MineCardList(t, onGo) }
+        } else Column { MineCardList(store, t, onGo) }
     }
 }
 
 @Composable
-private fun MineCardList(t: Float, onGo: (String) -> Unit) {
+private fun MineCardList(store: AssistantStore, t: Float, onGo: (String) -> Unit) {
     MineRow(1, t, "助理", "", { onGo("assistant") }, glyph = { SvgIcon(person, warm, 19.dp) }) {
         PersonaDot(Memory.active, 20.dp)
         Spacer(Modifier.width(6.dp))
@@ -175,6 +175,8 @@ private fun MineCardList(t: Float, onGo: (String) -> Unit) {
         Spacer(Modifier.width(4.dp))
         SvgIcon(chevron, Page.muted.copy(alpha = .6f), 15.dp, stroke = 1.8f)
     }
+    Spacer(Modifier.height(6.dp))
+    MineUsageRow(store, t) { onGo("usage") }
     Txt("连接器", Page.muted, 11.sp, Modifier.padding(start = 8.dp, top = 14.dp, bottom = 8.dp).mineRise(2, t), spacing = ls(2.75f, 11f))
     Column(Modifier.spot("yu")) { MineYuRow(3, t) }
     Spacer(Modifier.height(6.dp))
