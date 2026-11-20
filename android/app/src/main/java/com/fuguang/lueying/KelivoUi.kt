@@ -8,6 +8,7 @@ import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.horizontalScroll
@@ -333,7 +334,7 @@ fun KSlider(value: Float, min: Float, max: Float, step: Float, onChange: (Float)
         Modifier.fillMaxWidth().height(44.dp).onSizeChanged { w = it.width.toFloat().coerceAtLeast(1f) }
             .pointerInput(min, max, step) { detectTapGestures { onChange(at(it.x)) } }
             .pointerInput(min, max, step) {
-                androidx.compose.foundation.gestures.detectHorizontalDragGestures(onDragStart = { dragging = true; onChange(at(it.x)) }, onDragEnd = { dragging = false }, onDragCancel = { dragging = false }) { ch, _ -> ch.consume(); onChange(at(ch.position.x)) }
+                detectHorizontalDragGestures(onDragStart = { dragging = true; onChange(at(it.x)) }, onDragEnd = { dragging = false }, onDragCancel = { dragging = false }) { ch, _ -> ch.consume(); onChange(at(ch.position.x)) }
             },
         contentAlignment = Alignment.CenterStart,
     ) {
