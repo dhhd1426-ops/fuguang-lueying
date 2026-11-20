@@ -43,6 +43,10 @@ class MainActivity : ComponentActivity() {
         Projects.init(this)
         ThinkTidy.dir = java.io.File(filesDir, "tidy")
         Memory.init(prefs)
+        // 助理设置里照 Kelivo 多出来的那些、世界书（世界书第一次启动时把原来的条目搬过去，要在助理设置之后）
+        AssistantExt.init(prefs)
+        WorldBooks.init(prefs)
+        LocalTools.init(this)
         MemModel.init(prefs)
         FoldModel.init(prefs); CtxWin.init(prefs)
         ArchivedTeamWorks.load(prefs)

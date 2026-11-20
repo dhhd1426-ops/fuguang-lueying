@@ -67,7 +67,7 @@ internal object SettingIndex {
         SettingSpot("topp", "Top P", "我的 › 助理 › 基础 › 回答的手感", "top p 采样 手感", "persona", 0),
         SettingSpot("limit", "上下文消息限制", "我的 › 助理 › 基础 › 回答的手感", "上下文 消息 限制 条数 记几条", "persona", 0),
         SettingSpot("sys", "系统提示词", "我的 › 助理", "系统提示词 提示词 人设 性格 设定 她自己", "persona", 1),
-        SettingSpot("entries", "设定条目", "我的 › 助理 › 系统提示词", "设定条目 条目 世界书 关键词", "persona", 1),
+        SettingSpot("entries", "世界书", "我的 › 世界书", "世界书 设定条目 条目 关键词 lorebook", "worldbook"),
         SettingSpot("cross", "跨聊天回忆", "我的 › 助理 › 记忆", "跨聊天回忆 回忆 以前 历史 翻聊天", "persona", 2),
         SettingSpot("memory", "记忆", "我的 › 助理 › 记忆", "记忆 记住 忘掉 删除记忆 她记得", "persona", 2),
         SettingSpot("fold", "前情", "我的 › 助理 › 记忆", "前情 聊天摘要 摘要 小结 整理 聊太长 上下文", "persona", 2),

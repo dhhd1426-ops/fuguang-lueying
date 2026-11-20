@@ -78,6 +78,11 @@ object Skills {
     }
 
     fun of(pid: String = Memory.active.id): List<Skill> = lists[pid].orEmpty()
+    /** 这位助理这一轮能用的：开着的；助理设置 › 技能里没开「使用全部技能」时，只给勾上的（Kelivo）。 */
+    fun usable(pid: String = Memory.active.id): List<Skill> {
+        val x = AssistantExt.of(pid)
+        return of(pid).filter { it.on && (x.allSkills || it.id in x.skills) }
+    }
     fun get(id: String, pid: String = Memory.active.id) = of(pid).firstOrNull { it.id == id }
     private fun put(pid: String, l: List<Skill>) { lists = lists + (pid to l); save() }
     fun update(s: Skill, pid: String = Memory.active.id) = put(pid, of(pid).map { if (it.id == s.id) s else it })
@@ -135,7 +140,7 @@ object Skills {
     fun specs(): List<ToolSpec> {
         if (!on) return emptyList()
         val l = mutableListOf<ToolSpec>()
-        if (of().any { it.on }) l += ToolSpec(OPEN, "翻开你会的本事，看它怎么做。用得上时先翻开再动手。一次可以翻好几样：names 写几个名字，一起翻开（做设计、写东西这类事，翻两三样相关的比一比）。file 空着是整份说明，也可以翻它附带的文件。",
+        if (usable().isNotEmpty()) l += ToolSpec(OPEN, "翻开你会的本事，看它怎么做。用得上时先翻开再动手。一次可以翻好几样：names 写几个名字，一起翻开（做设计、写东西这类事，翻两三样相关的比一比）。file 空着是整份说明，也可以翻它附带的文件。",
             JSONObject().put("type", "object").put("properties", JSONObject()
                 .put("name", JSONObject().put("type", "string").put("description", "本事的名字（列表里的那个）"))
                 .put("names", JSONObject().put("type", "array").put("items", JSONObject().put("type", "string")).put("description", "一次翻开几样时写这里"))
@@ -152,7 +157,7 @@ object Skills {
     /** 她读到的（只用「你…」）。 */
     fun system(): String {
         val n = Memory.userCall
-        val mine = of().filter { it.on }
+        val mine = usable()
         return buildString {
             if (mine.isNotEmpty()) {
                 append("你会这些本事，用得上时先翻开（$OPEN）看怎么做再动手。做设计、排版、写东西这类事，一次翻开两三样相关的，比一比，各取最好的那一段——这样的版式、那样的配色、另一样的字——融成你自己的一种做法，像中西交融那样浑然一体，别照搬其中一样，也别拼盘：")

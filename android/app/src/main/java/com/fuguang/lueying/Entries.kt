@@ -98,17 +98,7 @@ object Entries {
         val before = HashMap<Int, MutableList<String>>()
         val after = mutableListOf<String>()
         fun at(i: Int, s: String) { before.getOrPut(i) { mutableListOf() } += s }
-        // 不是「一直在」的前后条目，触发了也放进对话开头附近，不动上半段
-        p.entries.filter { fires(it, recent) }.forEach { e ->
-            when {
-                e.pos == "top" || ((e.pos == "before" || e.pos == "after") && !e.always) -> at(users.first(), wrap(e, p))
-                e.pos == "depth" && e.depth == 0 -> after += wrap(e, p)
-                e.pos == "depth" -> {
-                    val idx = (history.size - e.depth).coerceAtLeast(0)
-                    at(users.firstOrNull { it >= idx } ?: lastUser, wrap(e, p))
-                }
-            }
-        }
+        // 条目已经搬去世界书（WorldBooks.kt，照 Kelivo）：这里只放旁白
         if (aside.isNotBlank()) at(lastUser, aside)
         return history.mapIndexed { i, m ->
             val pre = before[i]

@@ -186,6 +186,8 @@ fun FuguangApp(prefs: Prefs, fullscreen: Boolean, setFullscreen: (Boolean) -> Un
                     )
                     Shade(dim = dim / 100f, compact = compact, zen = zen)
                 } else Box(Modifier.fillMaxSize().background(Skin.pageBrush))
+                // 助理设置 › 聊天背景
+                AssistantBackdrop()
             }
         }
 
@@ -242,6 +244,8 @@ fun FuguangApp(prefs: Prefs, fullscreen: Boolean, setFullscreen: (Boolean) -> Un
         // 内置浏览器、下载页：盖在最上面
         // 她替你点网页：在内置浏览器之下，聊天页之上
         WebHandLayer()
+        // 聊天里的世界书、快捷短语弹层（照 Kelivo）
+        ChatSheetsLayer()
         InBrowserLayer()
         ProjectsLayer(chatState.history)
         DownloadsLayer()

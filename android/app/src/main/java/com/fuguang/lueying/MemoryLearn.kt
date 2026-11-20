@@ -43,7 +43,7 @@ object Reflect {
      * 每轮回答完调一次：等对方停手一会儿再回想。期间又说话就重新等；
      * 换到别的对话时，上一段马上回想，不等；上次回看后又聊满 [ROUNDS] 轮，也不等。
      */
-    fun later(conv: String, msgs: List<ChatMsg>, run: suspend (List<ChatMsg>) -> Unit) {
+    fun later(conv: String, msgs: List<ChatMsg>, rounds: Int = ROUNDS, run: suspend (List<ChatMsg>) -> Unit) {
         if (conv.isEmpty()) return
         val from = (upTo[conv] ?: 0).coerceAtMost(msgs.size)
         val window = msgs.subList(maxOf(from, msgs.size - WINDOW), msgs.size).toList()
@@ -53,7 +53,7 @@ object Reflect {
         pendingJob?.cancel()
         if (pendingConv != null && pendingConv != conv && prev != null) scope.launch { runCatching { prev() } }
         pendingConv = conv; pendingRun = block
-        val wait = if (window.count { it.role == "user" } >= ROUNDS) 0L else QUIET
+        val wait = if (window.count { it.role == "user" } >= rounds) 0L else QUIET
         pendingJob = scope.launch {
             delay(wait)
             if (pendingRun === block) { pendingRun = null; pendingConv = null }

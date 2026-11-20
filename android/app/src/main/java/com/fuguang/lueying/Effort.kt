@@ -192,6 +192,9 @@ object Effort {
     /** Anthropic 的 max_tokens：型号自己的输出上限，认不出给 64000。 */
     fun maxOutput(p: Provider, model: String): Int = specOf(p.id, model).maxOutput ?: 64000
 
+    /** max_tokens 用哪个键（OpenAI 新型号、Azure、MiMo 要 max_completion_tokens）。 */
+    fun maxTokensKey(p: Provider, model: String): String = specOf(p.id, model).maxTokensKey
+
     /** 这家收不收 stream_options（Mistral、OpenRouter、LongCat 不收）。 */
     fun streamOptions(p: Provider, model: String): Boolean = specOf(p.id, model).sendStreamOptions
 
@@ -211,6 +214,16 @@ object Effort {
         val on = spec.levels.filter { it.value != OFF && it.value != AUTO }
         val i = on.indexOfFirst { it.value == value }
         return if (i > 0) on[i - 1].value else null
+    }
+
+    /** 助理设置里的思考默认档落到这个型号的档位条上：有就用；没有就取最近的一档（关不掉的型号「关闭」给最低一档）。 */
+    fun fit(spec: EffortSpec, value: String): String? {
+        if (spec.levels.isEmpty()) return null
+        if (spec.levels.any { it.value == value }) return value
+        if (value == OFF) return lightest(spec)
+        val want = ReasoningLevel.of(value) ?: return null
+        return spec.levels.mapNotNull { s -> ReasoningLevel.of(s.value)?.takeIf { explicit(it) }?.let { s.value to it } }
+            .minWithOrNull(compareBy({ kotlin.math.abs(it.second.ordinal - want.ordinal) }, { it.second.ordinal }))?.first
     }
 
     /** 这个型号默认那档；默认是自动、或者没有档位时，给最低的一档（分身、记忆整理用）。 */
