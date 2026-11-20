@@ -63,7 +63,8 @@ class Persona(val id: String, name: String, sys: String) {
     var firstAt by mutableLongStateOf(0L)
     var lastAt by mutableLongStateOf(0L)
     var chats by mutableIntStateOf(0)
-    /** 回答的手感：温度；Top P（topOn 关着就交给供应商默认）；上下文消息限制：一段对话最多几条（0 = 不限）。 */
+    /** 回答的手感：温度、Top P（tempOn / topOn 关着就不带，交给模型默认，照 Kelivo）；上下文消息限制：一段对话最多几条（0 = 不限）。 */
+    var tempOn by mutableStateOf(false)
     var temp by mutableStateOf(.7f)
     var topOn by mutableStateOf(false)
     var top by mutableStateOf(.9f)
@@ -157,7 +158,7 @@ object Memory {
         memOn = o.optBoolean("on", true); lessonsOn = o.optBoolean("lesson", true)
         noteOn = o.optBoolean("note", true); foldOn = o.optBoolean("fold", true)
         firstAt = o.optLong("first"); lastAt = o.optLong("last"); chats = o.optInt("chats")
-        temp = o.optDouble("temp", .7).toFloat(); topOn = o.optBoolean("topOn", false); top = o.optDouble("top", .9).toFloat(); limit = o.optInt("limit", 40)
+        tempOn = o.optBoolean("tempOn", false); temp = o.optDouble("temp", .7).toFloat(); topOn = o.optBoolean("topOn", false); top = o.optDouble("top", .9).toFloat(); limit = o.optInt("limit", 40)
         o.optJSONArray("m")?.let { m -> for (i in 0 until m.length()) items += mem(m.getJSONObject(i)) }
         entries += Entries.read(o.optJSONArray("e")); tidyAt = o.optLong("tidyAt"); tidyChats = o.optInt("tidyChats"); tidyDay = o.optString("tidyDay")
     }
@@ -171,7 +172,7 @@ object Memory {
                 .apply { if (it.kind == Lessons.KIND) put("pv", it.pv).put("sc", it.scene).put("u", it.used).put("f", it.failed).put("ua", it.usedAt) }) }
             a.put(JSONObject().put("id", p.id).put("name", p.name).put("sys", p.sys).put("on", p.memOn).put("lesson", p.lessonsOn).put("note", p.noteOn).put("fold", p.foldOn)
                 .put("first", p.firstAt).put("last", p.lastAt).put("chats", p.chats)
-                .put("temp", p.temp.toDouble()).put("topOn", p.topOn).put("top", p.top.toDouble()).put("limit", p.limit).put("m", m).put("e", Entries.write(p.entries)).put("tidyAt", p.tidyAt).put("tidyChats", p.tidyChats).put("tidyDay", p.tidyDay))
+                .put("tempOn", p.tempOn).put("temp", p.temp.toDouble()).put("topOn", p.topOn).put("top", p.top.toDouble()).put("limit", p.limit).put("m", m).put("e", Entries.write(p.entries)).put("tidyAt", p.tidyAt).put("tidyChats", p.tidyChats).put("tidyDay", p.tidyDay))
         }
         while (seen.size > 300) seen.remove(seen.keys.first())
         val s = JSONObject().apply { seen.forEach { (k, v) -> put(k, v) } }

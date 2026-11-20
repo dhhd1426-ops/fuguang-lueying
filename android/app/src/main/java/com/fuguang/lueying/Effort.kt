@@ -3,9 +3,10 @@ package com.fuguang.lueying
 import org.json.JSONObject
 
 /**
- * 思考档位跟着模型走（照 Claude App：选哪档就原样发哪档，App 不替模型猜）。
- * 每家、每个型号只列它官方真有的档（2026-10 查的官方文档），默认档 = 这家不传参数时的默认。
- * 值：OFF 是关掉思考，其余是发给供应商的原值（low / medium / high / xhigh / max …）。
+ * 深度思考档位（照 Kelivo 2026-11-19 192a6a8 的 reasoning_dialects / reasoning_level_options 移植）。
+ * 档位条：关闭（型号能关才有）→ 自动 → 型号自己有的几档（ModelSpecs 按型号名、供应商地址认）。
+ * 自动 = 不动思考参数，交给型号和供应商的默认；选了某档就按这家的写法写进请求体。
+ * 型号没有选的那档：取最近的一档（一样近取低的）；关不掉的型号选关闭：按它最低的一档发。
  */
 class EffortLevel(val label: String, val value: String)
 
@@ -15,55 +16,78 @@ class EffortSpec(val levels: List<EffortLevel>, val def: Int, val note: String) 
 
 object Effort {
     const val OFF = "off"
+    const val AUTO = "auto"
 
-    private fun lv(vararg v: String) = v.map { EffortLevel(label(it), it) }
+    /** 供应商 id → 这家现在填的地址（中转站按地址认写法）。AssistantStore 启动时接上。 */
+    @Volatile var baseOf: (String) -> String = { provider(it).base }
+
+    fun specOf(providerId: String, model: String): ModelSpec = ModelSpecs.spec(provider(providerId).kind, baseOf(providerId), model.trim())
 
     fun label(v: String) = when (v) {
-        OFF -> "关"; "on" -> "开"; "minimal" -> "极少"; "low" -> "低"; "medium" -> "中"
-        "high" -> "高"; "xhigh" -> "超高"; "max" -> "最高"; else -> v
+        OFF -> "关闭"; AUTO -> "自动"; "on" -> "开启"; "minimal" -> "最低"; "low" -> "低"; "medium" -> "中"
+        "high" -> "高"; "xhigh" -> "极高"; "max" -> "最大"; else -> v
     }
 
-    /** 自己决定想多少、不收档位参数的型号：档位条换成一句话。 */
-    val NONE = EffortSpec(emptyList(), 0, "她自己决定想多少，这个型号不收档位")
+    private fun stop(v: String) = EffortLevel(label(v), v)
 
     fun spec(providerId: String, model: String): EffortSpec {
-        val m = model.trim().lowercase()
-        val kind = provider(providerId).kind
-        return when {
-            kind == "anthropic" || providerId == "claude" -> when {
-                "opus" in m && Regex("opus-5").containsMatchIn(m) -> EffortSpec(lv("low", "medium", "high", "xhigh", "max"), 1, "Opus 一直在想、关不掉，档位定想得多深")
-                "sonnet-5" in m -> EffortSpec(lv("low", "medium", "high", "xhigh", "max"), 2, "Sonnet 只能少想、不能全关")
-                "haiku" in m -> EffortSpec(lv(OFF, "low", "medium", "high", "xhigh", "max"), 2, "Haiku 高及以下能关掉思考")
-                else -> EffortSpec(lv("low", "medium", "high", "xhigh", "max"), 2, "Claude 按档位决定想多深")
-            }
-            providerId == "deepseek" -> EffortSpec(lv(OFF, "low", "high", "max"), 2, "DeepSeek 只有三档：low、high、max，默认 high")
-            providerId == "gemini" -> if ("2.5" in m && "flash" in m) EffortSpec(lv(OFF, "low", "medium", "high"), 3, "Gemini 2.5 Flash 能关掉思考")
-                else EffortSpec(lv("low", "medium", "high"), 2, "Gemini 3 以后关不掉思考，只有三档")
-            providerId == "openai" -> when {
-                m.startsWith("gpt-6") -> EffortSpec(lv("low", "medium", "high", "xhigh"), 1, "GPT-6 不收 none、minimal，默认 medium")
-                m.startsWith("gpt-5") -> EffortSpec(lv("minimal", "low", "medium", "high"), 2, "GPT-5 默认 medium")
-                Regex("^o\\d").containsMatchIn(m) -> EffortSpec(lv("low", "medium", "high"), 1, "o 系列默认 medium")
-                else -> NONE
-            }
-            providerId == "grok" -> if (m.startsWith("grok-4.3")) EffortSpec(lv(OFF, "low", "medium", "high"), 1, "Grok 里只有 4.3 收档位，默认 low") else NONE
-            // 千问：enable_thinking 开关 + thinking_budget 定想多少（百炼 OpenAI 兼容接口，2026-11 查）
-            providerId == "qwen" -> if (Regex("coder|-mt|-vl-|ocr|omni").containsMatchIn(m)) NONE
-                else EffortSpec(lv(OFF, "low", "medium", "high"), 2, "千问按 thinking_budget 定想多少")
-            providerId == "kimi" -> when {
-                m.startsWith("kimi-k3") -> EffortSpec(lv("low", "high", "max"), 2, "Kimi K3 一直在想，默认 max")
-                m.startsWith("kimi-k2") -> EffortSpec(lv(OFF, "on"), 1, "K2 只有开、关，没有深浅")
-                else -> NONE
-            }
-            else -> EffortSpec(lv(OFF, "low", "medium", "high"), 2, "按通用写法发 reasoning_effort")
+        val s = specOf(providerId, model)
+        if (!s.supportsReasoning || s.reasoning.dialect == ReasoningDialect.NONE) return EffortSpec(emptyList(), 0, "这个型号不收思考参数")
+        val stops = buildList {
+            if (s.reasoning.canDisable) add(stop(OFF))
+            add(stop(AUTO))
+            s.reasoning.levels.forEach { add(stop(it.wire)) }
         }
+        val def = stops.indexOfFirst { it.value == s.reasoning.defaultLevel.wire }.takeIf { it >= 0 } ?: stops.indexOfFirst { it.value == AUTO }
+        return EffortSpec(stops, def, "")
     }
 
     /** 这一档实际发了什么，档位条下面那行小字。 */
     fun note(spec: EffortSpec, value: String): String {
         if (spec.levels.isEmpty()) return spec.note
-        val sent = if (value == OFF) "不思考" else "发 $value"
-        return sent + (if (spec.index(value) == spec.def) "（默认）" else "") + " · " + spec.note
+        val dflt = if (spec.index(value) == spec.def) "（默认）" else ""
+        return when (value) {
+            OFF -> "不思考$dflt"
+            AUTO -> "不带思考参数，交给型号默认$dflt"
+            else -> "发 $value$dflt"
+        }
     }
+
+    // ───────── 选的档 → 实际生效的档（resolveReasoning） ─────────
+
+    private class Resolution(val requested: ReasoningLevel, val effective: ReasoningLevel, val budget: Int?)
+
+    private fun explicit(l: ReasoningLevel) = l != ReasoningLevel.AUTO && l != ReasoningLevel.OFF
+
+    private fun lowest(r: ReasoningSpec): ReasoningLevel =
+        r.levels.minByOrNull { it.ordinal } ?: r.budgets.minByOrNull { it.value }?.key ?: ReasoningLevel.MINIMAL
+
+    private fun nearest(want: ReasoningLevel, levels: List<ReasoningLevel>): ReasoningLevel {
+        if (levels.isEmpty() || want in levels) return want
+        var best = levels.first()
+        var bd = kotlin.math.abs(best.ordinal - want.ordinal)
+        for (l in levels.drop(1)) {
+            val d = kotlin.math.abs(l.ordinal - want.ordinal)
+            if (d < bd || (d == bd && l.ordinal < best.ordinal)) { best = l; bd = d }
+        }
+        return best
+    }
+
+    private fun resolve(s: ModelSpec, requested: ReasoningLevel): Resolution {
+        val r = s.reasoning
+        val effective = when {
+            requested == ReasoningLevel.AUTO -> ReasoningLevel.AUTO
+            requested == ReasoningLevel.OFF -> if (r.canDisable) ReasoningLevel.OFF else lowest(r)
+            requested in r.levels || (r.levels.isEmpty() && ModelSpecs.isBudgetDialect(r.dialect)) -> requested
+            else -> nearest(requested, r.levels)
+        }
+        val budget = if (ModelSpecs.isBudgetDialect(r.dialect) && explicit(effective)) r.budgets[effective] ?: ModelSpecs.fixedBudgets[effective] else null
+        return Resolution(requested, effective, budget)
+    }
+
+    private fun level(value: String?) = ReasoningLevel.of(value) ?: ReasoningLevel.AUTO
+
+    // ───────── 写进请求体（applyReasoning） ─────────
 
     /**
      * 按这一家的写法写进请求体。value 为 null：什么思考参数都不带（被拒后退回这一步）。
@@ -71,37 +95,124 @@ object Effort {
      */
     fun apply(p: Provider, model: String, value: String?, body: JSONObject): Boolean {
         if (value == null) return false
-        val m = model.trim().lowercase()
-        when {
-            p.kind == "anthropic" -> {
-                if (value == OFF) body.put("thinking", JSONObject().put("type", "disabled"))
-                else {
-                    body.put("thinking", JSONObject().put("type", "adaptive"))
-                    body.put("output_config", JSONObject().put("effort", value))
-                    // 高档以上要留足长度：思考和正文一起算在 max_tokens 里
-                    if (value == "xhigh" || value == "max") body.put("max_tokens", 64000) else if (value == "high") body.put("max_tokens", 32000)
-                }
-            }
-            p.id == "deepseek" -> if (value == OFF) body.put("thinking", JSONObject().put("type", "disabled"))
-                else body.put("thinking", JSONObject().put("type", "enabled")).put("reasoning_effort", value)
-            p.id == "kimi" && m.startsWith("kimi-k2") -> body.put("thinking", JSONObject().put("type", if (value == OFF) "disabled" else "enabled"))
-            p.id == "qwen" -> if (value == OFF) body.put("enable_thinking", false)
-                else body.put("enable_thinking", true).put("thinking_budget", mapOf("low" to 2048, "medium" to 8000, "high" to 20000)[value] ?: 8000)
-            p.id == "siliconflow" -> if (value == OFF) body.put("enable_thinking", false)
-                else body.put("enable_thinking", true).put("thinking_budget", mapOf("low" to 2048, "medium" to 8000, "high" to 16000)[value] ?: 8000)
-            p.id == "grok" || p.id == "gemini" -> body.put("reasoning_effort", if (value == OFF) "none" else value)
-            else -> { if (value == OFF) return false; body.put("reasoning_effort", value) }
-        }
-        return true
+        val s = specOf(p.id, model)
+        if (!s.supportsReasoning || s.reasoning.dialect == ReasoningDialect.NONE) return false
+        val anthropic = p.kind == "anthropic"
+        val res = resolve(s, level(value))
+        val before = body.toString()
+        if (res.effective == ReasoningLevel.AUTO) autoFlags(body, s.reasoning.dialect)
+        else { strip(body, s.reasoning.dialect); write(body, s, res, anthropic) }
+        return body.toString() != before
     }
 
-    /** 历史回复的思考要原样带回去的：DeepSeek 思考模式带工具、qwen3.8（官方默认 preserve_thinking，少带会报错）。 */
-    fun echoes(p: Provider, model: String) = p.id == "deepseek" || (p.id == "qwen" && model.trim().lowercase().startsWith("qwen3.8"))
+    /** 自动：什么都不拿掉，只补上看得见思考的开关。 */
+    private fun autoFlags(body: JSONObject, d: ReasoningDialect) {
+        when (d) {
+            ReasoningDialect.OPENROUTER -> { val o = body.ensure("reasoning"); if (!o.has("enabled")) o.put("enabled", true) }
+            // Claude 4.7 以后不写 display 就不回思考的字
+            ReasoningDialect.ANTHROPIC_ADAPTIVE, ReasoningDialect.ANTHROPIC_BETWEEN_TOOLS ->
+                if (!body.has("thinking")) body.put("thinking", JSONObject().put("type", "adaptive").put("display", "summarized"))
+            else -> Unit
+        }
+    }
 
-    /** 这一档被拒：往下退一档（关掉的那档不算）；已经是最低一档就返回 null（整个不带思考参数）。 */
+    private fun strip(body: JSONObject, d: ReasoningDialect) {
+        when (d) {
+            ReasoningDialect.OPENAI_EFFORT, ReasoningDialect.OPENAI_RESPONSES, ReasoningDialect.GEMINI_BUDGET, ReasoningDialect.GEMINI_LEVEL -> body.remove("reasoning_effort")
+            ReasoningDialect.OPENROUTER -> { body.remove("reasoning"); body.remove("reasoning_effort") }
+            ReasoningDialect.ANTHROPIC_BUDGET, ReasoningDialect.ANTHROPIC_ADAPTIVE, ReasoningDialect.ANTHROPIC_BETWEEN_TOOLS, ReasoningDialect.ANTHROPIC_EFFORT -> { body.remove("thinking"); body.remove("output_config") }
+            ReasoningDialect.QWEN, ReasoningDialect.SILICONFLOW -> { body.remove("enable_thinking"); body.remove("thinking_budget") }
+            ReasoningDialect.THINKING_TYPE -> { body.remove("thinking"); body.remove("reasoning_effort") }
+            ReasoningDialect.KIMI -> { body.remove("thinking"); body.remove("reasoning_effort"); body.remove("reasoning"); body.remove("output_config") }
+            ReasoningDialect.INTERN -> body.remove("thinking_mode")
+            ReasoningDialect.CHAT_TEMPLATE_KWARGS -> body.optJSONObject("chat_template_kwargs")?.remove("enable_thinking")
+            ReasoningDialect.NONE -> Unit
+        }
+    }
+
+    private fun write(body: JSONObject, s: ModelSpec, res: Resolution, anthropic: Boolean) {
+        val e = res.effective
+        val off = e == ReasoningLevel.OFF
+        val r = s.reasoning
+        fun disabled(type: String = "disabled") = body.put("thinking", JSONObject().put("type", type))
+        when (r.dialect) {
+            ReasoningDialect.OPENAI_EFFORT, ReasoningDialect.OPENAI_RESPONSES ->
+                body.put("reasoning_effort", when (e) { ReasoningLevel.OFF -> "none"; ReasoningLevel.ON -> "high"; else -> e.wire })
+            ReasoningDialect.OPENROUTER -> body.put("reasoning", when {
+                off -> JSONObject().put("enabled", false)
+                r.levels.isNotEmpty() -> JSONObject().put("effort", e.wire)
+                else -> JSONObject().put("enabled", true).apply { res.budget?.let { put("max_tokens", it) } }
+            })
+            ReasoningDialect.ANTHROPIC_BUDGET -> if (off) disabled() else
+                body.put("thinking", JSONObject().put("type", "enabled").put("budget_tokens", maxOf(res.budget ?: 1024, 1024)))
+            ReasoningDialect.ANTHROPIC_ADAPTIVE, ReasoningDialect.ANTHROPIC_BETWEEN_TOOLS ->
+                if (off) disabled(if (r.dialect == ReasoningDialect.ANTHROPIC_BETWEEN_TOOLS) "between_tools" else "disabled")
+                else { body.put("thinking", JSONObject().put("type", "adaptive").put("display", "summarized")); body.put("output_config", JSONObject().put("effort", e.wire)) }
+            ReasoningDialect.ANTHROPIC_EFFORT -> if (off) disabled() else { body.put("thinking", JSONObject().put("type", "enabled")); body.put("output_config", JSONObject().put("effort", e.wire)) }
+            // Gemini 走的是 OpenAI 兼容接口：Kelivo 写原生 generationConfig，这里换成兼容接口认的 reasoning_effort
+            ReasoningDialect.GEMINI_LEVEL -> body.put("reasoning_effort", if (off) "none" else e.wire)
+            ReasoningDialect.GEMINI_BUDGET -> body.put("reasoning_effort", when (e) {
+                ReasoningLevel.OFF -> "none"; ReasoningLevel.MINIMAL, ReasoningLevel.LOW -> "low"; ReasoningLevel.MEDIUM -> "medium"; else -> "high"
+            })
+            ReasoningDialect.QWEN -> when {
+                !r.canDisable -> res.budget?.let { body.put("thinking_budget", it) }
+                off -> body.put("enable_thinking", false)
+                else -> { body.put("enable_thinking", true); if (r.budgets.isNotEmpty()) res.budget?.let { body.put("thinking_budget", it) } }
+            }
+            ReasoningDialect.SILICONFLOW -> if (off) body.put("enable_thinking", false) else res.budget?.let { body.put("thinking_budget", it) }
+            ReasoningDialect.THINKING_TYPE -> if (off) disabled() else {
+                body.put("thinking", JSONObject().put("type", "enabled"))
+                if (r.levels.isNotEmpty()) body.put("reasoning_effort", e.wire)
+            }
+            ReasoningDialect.KIMI -> if (off) disabled() else
+                body.put("thinking", JSONObject().put("type", "enabled").apply { if (r.levels.isNotEmpty()) put("effort", e.wire) })
+            ReasoningDialect.INTERN -> body.put("thinking_mode", !off)
+            ReasoningDialect.CHAT_TEMPLATE_KWARGS -> body.ensure("chat_template_kwargs").put("enable_thinking", !off)
+            ReasoningDialect.NONE -> Unit
+        }
+    }
+
+    private fun JSONObject.ensure(key: String): JSONObject = optJSONObject(key) ?: JSONObject().also { put(key, it) }
+
+    // ───────── 采样（applySamplingPolicy） ─────────
+
+    /** 这个型号这一档不收温度 / Top P 的，从请求体里拿掉。 */
+    fun sampling(p: Provider, model: String, value: String?, body: JSONObject) {
+        val s = specOf(p.id, model)
+        val strip = when (s.sampling) {
+            SamplingPolicy.ALWAYS -> false
+            SamplingPolicy.NEVER -> true
+            SamplingPolicy.ONLY_WHEN_REASONING_OFF -> resolve(s, level(value)).effective != ReasoningLevel.OFF
+        }
+        if (strip) listOf("temperature", "top_p", "top_k", "logprobs", "top_logprobs").forEach { body.remove(it) }
+    }
+
+    // ───────── 其他按型号的默认 ─────────
+
+    /** Anthropic 的 max_tokens：型号自己的输出上限，认不出给 64000。 */
+    fun maxOutput(p: Provider, model: String): Int = specOf(p.id, model).maxOutput ?: 64000
+
+    /** 这家收不收 stream_options（Mistral、OpenRouter、LongCat 不收）。 */
+    fun streamOptions(p: Provider, model: String): Boolean = specOf(p.id, model).sendStreamOptions
+
+    /** 历史回复的思考要不要原样带回去（DeepSeek、Kimi、GLM、MiMo 等）。 */
+    fun echoes(p: Provider, model: String): Boolean {
+        if (p.kind == "anthropic") return false
+        val r = specOf(p.id, model).reasoning
+        // Kelivo 回传 Gemini 的思考走原生接口（thought signature）；这里走 OpenAI 兼容接口，不回传
+        return r.replay != ReplayPolicy.NONE && r.dialect != ReasoningDialect.GEMINI_LEVEL && r.dialect != ReasoningDialect.GEMINI_BUDGET
+    }
+
+    /** 带回去时用哪个字段名。 */
+    fun echoField(p: Provider, model: String): String = specOf(p.id, model).reasoning.replayField.wire
+
+    /** 这一档被拒：往下退一档（关闭、自动不算）；已经是最低一档就返回 null（整个不带思考参数）。 */
     fun lower(spec: EffortSpec, value: String): String? {
-        val on = spec.levels.filter { it.value != OFF }
+        val on = spec.levels.filter { it.value != OFF && it.value != AUTO }
         val i = on.indexOfFirst { it.value == value }
         return if (i > 0) on[i - 1].value else null
     }
+
+    /** 这个型号默认那档；默认是自动、或者没有档位时，给最低的一档（分身、记忆整理用）。 */
+    fun lightest(spec: EffortSpec): String? = spec.levels.firstOrNull { it.value != OFF && it.value != AUTO }?.value
 }

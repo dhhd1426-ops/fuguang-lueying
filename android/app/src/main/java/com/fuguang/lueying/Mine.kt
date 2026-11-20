@@ -430,12 +430,18 @@ private fun ColumnScope.BasicTab(store: AssistantStore, p: Persona, blur: Dp, na
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(3.dp)) {
         // 温度
         Column(Modifier.fillMaxWidth().spot("temp").block(top, blur).padding(horizontal = 18.dp, vertical = 16.dp)) {
+            // 和 Top P 一样：没自己设就不带，交给模型默认（照 Kelivo）
             Row(verticalAlignment = Alignment.Bottom) {
                 Txt("温度", Page.ink, 15.sp, Modifier.weight(1f))
-                Txt(String.format(java.util.Locale.US, "%.2f", p.temp), warm, 18.sp, family = Serif)
+                if (p.tempOn) Pressable({ p.tempOn = false; Memory.save() }, Modifier.padding(end = 6.dp), label = "回到默认") { pr ->
+                    SvgIcon(Ic("M5 12a7 7 0 1 0 2.1-5M5 4.5V8h3.5"), if (pr) Page.ink else Page.muted, 16.dp, stroke = 1.6f)
+                }
+                Txt(if (p.tempOn) String.format(java.util.Locale.US, "%.2f", p.temp) else "默认", if (p.tempOn) warm else Page.muted, 18.sp, family = Serif)
             }
             Spacer(Modifier.height(8.dp))
-            FeelSlider(p.temp, 0f, 2f, .05f, onDone = { Memory.save() }) { p.temp = it }
+            Box(Modifier.graphicsLayer { alpha = if (p.tempOn) 1f else .35f }) {
+                FeelSlider(if (p.tempOn) p.temp else 1f, 0f, 2f, .05f, onDone = { Memory.save() }) { p.temp = it; p.tempOn = true }
+            }
         }
         // Top P
         Column(Modifier.fillMaxWidth().spot("topp").block(mid, blur).padding(horizontal = 18.dp, vertical = 16.dp).animateContentSize()) {

@@ -292,7 +292,7 @@ class ChatState(val history: ConvStore) {
         if (history.lastOrNull()?.files?.any { Attach.isImage(it) } == true) happened += "photo"
         // 思考档位照 Claude App：选哪档就原样发哪档（每个型号各记各的），App 不替模型猜
         val effort = store.effort()
-        ChatApi.temperature = who.temp
+        ChatApi.temperature = if (who.tempOn) who.temp else null
         ChatApi.topP = if (who.topOn) who.top else null
         // 你切走了她也接着回完；回好了、你不在这里，就发通知（Notify.kt）
         val roundAt = System.currentTimeMillis()
@@ -380,7 +380,7 @@ class ChatState(val history: ConvStore) {
                 val sys0 = Prompt.system(who, model0) + Projects.system(this@ChatState.project ?: Projects.of(cur)) + (if (Talk.open) Talk.RULE else "")
                 sentEst = CtxWin.est(sent0) + CtxWin.est(sys0) + CtxWin.est(extra)
                 ChatApi.stream(
-                    p, c, model0, sys0, Entries.weave(who, sent0, Prompt.aside(who, history, who.prevAt) + Lessons.aside(shownLessons, slips) + Recall.note(hits).let { if (it.isEmpty()) "" else "\n$it" } + Fold.note(conv0).let { if (it.isEmpty()) "" else "\n$it" }), effort,
+                    p, c, model0, sys0, Entries.weave(who, sent0, (Lessons.aside(shownLessons, slips) + Recall.note(hits).let { if (it.isEmpty()) "" else "\n$it" } + Fold.note(conv0).let { if (it.isEmpty()) "" else "\n$it" }).trim()), effort,
                     onThink = { thinkText += it; thinking = true; val t = System.currentTimeMillis(); if (thinkAt == 0L) thinkAt = t; thinkEnd = t },
                     onRoundEnd = {
                         if (thinkText.length > (liveSteps.lastOrNull { it.name == THINK_ROUND_END }?.at ?: 0))
@@ -1444,7 +1444,7 @@ private fun ChatInput(
                     ) {
                         Txt(model.ifBlank { "选择模型" }, Page.ink, 12.sp, maxLines = 1)
                         // 关着思考就什么都不写：没有杏色后缀本身就是「不思考」
-                        if (think != null && think != Effort.OFF) Txt(" · " + Effort.label(think), Page.accent, 12.sp, maxLines = 1)
+                        if (think != null && think != Effort.OFF && think != Effort.AUTO) Txt(" · " + Effort.label(think), Page.accent, 12.sp, maxLines = 1)
                     }
                 }
                 Spacer(Modifier.weight(1f))

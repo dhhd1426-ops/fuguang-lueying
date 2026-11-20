@@ -109,7 +109,7 @@ fun ThinkSegment(spec: EffortSpec, value: String?, onChange: (String) -> Unit) {
     val top = n - 1
     // 彩虹（max-rainbow）给每个型号的最高一档：有 max 就是 max，没有就是最后一档（千问的「高」、K2 的「开」…）；只有一档或最高档是「关」就不给
     val maxAt = spec.levels.indexOfFirst { it.value == "max" }.takeIf { it >= 0 }
-        ?: spec.levels.lastIndex.takeIf { it >= 1 && spec.levels[it].value != Effort.OFF } ?: -1
+        ?: spec.levels.lastIndex.takeIf { it >= 1 && spec.levels[it].value != Effort.OFF && spec.levels[it].value != Effort.AUTO } ?: -1
     val names = spec.levels.map { it.label }
     val level = spec.index(value)
     val density = LocalDensity.current
@@ -233,7 +233,7 @@ fun ThinkSegment(spec: EffortSpec, value: String?, onChange: (String) -> Unit) {
                 },
                 contentAlignment = Alignment.CenterEnd,
                 label = "level",
-            ) { i -> val l = spec.levels.getOrNull(i); if (i == maxAt) RainbowWord("max") else Txt(l?.let { if (it.value == Effort.OFF) "不思考" else it.label }.orEmpty(), if (l?.value == Effort.OFF) Page.muted else Page.accent, 13.sp) }
+            ) { i -> val l = spec.levels.getOrNull(i); if (i == maxAt) RainbowWord("max") else Txt(l?.let { it.label }.orEmpty(), if (l?.value == Effort.OFF) Page.muted else Page.accent, 13.sp) }
         }
         Spacer(Modifier.height(12.dp))
         Box(

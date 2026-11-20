@@ -8,6 +8,7 @@ import org.json.JSONObject
  * 发出去被 400 / 422 拒了，就看报错里点名的是哪个参数（思考强度、温度、Top P、工具……），
  * 把它记在「这家 · 这个模型」名下，去掉再发；以后同一个模型一开始就不带它。换了模型从头试。
  * 报错没点名时，交给 ChatApi.stream 原来的逐级退让；退让成功了也记下来。
+ * 型号本来的规矩（收哪些参数）在 ModelSpecs（照 Kelivo）；这里只记真机被拒学到的。
  */
 object ModelFit {
     private const val KEY = "model-fit"
@@ -43,16 +44,8 @@ object ModelFit {
 
     private fun id(provider: String, model: String) = "$provider|${model.trim().lowercase()}"
 
-    /**
-     * 已知的规矩（照 RikkaHub 的模型表、LiteLLM 的 drop_params 那种按型号分的写法）：先按名字认，认不出来再靠报错学。
-     * Grok 4 系列自己会想，不收 reasoning_effort。
-     */
-    private val rules = listOf(
-        Regex("^grok-4") to "think",
-    )
-
     fun drops(provider: String, model: String, what: String): Boolean =
-        map[id(provider, model)]?.contains(what) == true || rules.any { (r, w) -> w == what && r.containsMatchIn(model.trim().lowercase()) }
+        map[id(provider, model)]?.contains(what) == true
 
     /**
      * 思考档位往下退（照 Claude Code：不支持的强度按「不超过它的最高一档」跑）：

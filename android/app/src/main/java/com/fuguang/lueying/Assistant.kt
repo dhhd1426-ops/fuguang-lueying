@@ -130,6 +130,9 @@ class AssistantStore(private val prefs: Prefs) {
         if (recent.isEmpty()) recent.add("$activeProvider|$activeModel")
     }
 
+    // 思考写法按这家现在填的地址认（中转站、自建代理）
+    init { Effort.baseOf = { config(it).base } }
+
     fun config(id: String): ProviderConfig = configs[id] ?: ProviderConfig.default(provider(id))
 
     fun update(id: String, c: ProviderConfig) { configs[id] = c; save() }
@@ -458,9 +461,8 @@ object ChatApi {
         val anthropic = p.kind == "anthropic"
         val msgs = JSONArray()
         if (!anthropic) msgs.put(JSONObject().put("role", "system").put("content", system))
-        // DeepSeek 思考模式下带工具：以前每一条回复的 reasoning_content 都要带回去，没想过的也要带一个空的，
+        // 要回传思考的型号（Kelivo 的 replay：DeepSeek、Kimi、GLM、MiMo…）思考模式下带工具：每一条回复的思考都要带回去，没想过的也要带一个空的，
         // 少一条就 400，然后会退成不带工具再发，她就只能嘴上说「做好了」（作品卡丢失的根子）
-        // qwen3.8 也一样：官方要求历史思考原样回传（preserve_thinking 默认开）
         val echo = Effort.echoes(p, model) && tools != null && effort != Effort.OFF
         // 做事中途收到新消息时，那一段回复可能没有正文：空的不带，免得供应商报错
         // 你发来的照片、文件：最近两条带东西的原样带上，更早的只说一句
@@ -475,7 +477,7 @@ object ChatApi {
                 else -> it.text
             }
             val m = JSONObject().put("role", it.role).put("content", body)
-            if (echo && it.role == "assistant") m.put("reasoning_content", it.think)
+            if (echo && it.role == "assistant") m.put(Effort.echoField(p, model), it.think)
             msgs.put(m)
         } }
         val maxRounds = tools?.maxRounds?.coerceIn(1, 40) ?: MAX_ROUNDS
@@ -499,7 +501,7 @@ object ChatApi {
             // 嘴上说「做好了 / 卡在下面」，这一轮却没真的调用做作品的工具：提醒她一次，接着真的去做
             if (r.calls.isEmpty() && tools != null && round < maxRounds && !nudged && !worked && Claims.saysDone(r.text)) {
                 nudged = true; round++; slips += Lessons.CLAIM
-                if (r.text.isNotBlank()) msgs.put(if (anthropic) JSONObject().put("role", "assistant").put("content", r.blocks) else JSONObject().put("role", "assistant").put("content", r.text).apply { if (Effort.echoes(p, model) && (echo || r.reasoning.isNotEmpty())) put("reasoning_content", r.reasoning) })
+                if (r.text.isNotBlank()) msgs.put(if (anthropic) JSONObject().put("role", "assistant").put("content", r.blocks) else JSONObject().put("role", "assistant").put("content", r.text).apply { if (Effort.echoes(p, model) && (echo || r.reasoning.isNotEmpty())) put(Effort.echoField(p, model), r.reasoning) })
                 msgs.put(JSONObject().put("role", "user").put("content", Claims.NUDGE))
                 continue
             }
@@ -508,7 +510,7 @@ object ChatApi {
                 if (followup != null) {
                     if (r.text.isNotBlank()) msgs.put(if (anthropic) JSONObject().put("role", "assistant").put("content", r.blocks)
                         else JSONObject().put("role", "assistant").put("content", r.text).apply {
-                            if (echo || (Effort.echoes(p, model) && r.reasoning.isNotEmpty())) put("reasoning_content", r.reasoning)
+                            if (echo || (Effort.echoes(p, model) && r.reasoning.isNotEmpty())) put(Effort.echoField(p, model), r.reasoning)
                         })
                     msgs.put(JSONObject().put("role", "user").put("content", followup))
                     round++
@@ -547,7 +549,7 @@ object ChatApi {
                 }
                 val am = JSONObject().put("role", "assistant").put("content", r.text).put("tool_calls", tc)
                 // DeepSeek 思考模式下用工具，要把这一轮的思考原样带回去
-                if (echo || (Effort.echoes(p, model) && r.reasoning.isNotEmpty())) am.put("reasoning_content", r.reasoning)
+                if (echo || (Effort.echoes(p, model) && r.reasoning.isNotEmpty())) am.put(Effort.echoField(p, model), r.reasoning)
                 msgs.put(am)
                 // 工具消息只能放文字，图片另起一条放在后面给模型看
                 val pics = JSONArray()
@@ -598,12 +600,9 @@ object ChatApi {
             msgs.put(JSONObject().put("role", "user").put("content", user))
             val body = JSONObject().put("model", model).put("messages", msgs).put("stream", false)
             if (anthropic) body.put("system", system).put("max_tokens", if (think) maxOf(maxTokens, 16000) else maxTokens)
-            // 记忆模型开了「启用思考」：按这个型号的默认档想（不支持的型号照常不带）；没开就不想，DeepSeek 默认会思考，明确关掉
-            if (think) {
-                val spec = Effort.spec(p.id, model)
-                val lv = spec.levels.getOrNull(spec.def)?.value?.takeIf { it != Effort.OFF } ?: spec.levels.firstOrNull { it.value != Effort.OFF }?.value
-                if (lv != null) Effort.apply(p, model, lv, body)
-            } else if (p.id == "deepseek") body.put("thinking", JSONObject().put("type", "disabled"))
+            // 记忆模型开了「启用思考」：按这个型号的默认档（多半是自动）；没开就关掉（关不掉的型号按它最低一档）
+            val spec = Effort.spec(p.id, model)
+            Effort.apply(p, model, if (think) spec.levels.getOrNull(spec.def)?.value ?: Effort.AUTO else Effort.OFF, body)
             ModelFit.strip(p.id, model, body)
             conn.outputStream.use { it.write(body.toString().toByteArray()) }
             val code = conn.responseCode
@@ -705,17 +704,16 @@ object ChatApi {
             } else conn.setRequestProperty("Authorization", "Bearer " + c.key.trim())
 
             val body = JSONObject().put("model", model).put("messages", msgs).put("stream", true)
-            // 做作品时一整张网页写在工具参数里，留足长度
-            if (anthropic) body.put("system", system).put("max_tokens", 16000)
+            // 做作品时一整张网页写在工具参数里，留足长度：用型号自己的输出上限（Kelivo：认不出给 64000）
+            if (anthropic) body.put("system", system).put("max_tokens", Effort.maxOutput(p, model))
             // 这个模型学到的最高档：超过的按能到的最高一档发
             val spec = Effort.spec(p.id, model)
             val lv = effort?.let { e -> ModelFit.cap(p.id, model)?.takeIf { e != Effort.OFF && spec.index(it) < spec.index(e) } ?: e }
             val sentThink = Effort.apply(p, model, lv, body)
-            // 回答的手感：温度、Top P（Anthropic 想着的时候不能带）
-            if (!(anthropic && lv != null && lv != Effort.OFF)) {
-                temperature?.let { body.put("temperature", it.toDouble()) }
-                topP?.let { body.put("top_p", it.toDouble()) }
-            }
+            // 回答的手感：温度、Top P 只在自己设了时带；这个型号这一档不收的拿掉（Kelivo 的 SamplingPolicy）
+            temperature?.let { body.put("temperature", it.toDouble()) }
+            topP?.let { body.put("top_p", it.toDouble()) }
+            Effort.sampling(p, model, lv, body)
             if (tools != null) {
                 val arr = JSONArray()
                 tools.specs.forEach { t ->
@@ -730,7 +728,7 @@ object ChatApi {
             }
             if (search != null) QwenSearch.apply(body)
             // 要供应商在最后回一下用了多少（Anthropic 本来就回）；不认这个参数的，报错点名后 ModelFit 记下不带
-            if (!anthropic) body.put("stream_options", JSONObject().put("include_usage", true))
+            if (!anthropic && Effort.streamOptions(p, model)) body.put("stream_options", JSONObject().put("include_usage", true))
             ModelFit.strip(p.id, model, body)
             conn.outputStream.use { it.write(body.toString().toByteArray()) }
 
@@ -825,7 +823,9 @@ object ChatApi {
                         val choice = o.optJSONArray("choices")?.optJSONObject(0) ?: continue
                         if (!choice.isNull("finish_reason")) boundary.finish(choice.optString("finish_reason"))
                         val d = choice.optJSONObject("delta") ?: continue
-                        if (!d.isNull("reasoning_content")) d.optString("reasoning_content").takeIf { it.isNotEmpty() }?.let {
+                        // 思考：reasoning_content，没有就看 reasoning（OpenRouter、vLLM、Ollama 用这个；照 Kelivo 的 decoder）
+                        val rk = if (!d.isNull("reasoning_content")) "reasoning_content" else if (d.opt("reasoning") is String) "reasoning" else null
+                        if (rk != null) d.optString(rk).takeIf { it.isNotEmpty() }?.let {
                             reasoning.append(it); withContext(Dispatchers.Main) { onThink(it) }
                         }
                         if (!d.isNull("content")) d.optString("content").takeIf { it.isNotEmpty() }?.let { s ->
