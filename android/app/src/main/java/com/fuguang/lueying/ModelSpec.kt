@@ -2,7 +2,7 @@ package com.fuguang.lueying
 
 /**
  * 每个模型的默认参数（照 Kelivo 2026-11-19 192a6a8 的 model_spec / model_defaults_guesser / vendor_defaults / model_spec_resolver 移植）。
- * 分三层，前面的说了算：供应商地址（VendorDefaults：这家接口认哪种思考写法）→ 型号名（Guess：档位、能不能关、采样、输出上限、思考回传）→ 兜底。
+ * 分三层，前面的说了算：供应商地址（VendorDefaults：这家接口认哪种思考写法）→ 型号名（SpecGuess：档位、能不能关、采样、输出上限、思考回传）→ 兜底。
  * Kelivo 还有一层 models.dev 目录（上下文窗口、价格、目录里的档位），这里先没接。
  * 和 Kelivo 不同的一处：qwen3.8 要回传历史思考（百炼默认 preserve_thinking，少带会 400，第 3xx 版真机踩过）。
  */
@@ -44,7 +44,7 @@ class ModelSpec(
     val supportsReasoning get() = reasoningAbility
 }
 
-private class Hit(
+private class SpecHit(
     val spec: ReasoningSpec,
     val sampling: SamplingPolicy? = null,
     val maxOutput: Int? = null,
@@ -52,9 +52,9 @@ private class Hit(
     val replayField: ReplayField? = null,
 )
 
-private class Guess(val reasoningAbility: Boolean, val reasoning: ReasoningSpec?, val sampling: SamplingPolicy?, val maxOutput: Int?, val replay: ReplayPolicy?, val replayField: ReplayField?)
+private class SpecGuess(val reasoningAbility: Boolean, val reasoning: ReasoningSpec?, val sampling: SamplingPolicy?, val maxOutput: Int?, val replay: ReplayPolicy?, val replayField: ReplayField?)
 
-private class Vendor(
+private class SpecVendor(
     val dialect: ReasoningDialect? = null,
     val levels: List<ReasoningLevel>? = null,
     val canDisable: Boolean? = null,
@@ -111,7 +111,7 @@ object ModelSpecs {
 
     private fun hostOf(base: String) = runCatching { java.net.URI(base.trim()).host?.lowercase() }.getOrNull().orEmpty()
 
-    private fun vendor(kind: String, base: String, modelId: String): Vendor {
+    private fun vendor(kind: String, base: String, modelId: String): SpecVendor {
         val host = hostOf(base)
         val m = modelId.lowercase()
         val protocolDefault = if (kind == "anthropic") ReasoningDialect.ANTHROPIC_BUDGET else ReasoningDialect.OPENAI_EFFORT
@@ -125,10 +125,10 @@ object ModelSpecs {
 
         if (kind == "anthropic") {
             // DeepSeek 的 Anthropic 兼容接口
-            if (host.contains("deepseek")) return Vendor(ReasoningDialect.ANTHROPIC_EFFORT, listOf(ReasoningLevel.LOW, ReasoningLevel.HIGH, ReasoningLevel.MAX), false, protocolDefault, key, stream, all, rc)
-            if (host == "api.kimi.com" || host.contains("moonshot")) return Vendor(ReasoningDialect.ANTHROPIC_BUDGET, effortLadder, true, protocolDefault, key, stream, all)
+            if (host.contains("deepseek")) return SpecVendor(ReasoningDialect.ANTHROPIC_EFFORT, listOf(ReasoningLevel.LOW, ReasoningLevel.HIGH, ReasoningLevel.MAX), false, protocolDefault, key, stream, all, rc)
+            if (host == "api.kimi.com" || host.contains("moonshot")) return SpecVendor(ReasoningDialect.ANTHROPIC_BUDGET, effortLadder, true, protocolDefault, key, stream, all)
             // Anthropic 接口：思考写法跟着型号名走
-            return Vendor(protocolDefault = protocolDefault, maxTokensKey = key, sendStreamOptions = stream, replay = all)
+            return SpecVendor(protocolDefault = protocolDefault, maxTokensKey = key, sendStreamOptions = stream, replay = all)
         }
         var replay: ReplayPolicy? = null
         var field: ReplayField? = null
@@ -145,7 +145,7 @@ object ModelSpecs {
             host == "api.kimi.com" || host == "api.moonshot.ai" || host == "api.moonshot.cn" -> ReasoningDialect.KIMI
             else -> null
         }
-        return Vendor(dialect, null, null, protocolDefault, key, stream, replay, field)
+        return SpecVendor(dialect, null, null, protocolDefault, key, stream, replay, field)
     }
 
     // ───────── 型号名（model_defaults_guesser.dart） ─────────
@@ -166,18 +166,18 @@ object ModelSpecs {
         return if (suffix.isNotEmpty() && suffix.all { it.isDigit() }) id.substring(0, at) else id
     }
 
-    private fun guess(modelId: String): Guess {
+    private fun guess(modelId: String): SpecGuess {
         val id = normalize(modelId)
         val embedding = id.contains("embedding") || has(id, "(^|[-_/])embed(?:dings?)?([-.]|$)")
         val image = id.contains("image")
         val gemini3Image = image && id.contains("gemini-3")
         val ability = !embedding && (!image || gemini3Image) &&
             (isGemini35Flash(id) || ((reasoningRe.containsMatchIn(id) || isKimiCode(id)) && !isGemini25NonText(id)))
-        var hit: Hit? = null
+        var hit: SpecHit? = null
         if (!embedding) for (r in rules) if (r.match(id)) { hit = r.apply(id); break }
         var maxOutput = hit?.maxOutput
         if (maxOutput == null && (id.contains("kimi") || isKimiCodeK3Alias(id))) maxOutput = 32000
-        return Guess(ability, hit?.spec, hit?.sampling, maxOutput, hit?.replay, hit?.replayField)
+        return SpecGuess(ability, hit?.spec, hit?.sampling, maxOutput, hit?.replay, hit?.replayField)
     }
 
     private fun lv(vararg names: String) = names.mapNotNull { ReasoningLevel.of(it) }
@@ -185,9 +185,9 @@ object ModelSpecs {
     private fun ladder(
         efforts: List<String>, dialect: ReasoningDialect, samplingRequiresNone: Boolean = false, sampling: SamplingPolicy? = null,
         default: ReasoningLevel = ReasoningLevel.AUTO, maxOutput: Int? = null, replay: ReplayPolicy? = null, replayField: ReplayField? = null, canDisable: Boolean? = null,
-    ): Hit {
+    ): SpecHit {
         val levels = efforts.filter { it != "none" }.mapNotNull { ReasoningLevel.of(it) }.filter { it != ReasoningLevel.AUTO && it != ReasoningLevel.OFF }
-        return Hit(
+        return SpecHit(
             ReasoningSpec(levels, canDisable ?: ("none" in efforts), default, dialect, emptyMap(), replay ?: ReplayPolicy.NONE, replayField ?: ReplayField.REASONING_CONTENT),
             sampling ?: if (samplingRequiresNone) SamplingPolicy.ONLY_WHEN_REASONING_OFF else null, maxOutput, replay, replayField,
         )
@@ -196,12 +196,12 @@ object ModelSpecs {
     private fun fixed(
         dialect: ReasoningDialect, levels: List<ReasoningLevel> = emptyList(), canDisable: Boolean, default: ReasoningLevel = ReasoningLevel.AUTO,
         sampling: SamplingPolicy? = null, maxOutput: Int? = null, replay: ReplayPolicy? = null, replayField: ReplayField? = null,
-    ) = Hit(ReasoningSpec(levels, canDisable, default, dialect, emptyMap(), replay ?: ReplayPolicy.NONE, replayField ?: ReplayField.REASONING_CONTENT), sampling, maxOutput, replay, replayField)
+    ) = SpecHit(ReasoningSpec(levels, canDisable, default, dialect, emptyMap(), replay ?: ReplayPolicy.NONE, replayField ?: ReplayField.REASONING_CONTENT), sampling, maxOutput, replay, replayField)
 
     private val A = ReplayPolicy.ALL
     private val RC = ReplayField.REASONING_CONTENT
 
-    private class Rule(val match: (String) -> Boolean, val apply: (String) -> Hit?)
+    private class Rule(val match: (String) -> Boolean, val apply: (String) -> SpecHit?)
 
     private val rules: List<Rule> = listOf(
         Rule({ id: String -> isKimiCodeHighSpeed(id) }) { _ -> fixed(ReasoningDialect.KIMI, canDisable = true, replay = A, replayField = RC) },
@@ -305,7 +305,7 @@ object ModelSpecs {
         return 64000
     }
 
-    private fun claude(id: String): Hit {
+    private fun claude(id: String): SpecHit {
         val maxOutput = claudeMaxOutput(id)
         val sampling = if (adaptiveOnly(id)) SamplingPolicy.NEVER else null
         if (alwaysOn(id) || adaptive(id)) {
@@ -318,7 +318,7 @@ object ModelSpecs {
         return fixed(ReasoningDialect.ANTHROPIC_BUDGET, effortLadder, true, sampling = sampling, maxOutput = maxOutput)
     }
 
-    private fun gpt5(id: String): Hit? {
+    private fun gpt5(id: String): SpecHit? {
         val e = ReasoningDialect.OPENAI_EFFORT
         fun m(p: String) = has(id, "(^|[/_:@])$p")
         return when {
