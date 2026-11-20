@@ -93,6 +93,9 @@ object InBrowser {
         url = t; nonce++
     }
     fun close() { url = null; Magnet.ask = null }
+    /** ＋ › 浏览器：没有要开的网址，直接停在主页。 */
+    var wantHome by mutableStateOf(false)
+    fun openHome() { wantHome = true; if (url == null) { url = "about:blank"; nonce++ } }
 }
 
 private val Warm = Color(0xFFE9B48E)
@@ -172,6 +175,7 @@ fun InBrowserLayer() {
         }
     }
     LaunchedEffect(toast) { if (toast != null) { delay(1800); toast = null } }
+    LaunchedEffect(InBrowser.wantHome) { if (InBrowser.wantHome) { InBrowser.wantHome = false; home = true; homePlay++ } }
     LaunchedEffect(Unit) { AdBlock.refresh() }
 
     Box(
