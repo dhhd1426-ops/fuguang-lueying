@@ -78,8 +78,10 @@ object Skills {
     }
 
     fun of(pid: String = Memory.active.id): List<Skill> = lists[pid].orEmpty()
-    /** 这位助理这一轮能用的：开着的；助理设置 › 技能里没开「使用全部技能」时，只给勾上的（Kelivo）。 */
-    fun usable(pid: String = Memory.active.id): List<Skill> {
+    /** 这位助理这一轮能用的：开着的；助理设置 › 技能里没开「使用全部技能」时，只给勾上的（Kelivo）。
+     *  对话在 ＋ › 技能里关了「跟随助手」：只给对话勾上的（Kelivo SkillsBinding）。 */
+    fun usable(pid: String = Memory.active.id, conv: String? = ConvSkills.turn): List<Skill> {
+        ConvSkills.of(conv)?.let { ids -> return of(pid).filter { it.on && it.id in ids } }
         val x = AssistantExt.of(pid)
         return of(pid).filter { it.on && (x.allSkills || it.id in x.skills) }
     }

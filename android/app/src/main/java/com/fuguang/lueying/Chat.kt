@@ -212,7 +212,7 @@ class ChatState(val history: ConvStore) {
     }
 
     /** 上下文消息限制：这段对话到顶了，只能开新对话。 */
-    val full: Boolean get() = Memory.active.limit > 0 && messages.size >= Memory.active.limit
+    val full: Boolean get() = Memory.active.limit > 0 && messages.size - CtxCut.at(convId) >= Memory.active.limit
 
     /** 正在编辑重发第几条消息：-1 = 没有。 */
     var editing by mutableIntStateOf(-1)
@@ -335,7 +335,9 @@ class ChatState(val history: ConvStore) {
                 val conv0 = store0.get(cur)
                 val folded = Fold.of(conv0)
                 Fold.shown = folded
-                val sent0 = Fold.view(conv0, history)
+                // ＋ › 上下文管理 › 清空上下文：清空点以前的不发（CtxCut.view 里再走前情）
+                val sent0 = CtxCut.view(conv0, history)
+                ConvSkills.turn = cur
                 val question = history.lastOrNull { it.role == "user" }?.text.orEmpty()
                 // 本地工具页关掉的那几组不带（照 Kelivo：助理勾了哪些才带哪些）
                 fun on(k: String) = LocalTools.on(ax, k)
@@ -390,7 +392,9 @@ class ChatState(val history: ConvStore) {
                 val stepNudge = Steps.Nudge()
                 var searchedOnce = false
                 // 项目里的对话：自定义指令和文字资料接在最后（每轮一样，能缓存）
-                val sysBase = AssistantExt.fillVars(Prompt.system(who, model0), AssistantExt.placeholders(who, model0, null)) + Projects.system(this@ChatState.project ?: Projects.of(cur)) + (if (Talk.open) Talk.RULE else "")
+                val sysBase = AssistantExt.fillVars(Prompt.system(who, model0), AssistantExt.placeholders(who, model0, null)) + Projects.system(this@ChatState.project ?: Projects.of(cur)) + (if (Talk.open) Talk.RULE else "") +
+                    // ＋ › 指令注入：勾上的卡片追加在系统提示词末尾（Kelivo injectInstructionPrompts）
+                    Injections.prompt(who, cur).let { if (it.isEmpty()) "" else "\n\n$it" }
                 // 照 Kelivo：发出去的每条先过「仅替换」正则；你的话套聊天内容模板、末尾追加时间；最前面放预设对话；再按世界书放条目
                 val shaped = sent0.map { m ->
                     if (m.role == "user") {
@@ -768,11 +772,12 @@ fun ChatPage(
     }
 
     var picker by remember { mutableStateOf(false) }
-    val plus = remember { LiquidPlusState() }
-    plus.pick = rememberAttachPick(chat)
+    val attach = rememberAttachPick(chat)
     AttachLook.store = store
     val flight = remember { SendFlight() }
-    androidx.activity.compose.BackHandler(enabled = plus.open) { plus.open = false }
+    // ＋ 的工具面板（ChatTools.kt）：返回键收起；被点暗处、下拖收起时 ＋ 转回来；面板里要提示的一句接到底部提示
+    androidx.activity.compose.BackHandler(enabled = ChatSheets.sheet.shown) { ChatSheets.sheet.close() }
+    LaunchedEffect(ChatSheets.sheet.shown) { if (!ChatSheets.sheet.shown) { kotlinx.coroutines.delay(320); ChatTools.sync() } }
     /** 正在看哪条消息的思考：-1 = 正在进行的这一轮。 */
     var thinkOf by remember { mutableIntStateOf(-1) }
     var thinkOpen by remember { mutableStateOf(false) }
@@ -787,6 +792,7 @@ fun ChatPage(
     var press by remember { mutableStateOf<MsgPress?>(null) }
     var selectText by remember { mutableStateOf<String?>(null) }
     var toast by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(ChatTools.toast) { ChatTools.toast?.let { toast = it; ChatTools.toast = null } }
     val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
     androidx.activity.compose.BackHandler(enabled = thinkOpen) { thinkOpen = false }
     androidx.activity.compose.BackHandler(enabled = picker) { picker = false }
@@ -820,7 +826,7 @@ fun ChatPage(
     }
     // 以前在 SideEffect 里读 chat.draft：每打一个字整页重组。现在在后台跟着这些值，变了才写
     LaunchedEffect(chat) {
-        snapshotFlow { Whale.dressing || menu || shelf || workOpen != null || thinkOpen || picker || press != null || viewing != null || selectText != null || chat.draft.isNotBlank() || imeOpen || plus.open || chat.atts.isNotEmpty() }
+        snapshotFlow { Whale.dressing || menu || shelf || workOpen != null || thinkOpen || picker || press != null || viewing != null || selectText != null || chat.draft.isNotBlank() || imeOpen || ChatTools.open || chat.atts.isNotEmpty() }
             .collect { Zen.held = it }
     }
     // 鲸鱼娘让路：助理在回复、键盘开着、输入框里有字时不说自己的话；侧栏完全拉开、整页卡片打开时停帧
@@ -856,7 +862,7 @@ fun ChatPage(
             }
             Box(Modifier.fillMaxWidth().graphicsLayer { alpha = 1f - dressA; translationY = dressA * 24.dp.toPx() }, contentAlignment = Alignment.Center) {
                 ChatInput(
-                    compact, blur, title, store.activeModel, store.activeProvider, store.effort(), chat, plus, flight,
+                    compact, blur, title, store.activeModel, store.activeProvider, store.effort(), chat, attach, flight,
                     pickerOpen = picker,
                     onPick = { picker = true },
                     onSend = {
@@ -907,7 +913,6 @@ fun ChatPage(
                 )
             }
         }
-        LiquidPlusLayer(plus) { plus.pick(it) }
         ModelDrawer(picker, store, compact, onClose = { picker = false })
         // 正在看这一轮的思考时她想完了：接着看收进去的那条；什么都没留下就收起抽屉
         LaunchedEffect(chat.busy) {
@@ -1338,7 +1343,7 @@ private fun ChatInput(
     provider: String,
     think: String?,
     chat: ChatState,
-    plus: LiquidPlusState,
+    attach: (Int) -> Unit,
     flight: SendFlight,
     pickerOpen: Boolean,
     onPick: () -> Unit,
@@ -1370,7 +1375,7 @@ private fun ChatInput(
     val density = androidx.compose.ui.platform.LocalDensity.current
     val inputFocus = remember { androidx.compose.ui.focus.FocusRequester() }
     LaunchedEffect(chat.focusTick) { if (chat.focusTick > 0) runCatching { inputFocus.requestFocus() } }
-    val fold = rememberInputFold(chat, plus, pickerOpen, density)
+    val fold = rememberInputFold(chat, pickerOpen, density)
     val shapeNow = fold.shape()
     // 两行时的整块高度（量出来的）：一行时字从上面那行挪到 ＋ 右边
     val fullH = remember { androidx.compose.runtime.mutableIntStateOf(0) }
@@ -1463,7 +1468,7 @@ private fun ChatInput(
             )
             Spacer(Modifier.height(8.dp))
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                LiquidPlusButton(plus) { plus.pick(it) }
+                PlusButton { ChatTools.toggle(ChatTools.Ctx(chat, provider, model, attach)) }
                 // 模型胶囊：一行时藏起来（不占点按），展开时从 ＋ 旁边长出来
                 if (fold.open > .05f) Pressable(onPick, Modifier.graphicsLayer {
                     val o = fold.open.coerceIn(0f, 1f)
@@ -1539,7 +1544,7 @@ private class InputFold {
 
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-private fun rememberInputFold(chat: ChatState, plus: LiquidPlusState, pickerOpen: Boolean, density: androidx.compose.ui.unit.Density): InputFold {
+private fun rememberInputFold(chat: ChatState, pickerOpen: Boolean, density: androidx.compose.ui.unit.Density): InputFold {
     val fold = remember { InputFold() }
     val ime = WindowInsets.ime
     val goal = WindowInsets.imeAnimationTarget
@@ -1567,7 +1572,7 @@ private fun rememberInputFold(chat: ChatState, plus: LiquidPlusState, pickerOpen
     }
     fun smooth(x: Float): Float { val k = ((x - .62f) / .38f).coerceIn(0f, 1f); return k * k * (3f - 2f * k) }
     val kbOpen = smooth(kb)
-    val force = chat.draft.isNotEmpty() || chat.atts.isNotEmpty() || chat.editing >= 0 || chat.full || pickerOpen || plus.open || (noSoft && fold.focused)
+    val force = chat.draft.isNotEmpty() || chat.atts.isNotEmpty() || chat.editing >= 0 || chat.full || pickerOpen || ChatTools.open || (noSoft && fold.focused)
     val still = Toy.still()
     val open by androidx.compose.animation.core.animateFloatAsState(
         maxOf(kbOpen, if (force) 1f else 0f),

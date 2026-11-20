@@ -16,7 +16,7 @@ import java.io.ByteArrayOutputStream
 import java.io.File
 
 /**
- * 你发给她的照片和文件（输入框加号的三颗球：照片、拍照、文件）。
+ * 你发给她的照片和文件（输入框 ＋ 工具面板：拍照、照片、上传文件）。
  * 每件存成 files/attach/<id>/<原名>，消息里记相对路径 "<id>/<原名>"，跟着备份走。
  * 照片存之前转正、缩到长边 1568（Claude 建议的上限），JPEG 86。
  */

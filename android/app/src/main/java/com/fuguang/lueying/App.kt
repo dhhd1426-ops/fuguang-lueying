@@ -241,6 +241,7 @@ fun FuguangApp(prefs: Prefs, fullscreen: Boolean, setFullscreen: (Boolean) -> Un
 
         // 「这次用了」里点一样本事：去「我的 → 功能 → 技能」看它
         Skills.show = { id -> mineNav.screen = "skills/$id"; MineCard.open = true }
+        ChatTools.go = { s -> mineNav.screen = s; MineCard.open = true }
         // 内置浏览器、下载页：盖在最上面
         // 她替你点网页：在内置浏览器之下，聊天页之上
         WebHandLayer()

@@ -59,6 +59,14 @@ object FoldModel {
     var pid by mutableStateOf("")
     var model by mutableStateOf("")
     var prompt by mutableStateOf("")
+    /** 压缩侧重（照 Kelivo compression presets）：通用 / 写作 / 角色扮演，在整理要求后面补一句。 */
+    var mode by mutableStateOf("通用")
+    val MODES = listOf("通用", "写作", "角色扮演")
+    val modeHint: String get() = when (mode) {
+        "写作" -> "\n- 这是写作：情节推进、人物状态和关系、伏笔、场景设定、已定下的文风和人称都要留住。"
+        "角色扮演" -> "\n- 这是角色扮演：各角色的设定、性格、关系、当前所在场景和正在发生的事都要留住，口吻照原样记。"
+        else -> ""
+    }
 
     val DEFAULT = """
 你在帮她整理这段聊天前面的部分，整理好的叫「前情」。以后每一轮她先看前情，要细节时再翻原话。
@@ -79,14 +87,14 @@ object FoldModel {
         // 原来摘要的写法（"prompt"）是写摘要用的，不拿来整理前情；前情的写法存在 "fold"
         runCatching {
             val o = JSONObject(p.string(KEY) ?: return@runCatching)
-            pid = o.optString("pid"); model = o.optString("model"); prompt = o.optString("fold")
+            pid = o.optString("pid"); model = o.optString("model"); prompt = o.optString("fold"); mode = o.optString("mode", "通用")
         }
     }
 
     fun save() {
         val p = prefs ?: return
         val o = runCatching { JSONObject(p.string(KEY) ?: "{}") }.getOrDefault(JSONObject())
-        p.putString(KEY, o.put("pid", pid).put("model", model).put("fold", prompt).toString())
+        p.putString(KEY, o.put("pid", pid).put("model", model).put("fold", prompt).put("mode", mode).toString())
     }
 
     fun use(id: String, m: String) { pid = id; model = m; save() }
@@ -343,13 +351,14 @@ object Fold {
     }
 
     /** 整理一次（force：发出去被拒了，留得少一点）。整理好了返回 true。 */
-    suspend fun run(store: ConvStore, id: String, force: Boolean): Boolean {
+    suspend fun run(store: ConvStore, id: String, force: Boolean, keepTurns: Int? = null): Boolean {
         if (id in busy) return false
         val c = store.get(id) ?: return false
         val msgs = c.msgs
         val old = c.fold?.takeIf { it.upto < msgs.size }
         val from = old?.upto ?: 0
-        val cut = cutAt(msgs, from, if (force) KEEP / 2 else KEEP, if (force) 2 else KEEP_TURNS) ?: return false
+        // 手动压缩（＋ › 上下文管理）：只按「保留最近几条用户消息」算，不看 token
+        val cut = (if (keepTurns != null) cutAt(msgs, from, 0, keepTurns) else cutAt(msgs, from, if (force) KEEP / 2 else KEEP, if (force) 2 else KEEP_TURNS)) ?: return false
         val her = Memory.get(c.who) ?: Memory.active
         busy[id] = cut
         try {
@@ -402,7 +411,7 @@ object Fold {
             "[${i + 1}] " + (if (msgs[i].role == "user") who else her.name) + "：" + msgs[i].text.take(2_000)
         }
         if (talk.isBlank()) return old?.copy(upto = end) ?: FoldData(end, emptyList(), emptyList(), System.currentTimeMillis())
-        val system = FoldModel.text + "\n\n这里的「她」是${her.name}，「他」是$who。称呼用「$who」和「${her.name}」，不用「我」「你」。直接输出前情正文，不要解释、不要代码块。"
+        val system = FoldModel.text + FoldModel.modeHint + "\n\n这里的「她」是${her.name}，「他」是$who。称呼用「$who」和「${her.name}」，不用「我」「你」。直接输出前情正文，不要解释、不要代码块。"
         val user = buildString {
             append("今天是 ").append(SimpleDateFormat("yyyy年M月d日 EEEE", Locale.CHINA).format(Date())).append("。\n\n")
             append("原来的前情：\n").append(old?.let { render(it, true) } ?: "（还没有）").append("\n\n")
