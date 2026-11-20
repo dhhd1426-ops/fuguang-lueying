@@ -188,7 +188,7 @@ object Memory {
         return p
     }
 
-    fun use(p: Persona) { activeId = p.id; save() }
+    fun use(p: Persona) { activeId = p.id; save(); AssistantExt.of(p).chatModel?.let { AssistantExt.useModel?.invoke(it) } }
 
     /** 删掉一位（至少留一位）；删的是正在用的，就换成第一位。 */
     fun delete(p: Persona) {

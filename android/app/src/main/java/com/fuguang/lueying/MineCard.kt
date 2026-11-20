@@ -83,6 +83,8 @@ private val warmInk: Color get() = Skin.onAccent
 private fun depth(s: String) = when {
     s == "mine" -> 0
     s == "assistant" || s == "usage" || s == "mcp" || s == "about" || s == "features" || s == "theme" || s == "whale" || s == "voice" -> 1
+    s == "worldbook" -> 1
+    s.startsWith("worldbook/") -> 2
     s == "persona" || s == "voice/api" || s.startsWith("mcp/") || s == "search" || s == "skills" || s == "gallery" -> 2
     s.startsWith("search/") || s.startsWith("skills/") || s.startsWith("gallery/") -> 3
     s == "providers" || s == "memories" || s == "fold" -> 3
@@ -123,7 +125,9 @@ fun MineCardLayer(store: AssistantStore, nav: MineNav) {
             "features" -> FeaturesPage({ nav.screen = "mine" }, { nav.screen = "search" }, { nav.screen = "skills" })
             "skills" -> SkillsPage({ nav.screen = "features" }) { nav.screen = "skills/$it" }
             "search" -> SearchPage({ nav.screen = "features" }) { nav.screen = "search/$it" }
-            else -> if (screen.startsWith("skills/")) SkillDetailPage(screen.removePrefix("skills/")) { nav.screen = "skills" }
+            "worldbook" -> WorldBookPage(screen, nav)
+            else -> if (screen.startsWith("worldbook/")) WorldBookPage(screen, nav)
+            else if (screen.startsWith("skills/")) SkillDetailPage(screen.removePrefix("skills/")) { nav.screen = "skills" }
             else if (screen.startsWith("search/")) SearchSourcePage(screen.removePrefix("search/")) { nav.screen = "search" }
             else Column(Modifier.widthIn(max = 720.dp).fillMaxSize()) {
                 CompositionLocalProvider(LocalTitleEnd provides 36.dp) { MineSub(store, screen, true, 0.dp, nav) }
@@ -172,6 +176,12 @@ private fun MineCardList(store: AssistantStore, t: Float, onGo: (String) -> Unit
     Spacer(Modifier.height(6.dp))
     MineRow(2, t, "功能", "", { onGo("features") }, glyph = { SvgIcon(tune, warm, 19.dp, stroke = 1.6f) }) {
         Txt(if (WebSearch.enabledCount > 0) "${WebSearch.enabledCount} 项" else "关", Page.muted, 13.5.sp, maxLines = 1)
+        Spacer(Modifier.width(4.dp))
+        SvgIcon(chevron, Page.muted.copy(alpha = .6f), 15.dp, stroke = 1.8f)
+    }
+    Spacer(Modifier.height(6.dp))
+    MineRow(2, t, "世界书", "", { onGo("worldbook") }, glyph = { SvgIcon(KI.worldBook, warm, 19.dp, stroke = 1.6f) }) {
+        Txt(if (WorldBooks.books.isEmpty()) "" else "${WorldBooks.books.size} 本", Page.muted, 13.5.sp, maxLines = 1)
         Spacer(Modifier.width(4.dp))
         SvgIcon(chevron, Page.muted.copy(alpha = .6f), 15.dp, stroke = 1.8f)
     }

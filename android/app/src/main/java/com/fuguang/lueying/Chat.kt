@@ -236,7 +236,7 @@ class ChatState(val history: ConvStore) {
         if (editing in messages.indices) { slips += Lessons.REDO; while (messages.size > editing) messages.removeAt(messages.lastIndex) }
         editing = -1
         // 文字里有抖音链接：卡片挂在这条消息下面（先是「正在认」，认出了就填满）
-        messages.add(ChatMsg("user", text, clips = listOfNotNull(VideoStore.offer(text)?.link, PanStore.offer(text)?.link, TgStore.offer(text)?.link), files = atts.toList()))
+        messages.add(ChatMsg("user", AssistantExt.applyRegex(AssistantExt.of(Memory.active), text, false, AssistantExt.Target.PERSIST), clips = listOfNotNull(VideoStore.offer(text)?.link, PanStore.offer(text)?.link, TgStore.offer(text)?.link), files = atts.toList()))
         atts.clear()
         Memory.touch(newChat = messages.size == 1)
         // 每天第一次来找她：后台把之前没理过的记忆理一遍、过完的周月年收拢（MemoryLearn.kt）
@@ -294,6 +294,9 @@ class ChatState(val history: ConvStore) {
         val effort = store.effort()
         ChatApi.temperature = if (who.tempOn) who.temp else null
         ChatApi.topP = if (who.topOn) who.top else null
+        // 助理设置（Kelivo）：最大 Token 数、自定义请求、工具开关、提示词模板、世界书……
+        val ax = AssistantExt.of(who)
+        ChatApi.ext = ax
         // 你切走了她也接着回完；回好了、你不在这里，就发通知（Notify.kt）
         val roundAt = System.currentTimeMillis()
         val mine = history.lastOrNull { it.role == "user" }?.text
@@ -334,15 +337,25 @@ class ChatState(val history: ConvStore) {
                 Fold.shown = folded
                 val sent0 = Fold.view(conv0, history)
                 val question = history.lastOrNull { it.role == "user" }?.text.orEmpty()
-                val mcp = Mcp.specs
+                // 本地工具页关掉的那几组不带（照 Kelivo：助理勾了哪些才带哪些）
+                fun on(k: String) = LocalTools.on(ax, k)
+                val mcp = Mcp.specs.filter { s -> ax.mcpIds?.let { ids -> s.name.substringBefore("__") in ids } ?: true }
                 // 开着千问自带搜索：她自己会查，App 的 web_search 这一轮不给（免得查两遍）
                 val native = store.search()
-                val web = WebSearch.usable && !native
+                val web = WebSearch.usable && !native && on("search")
                 val skills = Skills.specs()
                 val videoRefs = MotionTools.references(history)
                 val motionReviewer = AttachLook.helper(store)?.let { (id, name) -> ArtworkJob.Model(provider(id), store.config(id), name, store.effort(id, name)) }
                 val motion = MotionTools.Session(videoRefs, Attach.vision(p.id, store.activeModel), motionReviewer)
-                val specs = listOf(Steps.spec) + (if (who.noteOn) Memory.toolSpecs else emptyList()) + Works.specs.filter { it.name != Works.MAKE } + WorkJobs.spec + WorkJobs.statusSpec + WorkJobs.stopSpec + WorkJobs.resumeSpec + SentFiles.spec + SentPics.spec + Pacts.specs + Materials.specs + VideoParse.specs + (if (videoRefs.isEmpty()) MotionTools.specs.filter { it.name == MotionTools.RENDER } else MotionTools.specs) + PanTools.specs + ClockTools.specs + (if (Whale.active) listOf(WhaleTools.spec) else emptyList()) + WebHand.specs + skills + (if (web) listOf(WebSearch.spec) else emptyList()) + (if (yu) Yu.tools else emptyList()) + (if (recall) listOf(Recall.spec, Recall.openSpec) else emptyList()) + (if (folded != null) listOf(Fold.spec) else emptyList()) + mcp
+                val specs = listOf(Steps.spec) + (if (who.noteOn) Memory.toolSpecs else emptyList()) +
+                    (if (on("works")) Works.specs.filter { it.name != Works.MAKE } + WorkJobs.spec + WorkJobs.statusSpec + WorkJobs.stopSpec + WorkJobs.resumeSpec else emptyList()) +
+                    (if (on("file")) listOf(SentFiles.spec) else emptyList()) + (if (on("pic")) listOf(SentPics.spec) else emptyList()) +
+                    (if (on("pact")) Pacts.specs else emptyList()) + (if (on("material")) Materials.specs else emptyList()) + (if (on("video")) VideoParse.specs else emptyList()) +
+                    (if (!on("motion")) emptyList() else if (videoRefs.isEmpty()) MotionTools.specs.filter { it.name == MotionTools.RENDER } else MotionTools.specs) +
+                    (if (on("pan")) PanTools.specs else emptyList()) + (if (on("clock")) ClockTools.specs else emptyList()) + (if (Whale.active) listOf(WhaleTools.spec) else emptyList()) +
+                    WebHand.specs.filter { if (it.name == WebHand.ASK) on("ask") else on("web") } + skills + (if (web) listOf(WebSearch.spec) else emptyList()) +
+                    (if (yu) Yu.tools else emptyList()) + (if (recall) listOf(Recall.spec, Recall.openSpec) else emptyList()) + (if (folded != null) listOf(Fold.spec) else emptyList()) + mcp +
+                    LocalTools.specs(ax)
                 val convTitle0 = store0.get(cur)?.title ?: firstSentence(question, 18)
                 // 对方发来的照片，最近的在前：send_image / send_file 里 photo:1 就是最近那张
                 fun photos(): List<java.io.File> = history.filter { it.role == "user" }.flatMap { it.files }.filter { Attach.isImage(it) }.reversed().map { Attach.file(it) }
@@ -350,19 +363,19 @@ class ChatState(val history: ConvStore) {
                     append("\n\n你手边还有这些东西，需要时再用，不需要就不用：")
                     if (who.noteOn) append("\n").append(Memory.toolRule())
                     append(Steps.note(cur))
-                    append("\n").append(Works.system(Memory.userCall, history, who.id))
-                    append(WorkJobs.brief(cur, history.flatMap { it.works }))
-                    append("\n").append(SentFiles.system(Memory.userCall))
-                    append("\n").append(SentPics.system(Memory.userCall))
-                    append("\n").append(Pacts.system(who, Memory.userCall))
-                    append("\n").append(Materials.system())
-                    append("\n").append(VideoParse.system(Memory.userCall))
-                    if (videoRefs.isNotEmpty()) append("\n").append(MotionTools.rule).append(MotionTools.context(videoRefs))
-                    append("\n").append(PanTools.system(Memory.userCall))
-                    append("\n").append(ClockTools.system(Memory.userCall))
+                    if (on("works")) append("\n").append(Works.system(Memory.userCall, history, who.id))
+                    if (on("works")) append(WorkJobs.brief(cur, history.flatMap { it.works }))
+                    if (on("file")) append("\n").append(SentFiles.system(Memory.userCall))
+                    if (on("pic")) append("\n").append(SentPics.system(Memory.userCall))
+                    if (on("pact")) append("\n").append(Pacts.system(who, Memory.userCall))
+                    if (on("material")) append("\n").append(Materials.system())
+                    if (on("video")) append("\n").append(VideoParse.system(Memory.userCall))
+                    if (videoRefs.isNotEmpty() && on("motion")) append("\n").append(MotionTools.rule).append(MotionTools.context(videoRefs))
+                    if (on("pan")) append("\n").append(PanTools.system(Memory.userCall))
+                    if (on("clock")) append("\n").append(ClockTools.system(Memory.userCall))
                     WhaleTools.system(Memory.userCall).takeIf { it.isNotEmpty() }?.let { append("\n").append(it) }
-                    append("\n").append(WebHand.system(Memory.userCall))
-                    append("\n\n").append(Craft.system())
+                    if (on("web") || on("ask")) append("\n").append(WebHand.system(Memory.userCall))
+                    if (on("works") || on("file")) append("\n\n").append(Craft.system())
                     if (skills.isNotEmpty()) append("\n").append(Skills.system())
                     if (web) append("\n").append(WebSearch.system())
                     if (native) append("\n").append("你这会儿能直接上网查（用的是你自己带的搜索）：问到天气、新闻、价格、谁现在是什么职位这类会变的事，先查再说；查到的照实说，拿不准的说拿不准。")
@@ -377,10 +390,24 @@ class ChatState(val history: ConvStore) {
                 val stepNudge = Steps.Nudge()
                 var searchedOnce = false
                 // 项目里的对话：自定义指令和文字资料接在最后（每轮一样，能缓存）
-                val sys0 = Prompt.system(who, model0) + Projects.system(this@ChatState.project ?: Projects.of(cur)) + (if (Talk.open) Talk.RULE else "")
-                sentEst = CtxWin.est(sent0) + CtxWin.est(sys0) + CtxWin.est(extra)
+                val sysBase = AssistantExt.fillVars(Prompt.system(who, model0), AssistantExt.placeholders(who, model0, null)) + Projects.system(this@ChatState.project ?: Projects.of(cur)) + (if (Talk.open) Talk.RULE else "")
+                // 照 Kelivo：发出去的每条先过「仅替换」正则；你的话套聊天内容模板、末尾追加时间；最前面放预设对话；再按世界书放条目
+                val shaped = sent0.map { m ->
+                    if (m.role == "user") {
+                        var t = AssistantExt.applyRegex(ax, m.text, false, AssistantExt.Target.SEND)
+                        t = AssistantExt.applyTemplate(ax.template, "user", t, m.at)
+                        if (ax.appendTime) t = t + "\n\n" + AssistantExt.timeTag(m.at, ax.iso8601)
+                        m.copy(text = t)
+                    } else if (m.role == "assistant") m.copy(text = AssistantExt.applyRegex(ax, m.text, true, AssistantExt.Target.SEND)) else m
+                }
+                val woven = Entries.weave(who, shaped, (Lessons.aside(shownLessons, slips) + Recall.note(hits).let { if (it.isEmpty()) "" else "\n$it" } + Fold.note(conv0).let { if (it.isEmpty()) "" else "\n$it" }).trim())
+                val withPresets = ax.presets.map { ChatMsg(it.role, it.text, at = woven.firstOrNull()?.at ?: System.currentTimeMillis()) } + woven
+                val lore = WorldBooks.inject(who, cur, sysBase, withPresets, ax.perConvInject)
+                val sys0 = lore.system
+                sentEst = CtxWin.est(lore.history) + CtxWin.est(sys0) + CtxWin.est(extra)
+                val held = StringBuilder()
                 ChatApi.stream(
-                    p, c, model0, sys0, Entries.weave(who, sent0, (Lessons.aside(shownLessons, slips) + Recall.note(hits).let { if (it.isEmpty()) "" else "\n$it" } + Fold.note(conv0).let { if (it.isEmpty()) "" else "\n$it" }).trim()), effort,
+                    p, c, model0, sys0, lore.history, effort,
                     onThink = { thinkText += it; thinking = true; val t = System.currentTimeMillis(); if (thinkAt == 0L) thinkAt = t; thinkEnd = t },
                     onRoundEnd = {
                         if (thinkText.length > (liveSteps.lastOrNull { it.name == THINK_ROUND_END }?.at ?: 0))
@@ -434,6 +461,7 @@ class ChatState(val history: ConvStore) {
                             }
                             else if (n == Works.MAKE || n == Works.READ || n == Works.EDIT) Works.run(n, a, who.id) { id -> made = true; if (id !in pendingWorks) { pendingWorks.add(id); pendingWorkAt.add(workDraft?.at ?: partial.length) } }
                             else if (n in WebHand.names) WebHand.run(n, a)
+                            else if (n in LocalTools.names) LocalTools.run(n, a)
                             else if (Mcp.owns(n)) Mcp.run(n, a)
                             else Yu.run(n, a, Yu.vision(p.id)) { refs -> refs.forEach { r -> if (r !in pendingImgs) pendingImgs.add(r) } }
                             made = !out.failed && made
@@ -482,7 +510,9 @@ class ChatState(val history: ConvStore) {
                             }
                         }
                     }) else null,
-                ) { partial += it; thinking = false }
+                ) { if (ax.stream) partial += it else held.append(it); thinking = false }
+                // 流式输出关着（Kelivo）：回完了一次放出来
+                if (held.isNotEmpty()) partial += held.toString()
                 streamDone = true
                 // 等书写追上再收尾（切到后台没有画面推进书写，直接写完）
                 while (shown < partial.length) { if (!Notify.foreground || !onScreen) shown = partial.length.toFloat(); kotlinx.coroutines.delay(32) }
@@ -492,7 +522,9 @@ class ChatState(val history: ConvStore) {
                     // 记忆：不是每句都记，等这段聊停了再整段回想（换对话时马上回想上一段）
                     val cid = convId.orEmpty()
                     val title = this@ChatState.history.get(convId)?.title ?: firstSentence(question, 18)
-                    Reflect.later(cid, messages.toList()) { w -> Reflect.run(who, w, cid, title) }
+                    // 助理设置 › 记忆：自动整理记忆关着就不回看；整理频率 = 攒够几轮就马上回看（照 Kelivo）
+                    val mx = AssistantExt.of(who)
+                    if (mx.autoOrganize) Reflect.later(cid, messages.toList(), mx.organizeEvery) { w -> Reflect.run(who, w, cid, title) }
                     // 前情：这轮发出去的快到窗口的 75% 了，后台整理（供应商回了用量就按它，顺手校准估算）
                     val real = ChatApi.firstInput
                     if (real > 0) CtxWin.calibrate(p.id, model0, real, sentEst)
@@ -677,7 +709,8 @@ class ChatState(val history: ConvStore) {
     private fun replyMsg(text: String): ChatMsg {
         val lead = partial.length - partial.trimStart().length
         landed = messages.size
-        return ChatMsg("assistant", text, thinkText, pendingImgs.filter { SentPics.fail(it) == null }, works = pendingWorks.toList(), steps = doneSteps(), clips = pendingClips.toList(),
+        // 正则替换里「改存下来的」那种（不勾仅视觉、仅替换）：存之前先换掉（Kelivo persist）
+        return ChatMsg("assistant", AssistantExt.applyRegex(AssistantExt.of(Memory.active), text, true, AssistantExt.Target.PERSIST), thinkText, pendingImgs.filter { SentPics.fail(it) == null }, works = pendingWorks.toList(), steps = doneSteps(), clips = pendingClips.toList(),
             workAt = pendingWorkAt.map { (it - lead).coerceIn(0, text.length) }, pid = turnPid,
             thinkMs = if (thinkAt > 0L) (thinkEnd - thinkAt).coerceAtLeast(0L) else 0L).also { thinkAt = 0L; thinkEnd = 0L }
     }
@@ -1172,7 +1205,9 @@ private fun Conversation(
 }
 
 @Composable
-fun UserBubble(text: String, compact: Boolean, modifier: Modifier = Modifier) {
+fun UserBubble(raw: String, compact: Boolean, modifier: Modifier = Modifier) {
+    // 正则替换里「仅视觉」的只改显示（Kelivo visual）
+    val text = AssistantExt.applyRegex(AssistantExt.of(Memory.active), raw, false, AssistantExt.Target.VISUAL)
     Box(
         modifier.widthIn(max = if (compact) 300.dp else 460.dp)
             .background(veil(.08f), RoundedCornerShape(18.dp))
@@ -1209,8 +1244,8 @@ private val replyStyle get() = TextStyle(fontFamily = Sans, color = Page.ink.cop
 
 @Composable
 private fun Reply(raw: String, compact: Boolean, fadeTail: Boolean) {
-    // 两个正则编好一次反复用（以前写着时每帧都新编一遍）
-    var text = raw
+    // 两个正则编好一次反复用（以前写着时每帧都新编一遍）；正则替换里「仅视觉」的只改显示（Kelivo visual）
+    var text = AssistantExt.applyRegex(AssistantExt.of(Memory.active), raw, true, AssistantExt.Target.VISUAL)
     if (fadeTail) {
         // 写到一半的 **粗体** 或 `代码`，先不露出符号
         if (BoldMark.findAll(text).count() % 2 == 1) text = text.substring(0, text.lastIndexOf("**")) + text.substring(text.lastIndexOf("**") + 2)
@@ -1445,6 +1480,18 @@ private fun ChatInput(
                         Txt(model.ifBlank { "选择模型" }, Page.ink, 12.sp, maxLines = 1)
                         // 关着思考就什么都不写：没有杏色后缀本身就是「不思考」
                         if (think != null && think != Effort.OFF && think != Effort.AUTO) Txt(" · " + Effort.label(think), Page.accent, 12.sp, maxLines = 1)
+                    }
+                }
+                // 世界书、快捷短语（照 Kelivo 输入框下面那排）：展开时跟模型胶囊一起长出来
+                if (fold.open > .05f) {
+                    val o = fold.open.coerceIn(0f, 1f)
+                    val fade = Modifier.graphicsLayer { alpha = o; translationY = 8.dp.toPx() * (1f - o) }
+                    Pressable({ ChatSheets.worldBooks(chat.convId) }, fade, label = "世界书") { pr ->
+                        SvgIcon(KI.worldBook, if (AssistantExt.of(Memory.active).worldBooks.isEmpty()) Page.muted else Page.accent, 16.dp, stroke = 1.8f,
+                            modifier = Modifier.background(veil(if (pr) .13f else .07f), CircleShape).padding(9.dp))
+                    }
+                    if (AssistantExt.of(Memory.active).phrases.isNotEmpty()) Pressable({ ChatSheets.phrases { chat.draft = (chat.draft + it).take(20000) } }, fade, label = "快捷短语") { pr ->
+                        SvgIcon(KI.quote, Page.muted, 16.dp, stroke = 1.8f, modifier = Modifier.background(veil(if (pr) .13f else .07f), CircleShape).padding(9.dp))
                     }
                 }
                 Spacer(Modifier.weight(1f))

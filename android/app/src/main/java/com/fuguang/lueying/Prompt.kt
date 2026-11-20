@@ -23,9 +23,7 @@ object Prompt {
         sb.append("你叫").append(p.name).append("。")
         if (Memory.userName.isNotBlank()) sb.append("正在和你说话的是").append(who).append("，").append(who).append("也叫你").append(p.name).append("。")
         sb.append("以前的聊天里，你要是叫过别的名字、或者说过自己还没有名字，那都是过去的事，现在你就叫").append(p.name).append("。")
-        Entries.around(p, "before").takeIf { it.isNotBlank() }?.let { sb.append("\n\n").append(it) }
         sb.append("\n\n").append(Memory.fill(p.sys.trim().ifEmpty { Memory.DEFAULT_SYS }, p, model))
-        Entries.around(p, "after").takeIf { it.isNotBlank() }?.let { sb.append("\n\n").append(it) }
         // 第 345 版：只带目录（每条一个标题），常驻的带正文；要细节她自己翻（Memory.READ），只在相关时翻
         if (p.noteOn) MemTree.catalog(p).takeIf { it.isNotBlank() }?.let { cat ->
             sb.append("\n\n你记得的事，这里是目录（方括号里是编号）：\n").append(cat)

@@ -131,7 +131,11 @@ class AssistantStore(private val prefs: Prefs) {
     }
 
     // 思考写法按这家现在填的地址认（中转站、自建代理）
-    init { Effort.baseOf = { config(it).base } }
+    init {
+        Effort.baseOf = { config(it).base }
+        // 换到设了默认聊天模型的助理：模型跟着换（Kelivo 助理的 chatModel）
+        AssistantExt.useModel = { s -> s.split("|", limit = 2).takeIf { it.size == 2 }?.let { (pid, m) -> if (PROVIDERS.any { it.id == pid }) use(pid, m) } }
+    }
 
     fun config(id: String): ProviderConfig = configs[id] ?: ProviderConfig.default(provider(id))
 
@@ -154,7 +158,9 @@ class AssistantStore(private val prefs: Prefs) {
     fun effort(pid: String = activeProvider, model: String = activeModel): String? {
         val spec = Effort.spec(pid, model)
         if (spec.levels.isEmpty()) return null
-        return spec.levels[spec.index(efforts[effortKey(pid, model)])].value
+        // 照 Kelivo selectReasoningRequest：这个型号选过的 → 助理设置里的思考默认档 → 型号默认
+        val v = efforts[effortKey(pid, model)] ?: AssistantExt.of(Memory.active).think?.let { Effort.fit(spec, it) }
+        return spec.levels[spec.index(v)].value
     }
 
     fun setEffort(value: String, pid: String = activeProvider, model: String = activeModel) { efforts[effortKey(pid, model)] = value; save() }
@@ -392,6 +398,8 @@ object ChatApi {
     /** 这一轮聊天用的温度和 Top P；null = 不带，交给供应商默认。 */
     @Volatile var temperature: Float? = null
     @Volatile var topP: Float? = null
+    /** 这一轮聊天的助理设置（Kelivo）：最大 Token 数、自定义 Header / Body；null = 没有（后台任务等）。 */
+    @Volatile var ext: AsstExt? = null
     /** 这一轮里 App 认出的岔子（Lessons.CLAIM 说做好了没动手、Lessons.CAP 工具用到顶）；每次 stream 开始时清空。 */
     val slips: MutableSet<String> = java.util.Collections.synchronizedSet(mutableSetOf())
     /** 这一轮第一次发出去，供应商说用了多少 token（usage；没回就是 0）。前情按它算要不要整理（第 394 版）。 */
@@ -702,10 +710,13 @@ object ChatApi {
                 conn.setRequestProperty("x-api-key", c.key.trim())
                 conn.setRequestProperty("anthropic-version", "2023-06-01")
             } else conn.setRequestProperty("Authorization", "Bearer " + c.key.trim())
+            val ax = ext
+            ax?.let { AssistantExt.applyHeaders(it, conn) }
 
             val body = JSONObject().put("model", model).put("messages", msgs).put("stream", true)
-            // 做作品时一整张网页写在工具参数里，留足长度：用型号自己的输出上限（Kelivo：认不出给 64000）
-            if (anthropic) body.put("system", system).put("max_tokens", Effort.maxOutput(p, model))
+            // 做作品时一整张网页写在工具参数里，留足长度：助理设了最大 Token 数就用它，否则用型号自己的输出上限（Kelivo：认不出给 64000）
+            if (anthropic) body.put("system", system).put("max_tokens", ax?.maxTokens ?: Effort.maxOutput(p, model))
+            else ax?.maxTokens?.let { body.put(Effort.maxTokensKey(p, model), it) }
             // 这个模型学到的最高档：超过的按能到的最高一档发
             val spec = Effort.spec(p.id, model)
             val lv = effort?.let { e -> ModelFit.cap(p.id, model)?.takeIf { e != Effort.OFF && spec.index(it) < spec.index(e) } ?: e }
@@ -729,6 +740,8 @@ object ChatApi {
             if (search != null) QwenSearch.apply(body)
             // 要供应商在最后回一下用了多少（Anthropic 本来就回）；不认这个参数的，报错点名后 ModelFit 记下不带
             if (!anthropic && Effort.streamOptions(p, model)) body.put("stream_options", JSONObject().put("include_usage", true))
+            // 助理的自定义 Body 最后合进去，能盖掉上面写的（Kelivo CustomRequestMerger）
+            ax?.let { AssistantExt.mergeBody(it, body) }
             ModelFit.strip(p.id, model, body)
             conn.outputStream.use { it.write(body.toString().toByteArray()) }
 

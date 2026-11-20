@@ -121,6 +121,8 @@ class MineNav {
             screen == "features" || screen == "usage" -> "mine"
             screen == "theme" -> "mine"
             screen.startsWith("mcp/") -> "mcp"
+            screen.startsWith("worldbook/") -> "worldbook"
+            screen == "worldbook" -> "mine"
             screen == "mcp" -> "mine"
             screen == "providers" -> if (persona.isNotEmpty() && Memory.get(persona) != null) "persona" else "assistant"
             screen == "persona" -> { persona = ""; "assistant" }
@@ -135,7 +137,7 @@ class MineNav {
 @Composable
 internal fun ColumnScope.MineSub(store: AssistantStore, screen: String, compact: Boolean, blur: Dp, nav: MineNav) {
     when {
-        screen == "persona" -> Memory.get(nav.persona)?.let { PersonaScreen(store, it, compact, blur, nav) } ?: AssistantScreen(compact, blur, nav)
+        screen == "persona" -> Memory.get(nav.persona)?.let { AssistantEditScreen(store, it, compact, blur, nav) } ?: AssistantScreen(compact, blur, nav)
         screen == "providers" -> ProvidersScreen(store, compact, blur, nav)
         screen.startsWith("provider/") -> ProviderScreen(store, provider(screen.removePrefix("provider/")), compact, blur, nav)
         screen == "usage" -> UsagePage(store, compact) { nav.back() }
@@ -479,7 +481,7 @@ private fun ColumnScope.BasicTab(store: AssistantStore, p: Persona, blur: Dp, na
 
 /** 名片：她和你并排（头像 + 名字，中间一道心电，见 NamePair.kt），宋体大字直接改；停手半秒自动保存，一道杏色细线从左划到右，右上角淡出「已保存」。 */
 @Composable
-private fun NameCard(p: Persona, blur: Dp) {
+internal fun NameCard(p: Persona, blur: Dp) {
     var a by remember(p.id) { mutableStateOf(p.name) }
     var u by remember { mutableStateOf(Memory.userName) }
     val sweep = remember { androidx.compose.animation.core.Animatable(0f) }
@@ -591,7 +593,7 @@ internal fun FeelSlider(value: Float, min: Float, max: Float, step: Float, ticks
 /* 提示词：她是谁，写在这里的就是她自己。改完点保存；没保存就离开，也替你存好。
  * 有没保存的改动时，下面一排左边露出 ↶ ↷（PromptUndo.kt）；一保存就收起、历史清掉。 */
 @Composable
-private fun ColumnScope.PromptTab(p: Persona, blur: Dp) {
+internal fun ColumnScope.PromptTab(p: Persona, blur: Dp) {
     var field by remember(p.id) { mutableStateOf(androidx.compose.ui.text.input.TextFieldValue(p.sys)) }
     val draft = field.text
     val undo = remember(p.id) { PromptUndo(p.sys) }
@@ -640,7 +642,6 @@ private fun ColumnScope.PromptTab(p: Persona, blur: Dp) {
         }
     }
     IdentityHint(draft) { swap(it) }
-    Column(Modifier.spot("entries")) { EntriesSection(p, blur) }
 }
 
 /**
