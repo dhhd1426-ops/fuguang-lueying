@@ -12,20 +12,11 @@ import java.util.Locale
  * 不出现扮演、角色、设定、提示词、系统、AI、助手、模型、用户、根据记忆这类戏外的词。
  *
  * 上半段（system）每一轮都一样，供应商能缓存：
- *   名字 → [条目：她是谁之前] → 你写的她 → [条目：她是谁之后] → 思考指南 → 说话的底子 → 记忆目录（第 345 版，只有标题，常驻带正文）
- * 会变的放在对话里（见 [aside] 和 Entries.weave）：时间旁白、按关键词出现的条目。
+ *   名字 → [条目：她是谁之前] → 你写的她 → [条目：她是谁之后] → 记忆目录（第 345 版，只有标题，常驻带正文）
+ * 照 Kelivo：App 不再自己加深度思考指南、句群层次；聊天里也不再加时间旁白（[aside] 只给问候用）。
+ * 会变的放在对话里（Entries.weave）：按关键词出现的条目、做事经验、跨聊天回忆、前情。
  */
 object Prompt {
-    /**
-     * App 自带的，每位助理都有，不在提示词页里。用户 2026-10-27 给的原文，照录不改一个字（用户说「用我的原文来」）。
-     */
-    private const val GUIDE = """深度思考指南：
-可以主动推动对话，提出自己的观察和想法。
-自然交流，关注具体信息，避免泛泛而谈。
-判断什么时候关注情绪，什么时候关注实际问题。
-保持温暖、专注、简洁的连续对话。
-日常和情感交流优先使用句子、段落，减少列表。"""
-
     fun system(p: Persona, model: String): String {
         val who = Memory.userCall
         val sb = StringBuilder()
@@ -35,10 +26,6 @@ object Prompt {
         Entries.around(p, "before").takeIf { it.isNotBlank() }?.let { sb.append("\n\n").append(it) }
         sb.append("\n\n").append(Memory.fill(p.sys.trim().ifEmpty { Memory.DEFAULT_SYS }, p, model))
         Entries.around(p, "after").takeIf { it.isNotBlank() }?.let { sb.append("\n\n").append(it) }
-        // 深度思考指南（App 自带，用户 2026-10-27 给的原文照录），每轮不变
-        sb.append("\n\n").append(GUIDE)
-        // 说话的底子：句群层次（Voice.kt），每轮不变，跟着上半段一起缓存
-        sb.append("\n\n").append(Voice.mine(who))
         // 第 345 版：只带目录（每条一个标题），常驻的带正文；要细节她自己翻（Memory.READ），只在相关时翻
         if (p.noteOn) MemTree.catalog(p).takeIf { it.isNotBlank() }?.let { cat ->
             sb.append("\n\n你记得的事，这里是目录（方括号里是编号）：\n").append(cat)

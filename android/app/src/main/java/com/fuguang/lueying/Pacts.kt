@@ -299,7 +299,7 @@ object Pacts {
             withTimeout(150_000) {
                 ChatApi.stream(
                     pv, c, store.activeModel, Prompt.system(persona, store.activeModel), past + ChatMsg("user", note),
-                    store.effort()?.let { e -> if (e == Effort.OFF) e else Effort.spec(store.activeProvider, store.activeModel).levels.first { it.value != Effort.OFF }.value },
+                    store.effort()?.let { e -> if (e == Effort.OFF) e else Effort.lightest(Effort.spec(store.activeProvider, store.activeModel)) ?: e },
                     onThink = { },
                     tools = if (tools.isEmpty()) null else Tools(
                         tools,
